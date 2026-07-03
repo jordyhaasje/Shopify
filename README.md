@@ -20,9 +20,11 @@ Structured preview tools are implemented for `product.create.preview`, `product.
 
 `product.update.preview` can optionally enrich before-values with the read-only `product.get` path when the caller supplies an explicit `productId`, `id`, or `handle` and sets `enrichExistingProduct: true`. It does not search for products, does not fetch when an existing product summary is already supplied, and falls back to `before: "unknown"` with a warning when enrichment is unavailable.
 
+Preview results are also saved to a local in-memory preview store. Stored records contain safe preview content, TTL metadata, unique per-preview `previewId` values, and deterministic `previewHash` values that can later be compared with hashes recomputed from the actual reviewed payload. The store is not file-backed yet, does not persist across process restarts, and never performs Shopify calls.
+
 Write tools are still guarded fail-closed placeholders, including product create/update execute, customer address update execute, refund execute, tracking update execute, page/collection execute, bulk execute, and theme apply. No Shopify mutations are implemented yet.
 
-Execute placeholders require preview binding context before they reach the not-implemented placeholder response. Confirmation alone is insufficient: callers must provide a `previewId` plus reviewed payload context that can be tied to the expected preview tool and target. Missing or mismatched binding fails closed and is audited as `blocked`; validly bound placeholders are audited as `not_implemented`, never `success`.
+Execute placeholders require preview binding context before they reach the not-implemented placeholder response. Confirmation alone is insufficient: callers must provide a `previewId` plus reviewed payload context that can be tied to the expected preview tool, target, preview hash, and reviewed changes hash. Missing, expired, or mismatched preview binding fails closed and is audited as `blocked`; validly bound placeholders are audited as `not_implemented`, never `success`.
 
 ## Temporary GitHub Install
 

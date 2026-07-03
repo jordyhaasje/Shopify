@@ -17,6 +17,12 @@ Every write tool has the same safety requirements:
 
 Structured catalog/content preview tools return `ok`, `status`, `previewId`, `summary`, `target`, `proposedChanges`, `warnings`, `requiredConfirmationForExecute`, and `auditContext`. The output intentionally summarizes large user payloads and redacts secret-looking values instead of echoing raw full inputs.
 
+Preview tools may also return local binding metadata such as `previewHash` and `binding`. Runtime preview results are stored in a local in-memory preview store with safe summarized content, `createdAt`, `expiresAt`, status, and deterministic hashes. The preview store is process-local only in this phase; it is not file-backed and does not persist across restarts.
+
+`previewId` identifies one saved preview event and is not derived from the content hash. Saving identical preview content twice produces separate preview IDs. `previewHash` is computed from canonicalized safe preview content. Equivalent objects with different key order hash the same way, while changing the tool, target, or proposed changes changes the hash. `reviewedChangesHash` is the corresponding hash for a reviewed payload. Stored-preview verification recomputes the hash from the actual `reviewedPayload`; callers cannot make arbitrary payloads valid by copying `previewHash` into `reviewedChangesHash`. These hashes are binding material for future execute verification, not proof that a write occurred.
+
+Stored previews expire by TTL. Missing, expired, invalid, or mismatched stored preview records must fail closed before any future write path. Store output and audit context must not include raw reviewed payloads, raw Shopify nodes, secrets, or oversized user content.
+
 Current execute tools are placeholders. After read-only and preview-binding checks pass, placeholder execute tools return `ok: false`, `implemented: false`, `status: "not_implemented"`, and `placeholder: true`. They must not be interpreted as successful Shopify writes, and their audit entries use `result: "not_implemented"` rather than `success`. Missing confirmation, missing preview ID, missing reviewed payload, or binding mismatch is audited as `blocked` and must not expose raw reviewed payloads.
 
 The agent must never autonomously search for products. Users provide the product data, source URL, CSV, images, or IDs.

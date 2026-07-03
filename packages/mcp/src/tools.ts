@@ -15,11 +15,15 @@ import {
   getProduct,
   getTracking,
   loadStoredConfig,
+  MemoryPreviewStore,
   planThemeSection,
+  previewRecordBindingTarget,
   type PreviewWarning,
   type ProductSummary,
   type ReadResult,
+  type StoredPreviewRecord,
   validateExecutePreviewBinding,
+  verifyStoredPreviewBinding,
   previewCollectionCreate,
   previewPageCreate,
   previewProductCreate,
@@ -40,6 +44,7 @@ export interface ToolContext {
   config: StoreAgentConfig;
   audit: MemoryAuditLog;
   fetcher?: FetchLike;
+  previewStore?: MemoryPreviewStore;
 }
 
 function booleanInput(input: Record<string, unknown>, key: string): boolean {
@@ -64,7 +69,23 @@ function previewResult(tool: string, target: string, summary: string, context: T
     summary,
     result: "success"
   });
-  return { ok: true, mode: "preview", summary, audit };
+  const stored = savePreviewRecord(context, {
+    previewId: undefined,
+    tool,
+    target,
+    summary,
+    proposedChanges: [],
+    requiredConfirmationForExecute: "Execute is not implemented. Future execute tools must require this preview binding.",
+    auditContext: {
+      tool,
+      mode: "preview",
+      target,
+      requiresExecuteConfirmation: true,
+      performsShopifyMutation: false,
+      usesShopifyWriteOperation: false
+    }
+  });
+  return { ok: true, mode: "preview", summary, audit, previewId: stored.previewId, previewHash: stored.previewHash, binding: previewBindingOutput(stored) };
 }
 
 function catalogPreviewResult(result: CatalogPreviewResult, context: ToolContext): Record<string, unknown> {
@@ -75,7 +96,16 @@ function catalogPreviewResult(result: CatalogPreviewResult, context: ToolContext
     summary: result.summary,
     result: result.status === "ok" ? "success" : "blocked"
   });
-  return { ...result, mode: "preview", audit };
+  const stored = savePreviewRecord(context, {
+    previewId: result.previewId,
+    tool: result.auditContext.tool,
+    target: result.target,
+    summary: result.summary,
+    proposedChanges: result.proposedChanges,
+    requiredConfirmationForExecute: result.requiredConfirmationForExecute,
+    auditContext: result.auditContext
+  });
+  return { ...result, mode: "preview", audit, previewHash: stored.previewHash, binding: previewBindingOutput(stored) };
 }
 
 async function productUpdatePreviewResult(input: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>> {
@@ -188,10 +218,11 @@ function auditResultForRead(result: unknown): "success" | "blocked" | "failed" {
 function executePlaceholder(tool: string, target: string, summary: string, input: Record<string, unknown>, context: ToolContext): Record<string, unknown> {
   assertWritable(context.config, tool, true);
   const safeTarget = safeExecuteString(target);
-  const binding = validateExecutePreviewBinding(input, {
+  const prepared = prepareExecuteBinding(tool, safeTarget, input, context);
+  const binding = prepared.binding ?? validateExecutePreviewBinding(input, {
     executeTool: tool,
     expectedPreviewTool: expectedPreviewTool(tool),
-    target: safeTarget
+    target: prepared.target
   });
   if (!binding.ok) return blockedExecuteResult(tool, safeTarget, binding, context);
 
@@ -217,6 +248,42 @@ function executePlaceholder(tool: string, target: string, summary: string, input
     },
     placeholder: true
   };
+}
+
+function savePreviewRecord(context: ToolContext, record: Parameters<MemoryPreviewStore["savePreview"]>[0]): StoredPreviewRecord {
+  return ensurePreviewStore(context).savePreview(record);
+}
+
+function ensurePreviewStore(context: ToolContext): MemoryPreviewStore {
+  context.previewStore ??= new MemoryPreviewStore();
+  return context.previewStore;
+}
+
+function previewBindingOutput(record: StoredPreviewRecord): Record<string, unknown> {
+  return {
+    previewId: record.previewId,
+    expectedTool: record.tool,
+    target: previewRecordBindingTarget(record),
+    previewHash: record.previewHash,
+    expiresAt: record.expiresAt
+  };
+}
+
+function prepareExecuteBinding(
+  tool: string,
+  target: string,
+  input: Record<string, unknown>,
+  context: ToolContext
+): { target: string; binding?: ExecutePreviewBindingResult } {
+  const expectedTool = expectedPreviewTool(tool);
+  if (!context.previewStore || !stringInput(input, "previewId")) return { target };
+
+  const binding = verifyStoredPreviewBinding(context.previewStore, input, {
+    executeTool: tool,
+    expectedPreviewTool: expectedTool,
+    target
+  });
+  return { target, binding };
 }
 
 function blockedExecuteResult(
@@ -304,7 +371,8 @@ export async function createDefaultContext(): Promise<ToolContext> {
       readOnly: process.env.SHOPIFY_STORE_AGENT_READ_ONLY !== "false",
       capabilities: emptyCapabilities()
     }),
-    audit: new MemoryAuditLog()
+    audit: new MemoryAuditLog(),
+    previewStore: new MemoryPreviewStore()
   };
 }
 
