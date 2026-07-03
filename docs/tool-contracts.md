@@ -9,14 +9,15 @@ Every write tool has the same safety requirements:
 - Required input: explicit Shopify IDs, user-provided product data, user-provided URLs, CSV rows, image references, order numbers, customer emails, or other user-supplied targets.
 - Preview output: a structured summary of what would change, target identifiers, warnings, and an audit entry.
 - Preview status: `ok`, `missing_input`, or `validation_error`. Missing input and validation errors are audited as `blocked`; successful previews are audited as `success`.
-- Execute requirements: writes enabled, matching preview ID or equivalent reviewed input, explicit confirmation, and required Shopify capability/scope.
-- Confirmation requirement: the execute tool must receive explicit confirmation from the user or host.
+- Execute requirements: writes enabled, preview binding context, matching preview ID or equivalent reviewed input, explicit confirmation, and required Shopify capability/scope.
+- Confirmation requirement: the execute tool must receive explicit confirmation from the user or host, but confirmation alone is insufficient.
+- Preview binding requirement: execute input must include a `previewId` and reviewed payload/context that can be checked against the expected preview tool, target, and future preview/review hashes. Missing or mismatched binding must fail closed.
 - Audit requirement: preview and execute attempts must be written to the audit log with tool name, target, mode, summary, and result.
 - Failure behavior: fail closed, do not partially continue silently, return a clear error, and leave enough audit context for review.
 
 Structured catalog/content preview tools return `ok`, `status`, `previewId`, `summary`, `target`, `proposedChanges`, `warnings`, `requiredConfirmationForExecute`, and `auditContext`. The output intentionally summarizes large user payloads and redacts secret-looking values instead of echoing raw full inputs.
 
-Current execute tools are placeholders. After read-only and confirmation checks pass, placeholder execute tools return `ok: false`, `implemented: false`, `status: "not_implemented"`, and `placeholder: true`. They must not be interpreted as successful Shopify writes, and their audit entries use `result: "not_implemented"` rather than `success`.
+Current execute tools are placeholders. After read-only and preview-binding checks pass, placeholder execute tools return `ok: false`, `implemented: false`, `status: "not_implemented"`, and `placeholder: true`. They must not be interpreted as successful Shopify writes, and their audit entries use `result: "not_implemented"` rather than `success`. Missing confirmation, missing preview ID, missing reviewed payload, or binding mismatch is audited as `blocked` and must not expose raw reviewed payloads.
 
 The agent must never autonomously search for products. Users provide the product data, source URL, CSV, images, or IDs.
 
