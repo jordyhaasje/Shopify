@@ -16,6 +16,9 @@ import {
   getTracking,
   loadStoredConfig,
   planThemeSection,
+  type PreviewWarning,
+  type ProductSummary,
+  type ReadResult,
   previewCollectionCreate,
   previewPageCreate,
   previewProductCreate,
@@ -47,6 +50,11 @@ function stringInput(input: Record<string, unknown>, key: string, fallback = "")
   return typeof value === "string" ? value : fallback;
 }
 
+function objectInput(input: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
+  const value = input[key];
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
 function previewResult(tool: string, target: string, summary: string, context: ToolContext): Record<string, unknown> {
   const audit = context.audit.record({
     tool,
@@ -67,6 +75,73 @@ function catalogPreviewResult(result: CatalogPreviewResult, context: ToolContext
     result: result.status === "ok" ? "success" : "blocked"
   });
   return { ...result, mode: "preview", audit };
+}
+
+async function productUpdatePreviewResult(input: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>> {
+  const enriched = await enrichProductUpdateInput(input, context);
+  const result = previewProductUpdate(enriched.input);
+  if (enriched.warning) result.warnings.push(enriched.warning);
+  return catalogPreviewResult(result, context);
+}
+
+async function enrichProductUpdateInput(
+  input: Record<string, unknown>,
+  context: ToolContext
+): Promise<{ input: Record<string, unknown>; warning?: PreviewWarning }> {
+  if (!booleanInput(input, "enrichExistingProduct")) return { input };
+  if (objectInput(input, "existingProduct") || objectInput(input, "existingProductSummary")) return { input };
+
+  const productId = stringInput(input, "productId");
+  const id = stringInput(input, "id");
+  const handle = stringInput(input, "handle");
+  if (!productId && !id && !handle) return { input };
+  if (!hasProductUpdateChanges(input)) return { input };
+
+  let read: ReadResult<ProductSummary>;
+  try {
+    read = await getProduct(context.config, {
+      id: id || undefined,
+      productId: productId || undefined,
+      handle: handle || undefined
+    }, { fetcher: context.fetcher });
+  } catch {
+    return {
+      input,
+      warning: readEnrichmentWarning()
+    };
+  }
+  if (read.item) return { input: { ...input, existingProductSummary: minimalProductBefore(read.item) } };
+
+  return {
+    input,
+    warning: readEnrichmentWarning(read)
+  };
+}
+
+function hasProductUpdateChanges(input: Record<string, unknown>): boolean {
+  const changes = objectInput(input, "changes");
+  if (changes) return Object.keys(changes).length > 0;
+  const excluded = new Set(["id", "productId", "handle", "existingProduct", "existingProductSummary", "enrichExistingProduct", "confirmed", "previewId"]);
+  return Object.entries(input).some(([key, value]) => !excluded.has(key) && value !== undefined);
+}
+
+function minimalProductBefore(product: ProductSummary): ProductSummary {
+  return {
+    id: product.id,
+    title: product.title,
+    handle: product.handle,
+    status: product.status,
+    vendor: product.vendor,
+    productType: product.productType
+  };
+}
+
+function readEnrichmentWarning(read?: ReadResult<ProductSummary>): PreviewWarning {
+  const reason = read ? ` (${read.status})` : "";
+  return {
+    code: "read_enrichment_unavailable",
+    message: `Read-only product enrichment was unavailable${reason}; before values remain unknown.`
+  };
 }
 
 function readResult(tool: string, target: string, summary: string, context: ToolContext, extra: Record<string, unknown> = {}): Record<string, unknown> {
@@ -187,7 +262,7 @@ export const tools: ToolDefinition[] = [
     name: "product.update.preview",
     description: "Preview updating price, media, variants, or description for an explicit product ID.",
     inputSchema: { type: "object" },
-    handler: (input, context) => catalogPreviewResult(previewProductUpdate(input), context)
+    handler: (input, context) => productUpdatePreviewResult(input, context)
   },
   {
     name: "product.update.execute",

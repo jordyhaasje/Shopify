@@ -349,6 +349,202 @@ describe("MCP tools", () => {
     });
   });
 
+  it("uses supplied existingProduct before-values without fetching", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    });
+
+    const result = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      enrichExistingProduct: true,
+      existingProduct: { title: "Old Shirt", vendor: "Old Vendor" },
+      changes: { title: "New Shirt", vendor: "New Vendor" }
+    }, context);
+
+    expect(result).toMatchObject({ ok: true, mode: "preview", status: "ok" });
+    expect(changeFor(result, "title")).toMatchObject({ before: "Old Shirt", after: "New Shirt" });
+    expect(changeFor(result, "vendor")).toMatchObject({ before: "Old Vendor", after: "New Vendor" });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("uses supplied existingProductSummary before-values without fetching", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    });
+
+    const result = await callTool("product.update.preview", {
+      handle: "linen-shirt",
+      enrichExistingProduct: true,
+      existingProductSummary: { title: "Old Shirt", status: "DRAFT" },
+      changes: { title: "New Shirt", status: "ACTIVE" }
+    }, context);
+
+    expect(result).toMatchObject({ ok: true, mode: "preview", status: "ok" });
+    expect(changeFor(result, "title")).toMatchObject({ before: "Old Shirt", after: "New Shirt" });
+    expect(changeFor(result, "status")).toMatchObject({ before: "DRAFT", after: "ACTIVE" });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("enriches product.update.preview by explicit productId with read-only product summary", async () => {
+    const requests: Array<{ url: string; body: string }> = [];
+    const context = baseContext(async (url, init) => {
+      requests.push({ url, body: init.body });
+      return jsonResponse({
+        data: {
+          node: {
+            __typename: "Product",
+            id: "gid://shopify/Product/1",
+            title: "Old Shirt",
+            handle: "linen-shirt",
+            status: "DRAFT",
+            vendor: "Old Vendor",
+            productType: "Shirts",
+            rawNodeOnly: true,
+            variants: { nodes: [{ sku: "RAW" }] }
+          }
+        }
+      });
+    });
+
+    const result = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      enrichExistingProduct: true,
+      changes: { title: "New Shirt", vendor: "New Vendor" }
+    }, context);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({ ok: true, mode: "preview", status: "ok" });
+    expect(changeFor(result, "title")).toMatchObject({ before: "Old Shirt", after: "New Shirt" });
+    expect(changeFor(result, "vendor")).toMatchObject({ before: "Old Vendor", after: "New Vendor" });
+    expect(requests).toHaveLength(1);
+    expect(requests[0].body).not.toContain("mutation");
+    expect(requests[0].body).toContain("gid://shopify/Product/1");
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("variants");
+  });
+
+  it("enriches product.update.preview by explicit handle only", async () => {
+    const requests: Array<{ body: string }> = [];
+    const context = baseContext(async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          productByHandle: {
+            id: "gid://shopify/Product/2",
+            title: "Old Handle Shirt",
+            handle: "handle-shirt",
+            status: "ACTIVE",
+            vendor: "Handle Vendor",
+            productType: "Shirts"
+          }
+        }
+      });
+    });
+
+    const result = await callTool("product.update.preview", {
+      handle: "handle-shirt",
+      enrichExistingProduct: true,
+      changes: { title: "New Handle Shirt" }
+    }, context);
+
+    expect(result).toMatchObject({ ok: true, mode: "preview", status: "ok" });
+    expect(changeFor(result, "title")).toMatchObject({ before: "Old Handle Shirt", after: "New Handle Shirt" });
+    expect(requests).toHaveLength(1);
+    expect(requests[0].body).not.toContain("mutation");
+    expect(requests[0].body).toContain("\"handle\":\"handle-shirt\"");
+    expect(JSON.parse(requests[0].body).variables).toEqual({ handle: "handle-shirt" });
+  });
+
+  it("keeps preview successful with a warning when read enrichment fails", async () => {
+    const context = baseContext(async () => jsonResponse({
+      errors: [{ message: "Access denied for products", extensions: { code: "ACCESS_DENIED" } }]
+    }));
+
+    const result = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      enrichExistingProduct: true,
+      changes: { title: "New Shirt" }
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "preview",
+      status: "ok",
+      warnings: expect.arrayContaining([
+        expect.objectContaining({ code: "read_enrichment_unavailable" })
+      ])
+    });
+    expect(changeFor(result, "title")).toMatchObject({ before: "unknown", after: "New Shirt" });
+    expect(context.audit.list()[0]).toMatchObject({
+      tool: "product.update.preview",
+      mode: "preview",
+      result: "success"
+    });
+  });
+
+  it("keeps preview successful with a sanitized warning when read enrichment throws", async () => {
+    const context = baseContext(async () => {
+      throw new Error("network failed with token shpat_thrown_secret");
+    });
+
+    const result = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      enrichExistingProduct: true,
+      changes: { title: "New Shirt" }
+    }, context);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "preview",
+      status: "ok",
+      warnings: expect.arrayContaining([
+        {
+          code: "read_enrichment_unavailable",
+          message: "Read-only product enrichment was unavailable; before values remain unknown."
+        }
+      ])
+    });
+    expect(changeFor(result, "title")).toMatchObject({ before: "unknown", after: "New Shirt" });
+    expect(output).not.toContain("shpat_thrown_secret");
+    expect(context.audit.list()[0]).toMatchObject({
+      tool: "product.update.preview",
+      mode: "preview",
+      result: "success"
+    });
+  });
+
+  it("redacts read-enriched secret-looking values from preview output and audit", async () => {
+    const context = baseContext(async () => jsonResponse({
+      data: {
+        node: {
+          __typename: "Product",
+          id: "gid://shopify/Product/1",
+          title: "Old shpat_read_secret",
+          handle: "secret-shirt",
+          vendor: "Vendor shpua_read_secret"
+        }
+      }
+    }));
+
+    const result = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      enrichExistingProduct: true,
+      changes: { title: "New Shirt", vendor: "New Vendor" }
+    }, context);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({ ok: true, mode: "preview", status: "ok" });
+    expect(output).not.toContain("shpat_read_secret");
+    expect(output).not.toContain("shpua_read_secret");
+    expect(context.audit.list()[0].target).not.toContain("shpat_read_secret");
+    expect(context.audit.list()[0].target).not.toContain("shpua_read_secret");
+  });
+
   it("blocks theme apply without confirmation", async () => {
     const context: ToolContext = {
       config: createConfig({ storeUrl: "demo", readOnly: false }),
@@ -510,4 +706,21 @@ function baseContext(fetcher?: ToolContext["fetcher"], readOnly = true): ToolCon
     audit: new MemoryAuditLog(),
     fetcher
   };
+}
+
+function jsonResponse(body: unknown): ReturnType<NonNullable<ToolContext["fetcher"]>> extends Promise<infer Response> ? Response : never {
+  return {
+    ok: true,
+    status: 200,
+    async text() {
+      return JSON.stringify(body);
+    }
+  };
+}
+
+function changeFor(result: unknown, field: string): Record<string, unknown> | undefined {
+  if (!result || typeof result !== "object" || !("proposedChanges" in result)) return undefined;
+  const changes = (result as { proposedChanges: unknown }).proposedChanges;
+  if (!Array.isArray(changes)) return undefined;
+  return changes.find((change): change is Record<string, unknown> => Boolean(change) && typeof change === "object" && (change as { field?: unknown }).field === field);
 }
