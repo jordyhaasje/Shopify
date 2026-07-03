@@ -4,12 +4,16 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import {
   buildInstallUrl,
+  checkShopifyCapabilities,
+  type CapabilityCheckResult,
   createOAuthState,
   defaultAdminScopes,
+  defaultApiVersion,
   defaultConfigPath,
   exchangeCodeForOfflineToken,
   createConfig,
   emptyCapabilities,
+  type FetchLike,
   normalizeScopes,
   saveStoredConfig,
   scopesToString,
@@ -21,10 +25,18 @@ import {
 
 export interface SetupOptions {
   storeUrl?: string;
+  authMethod?: "manual" | "oauth";
   adminAccessToken?: string;
   themeAccessToken?: string;
+  clientId?: string;
+  scopes?: string;
+  apiVersion?: string;
+  configPath?: string;
   readOnly?: boolean;
+  saveConfig?: boolean;
+  liveCapabilityCheck?: boolean;
   dryRun?: boolean;
+  fetcher?: FetchLike;
 }
 
 export interface AuthOptions {
@@ -38,8 +50,43 @@ export interface AuthOptions {
   configPath?: string;
 }
 
-export function generateMcpConfigSnippets(config: StoreAgentConfig): Record<string, string> {
+export interface SetupWarning {
+  code: string;
+  message: string;
+}
+
+export interface SetupResult {
+  config: StoreAgentConfig;
+  safeConfig: StoreAgentConfig;
+  configPath: string;
+  saved: boolean;
+  authMethod: "manual" | "oauth";
+  scopes: string[];
+  scopeSummary: string;
+  capabilityCheck: CapabilityCheckResult;
+  warnings: SetupWarning[];
+  snippets: Record<"codex" | "claude" | "cursor" | "generic", string>;
+  nextSteps: string[];
+}
+
+const readOnlyAdminScopes = [
+  "read_products",
+  "read_orders",
+  "read_customers",
+  "read_fulfillments",
+  "read_content",
+  "read_online_store_pages",
+  "read_files",
+  "read_themes",
+  "read_inventory",
+  "read_metaobjects",
+  "read_metaobject_definitions",
+  "read_translations"
+] as const;
+
+export function generateMcpConfigSnippets(config: StoreAgentConfig, options: { configPath?: string } = {}): Record<"codex" | "claude" | "cursor" | "generic", string> {
   const env = {
+    SHOPIFY_STORE_AGENT_CONFIG: options.configPath ?? defaultConfigPath(),
     SHOPIFY_STORE_AGENT_STORE: config.storeUrl,
     SHOPIFY_STORE_AGENT_API_VERSION: config.apiVersion,
     SHOPIFY_STORE_AGENT_READ_ONLY: String(config.readOnly)
@@ -73,6 +120,12 @@ export function generateMcpConfigSnippets(config: StoreAgentConfig): Record<stri
           env
         }
       }
+    }, null, 2),
+    generic: JSON.stringify({
+      name: "shopify-store-agent",
+      command,
+      args,
+      env
     }, null, 2)
   };
 }
@@ -141,24 +194,68 @@ export async function runOAuthInstall(options: AuthOptions): Promise<{
 
 export async function runSetup(options: SetupOptions): Promise<{
   config: StoreAgentConfig;
-  snippets: Record<string, string>;
+  safeConfig: StoreAgentConfig;
+  configPath: string;
+  saved: boolean;
+  authMethod: "manual" | "oauth";
+  scopes: string[];
+  scopeSummary: string;
+  capabilityCheck: CapabilityCheckResult;
+  warnings: SetupWarning[];
+  snippets: Record<"codex" | "claude" | "cursor" | "generic", string>;
+  nextSteps: string[];
 }> {
   const interactive = !options.storeUrl;
   const rl = interactive ? createInterface({ input, output }) : undefined;
   try {
     const storeUrl = options.storeUrl ?? await rl!.question("Shopify store URL: ");
-    const adminAccessToken = options.adminAccessToken ?? (interactive ? await rl!.question("Admin API token (optional for dry run): ") : undefined);
-    const themeAccessToken = options.themeAccessToken ?? (interactive ? await rl!.question("Theme Access token (optional): ") : undefined);
+    const authMethod = normalizeAuthMethod(options.authMethod ?? (interactive ? await rl!.question("Auth method [manual/oauth] (default manual): ") : undefined));
+    const adminAccessToken = authMethod === "manual"
+      ? options.adminAccessToken ?? (interactive ? await rl!.question("Admin API token (optional, stored locally only): ") : undefined)
+      : undefined;
+    const clientId = authMethod === "oauth"
+      ? options.clientId ?? (interactive ? await rl!.question("OAuth client ID (optional, local setup only): ") : undefined)
+      : undefined;
+    const themeAccessToken = options.themeAccessToken ?? (interactive ? await rl!.question("Theme Access token (optional, stored locally only): ") : undefined);
+    const configPath = options.configPath ?? defaultConfigPath();
+    const scopes = normalizeScopes(options.scopes ?? readOnlyAdminScopes);
+    const readOnly = options.readOnly ?? true;
+    const warnings = setupWarnings(readOnly);
     const config = createConfig({
       storeUrl,
       adminAccessToken: adminAccessToken || undefined,
       themeAccessToken: themeAccessToken || undefined,
-      readOnly: options.readOnly ?? true,
+      apiVersion: options.apiVersion ?? defaultApiVersion,
+      readOnly,
       capabilities: options.dryRun ? emptyCapabilities() : undefined
     });
+    const capabilityCheck = await checkShopifyCapabilities(config, {
+      live: options.liveCapabilityCheck === true,
+      fetcher: options.fetcher
+    });
+
+    const shouldSave = options.saveConfig === true && !options.dryRun;
+    if (shouldSave) {
+      await saveStoredConfig({
+        ...config,
+        clientId: clientId || undefined,
+        grantedScopes: scopes
+      }, configPath);
+    }
+
+    const safeConfig = redactConfig(config);
     return {
-      config,
-      snippets: generateMcpConfigSnippets(config)
+      config: safeConfig,
+      safeConfig,
+      configPath,
+      saved: shouldSave,
+      authMethod,
+      scopes,
+      scopeSummary: scopesToString(scopes),
+      capabilityCheck,
+      warnings,
+      snippets: generateMcpConfigSnippets(config, { configPath }),
+      nextSteps: setupNextSteps(authMethod, configPath)
     };
   } finally {
     rl?.close();
@@ -180,10 +277,18 @@ function parseArgs(argv: string[]): (SetupOptions & AuthOptions & { command: str
     } else if (arg === "--theme-token" && next) {
       options.themeAccessToken = next;
       index += 1;
+    } else if (arg === "--auth" && next) {
+      options.authMethod = next === "oauth" ? "oauth" : "manual";
+      index += 1;
+    } else if (arg === "--api-version" && next) {
+      options.apiVersion = next;
+      index += 1;
     } else if (arg === "--write-enabled") {
       options.readOnly = false;
     } else if (arg === "--dry-run") {
       options.dryRun = true;
+    } else if (arg === "--live-capability-check") {
+      options.liveCapabilityCheck = true;
     } else if (arg === "--client-id" && next) {
       options.clientId = next;
       index += 1;
@@ -208,7 +313,7 @@ async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   if (options.command !== "setup" && options.command !== "auth") {
     console.log("Usage:");
-    console.log("  shopify-store-agent setup --store example.myshopify.com [--dry-run]");
+    console.log("  shopify-store-agent setup --store example.myshopify.com [--auth manual|oauth] [--dry-run]");
     console.log("  shopify-store-agent auth --store example.myshopify.com --client-id ... --client-secret ...");
     return;
   }
@@ -218,18 +323,65 @@ async function main(): Promise<void> {
     return;
   }
 
-  const result = await runSetup(options);
-  const safeConfig = redactConfig(result.config);
+  const result = await runSetup({ ...options, saveConfig: !options.dryRun });
   console.log("Shopify Store Agent setup preview");
-  console.log(JSON.stringify(safeConfig, null, 2));
+  console.log(JSON.stringify(result.safeConfig, null, 2));
+  console.log(`\nConfig path: ${result.configPath}`);
+  console.log(`Saved: ${result.saved ? "yes" : "no"}`);
+  console.log(`Auth method: ${result.authMethod}`);
+  console.log(`Read-only mode: ${result.config.readOnly ? "enabled" : "disabled"}`);
+  console.log(`Scopes for setup guidance: ${result.scopeSummary}`);
+  for (const warning of result.warnings) {
+    console.log(`Warning: ${warning.message}`);
+  }
   console.log("\nCapability checks");
   for (const probe of summarizeCapabilities(result.config.capabilities ?? emptyCapabilities())) {
     console.log(`- ${probe.name}: ${probe.detail}`);
   }
+  for (const diagnostic of result.capabilityCheck.diagnostics) {
+    console.log(`- ${diagnostic.code}: ${diagnostic.message}`);
+  }
+  console.log("\nNext steps");
+  for (const step of result.nextSteps) {
+    console.log(`- ${step}`);
+  }
   console.log("\nCodex MCP config");
   console.log(result.snippets.codex);
-  console.log("\nClaude/Cursor MCP config");
+  console.log("\nClaude Code MCP config");
   console.log(result.snippets.claude);
+  console.log("\nCursor MCP config");
+  console.log(result.snippets.cursor);
+  console.log("\nGeneric MCP config");
+  console.log(result.snippets.generic);
+}
+
+function normalizeAuthMethod(value: unknown): "manual" | "oauth" {
+  return typeof value === "string" && value.trim().toLowerCase() === "oauth" ? "oauth" : "manual";
+}
+
+function setupWarnings(readOnly: boolean): SetupWarning[] {
+  if (readOnly) return [];
+  return [{
+    code: "write_mode_requested",
+    message: "Write mode was requested in config, but setup does not implement or activate Shopify execute/write tools."
+  }];
+}
+
+function setupNextSteps(authMethod: "manual" | "oauth", configPath: string): string[] {
+  const common = [
+    `Point your MCP host at the local config path: ${configPath}.`,
+    "Keep read-only mode enabled until you intentionally review future write capabilities."
+  ];
+  if (authMethod === "oauth") {
+    return [
+      "Run the local OAuth auth command with your own Shopify app client credentials to store an Admin API token locally.",
+      ...common
+    ];
+  }
+  return [
+    "Create or use a Shopify custom app token with only the scopes needed for read and preview workflows.",
+    ...common
+  ];
 }
 
 function waitForOAuthCallback(port: number): Promise<Record<string, string>> {
