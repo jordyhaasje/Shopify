@@ -1,6 +1,7 @@
 export * from "./audit.js";
 export * from "./bulk.js";
 export * from "./capabilities.js";
+export * from "./catalog-previews.js";
 export * from "./config-store.js";
 export * from "./config.js";
 export * from "./file-audit.js";

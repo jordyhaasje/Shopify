@@ -219,6 +219,112 @@ describe("MCP tools", () => {
     expect(JSON.stringify(result)).not.toContain("rawNodeOnly");
   });
 
+  it("runs catalog and content previews with structured audit entries", async () => {
+    const context = baseContext();
+
+    const result = await callTool("product.create.preview", {
+      title: "Linen Shirt",
+      description: "A light linen shirt.",
+      variants: [{ sku: "LINEN-S", price: "29.00" }],
+      media: [{ url: "https://example.com/shirt.jpg", alt: "Linen shirt" }]
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "preview",
+      status: "ok",
+      target: { type: "product", title: "Linen Shirt" },
+      auditContext: {
+        tool: "product.create.preview",
+        performsShopifyMutation: false,
+        usesShopifyWriteOperation: false
+      },
+      audit: {
+        tool: "product.create.preview",
+        mode: "preview",
+        result: "success"
+      }
+    });
+    expect(context.audit.list()[0]).toMatchObject({
+      tool: "product.create.preview",
+      mode: "preview",
+      result: "success"
+    });
+  });
+
+  it("records blocked audit entries for missing or invalid preview input", async () => {
+    const context = baseContext();
+
+    const missing = await callTool("product.create.preview", {}, context);
+    const invalid = await callTool("product.create.preview", { title: "Bad Status", status: "VISIBLE" }, context);
+
+    expect(missing).toMatchObject({
+      ok: false,
+      mode: "preview",
+      status: "missing_input"
+    });
+    expect(invalid).toMatchObject({
+      ok: false,
+      mode: "preview",
+      status: "validation_error"
+    });
+    expect(context.audit.list()).toEqual([
+      expect.objectContaining({ tool: "product.create.preview", result: "blocked" }),
+      expect.objectContaining({ tool: "product.create.preview", result: "blocked" })
+    ]);
+  });
+
+  it("does not call fetchers or Shopify mutations for preview tools", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return "{}";
+        }
+      };
+    });
+    const previewCalls: Array<[string, Record<string, unknown>]> = [
+      ["product.create.preview", { title: "Linen Shirt" }],
+      ["product.update.preview", { productId: "gid://shopify/Product/1", changes: { title: "New Shirt" } }],
+      ["product.media.update.preview", { productId: "gid://shopify/Product/1", media: [{ url: "https://example.com/new.jpg" }] }],
+      ["product.importFromUserUrl.preview", { url: "https://example.com/products/shirt", instructions: "Rewrite copy only." }],
+      ["page.create.preview", { title: "Care Guide", body: "Wash cold." }],
+      ["collection.create.preview", { title: "Summer", productIds: ["gid://shopify/Product/1"] }]
+    ];
+
+    for (const [tool, input] of previewCalls) {
+      const result = await callTool(tool, input, context);
+      expect(result).toMatchObject({
+        ok: true,
+        mode: "preview",
+        auditContext: {
+          performsShopifyMutation: false,
+          usesShopifyWriteOperation: false
+        }
+      });
+    }
+
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("keeps preview output free of secrets and raw oversized payload dumps", async () => {
+    const context = baseContext();
+    const result = await callTool("page.create.preview", {
+      title: "Large Page",
+      body: `shpat_test_secret ${"Long content ".repeat(1000)}`,
+      seo: { token: "shpat_test_secret" }
+    }, context);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({ ok: true, mode: "preview", status: "ok" });
+    expect(output).not.toContain("shpat_test_secret");
+    expect(output.length).toBeLessThan(3500);
+    expect(output).toContain("[redacted]");
+  });
+
   it("blocks theme apply without confirmation", async () => {
     const context: ToolContext = {
       config: createConfig({ storeUrl: "demo", readOnly: false }),
@@ -270,6 +376,43 @@ describe("MCP tools", () => {
       result: "not_implemented"
     });
     expect(fetchCalled).toBe(false);
+  });
+
+  it("keeps catalog and content execute tools not implemented without calling fetchers", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return "{}";
+        }
+      };
+    }, false);
+    const executeCalls: Array<[string, Record<string, unknown>]> = [
+      ["product.create.execute", { title: "Linen Shirt", confirmed: true }],
+      ["product.update.execute", { productId: "gid://shopify/Product/1", confirmed: true }],
+      ["product.media.update.execute", { productId: "gid://shopify/Product/1", confirmed: true }],
+      ["product.importFromUserUrl.execute", { url: "https://example.com/products/shirt", confirmed: true }],
+      ["page.create.execute", { title: "Care Guide", confirmed: true }],
+      ["collection.create.execute", { title: "Summer", confirmed: true }]
+    ];
+
+    for (const [tool, input] of executeCalls) {
+      const result = await callTool(tool, input, context);
+      expect(result).toMatchObject({
+        ok: false,
+        mode: "execute",
+        implemented: false,
+        status: "not_implemented",
+        placeholder: true
+      });
+    }
+
+    expect(fetchCalled).toBe(false);
+    expect(context.audit.list()).toHaveLength(executeCalls.length);
+    expect(context.audit.list().every((entry) => entry.result === "not_implemented")).toBe(true);
   });
 
   it("keeps refund execute as a not-implemented placeholder with idempotency context", async () => {
@@ -330,5 +473,17 @@ function readContext(responseBody: unknown): ToolContext {
         return JSON.stringify(responseBody);
       }
     })
+  };
+}
+
+function baseContext(fetcher?: ToolContext["fetcher"], readOnly = true): ToolContext {
+  return {
+    config: createConfig({
+      storeUrl: "demo",
+      adminAccessToken: "shpat_test_secret",
+      readOnly
+    }),
+    audit: new MemoryAuditLog(),
+    fetcher
   };
 }

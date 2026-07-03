@@ -1,6 +1,6 @@
 # Tool Contracts
 
-These are the intended V1 Shopify Store Agent MCP tool contracts. The current implementation contains foundation placeholders for many operations; real Shopify read/write API behavior will be added in later PRs.
+These are the intended V1 Shopify Store Agent MCP tool contracts. The current implementation includes real read-only Admin GraphQL tools and structured catalog/content preview tools. Execute/write tools remain fail-closed placeholders; real Shopify write API behavior will be added in later PRs.
 
 ## Global Write Contract
 
@@ -8,10 +8,13 @@ Every write tool has the same safety requirements:
 
 - Required input: explicit Shopify IDs, user-provided product data, user-provided URLs, CSV rows, image references, order numbers, customer emails, or other user-supplied targets.
 - Preview output: a structured summary of what would change, target identifiers, warnings, and an audit entry.
+- Preview status: `ok`, `missing_input`, or `validation_error`. Missing input and validation errors are audited as `blocked`; successful previews are audited as `success`.
 - Execute requirements: writes enabled, matching preview ID or equivalent reviewed input, explicit confirmation, and required Shopify capability/scope.
 - Confirmation requirement: the execute tool must receive explicit confirmation from the user or host.
 - Audit requirement: preview and execute attempts must be written to the audit log with tool name, target, mode, summary, and result.
 - Failure behavior: fail closed, do not partially continue silently, return a clear error, and leave enough audit context for review.
+
+Structured catalog/content preview tools return `ok`, `status`, `previewId`, `summary`, `target`, `proposedChanges`, `warnings`, `requiredConfirmationForExecute`, and `auditContext`. The output intentionally summarizes large user payloads and redacts secret-looking values instead of echoing raw full inputs.
 
 Current execute tools are placeholders. After read-only and confirmation checks pass, placeholder execute tools return `ok: false`, `implemented: false`, `status: "not_implemented"`, and `placeholder: true`. They must not be interpreted as successful Shopify writes, and their audit entries use `result: "not_implemented"` rather than `success`.
 
@@ -41,7 +44,7 @@ Output: minimal product summary with ID, title, handle, status, vendor, and prod
 
 Required input: user-provided title and product fields. Optional variants, images, collections, SEO fields, and metafields.
 
-Preview output: product draft summary, variant/media plan, missing-field warnings, and audit entry.
+Preview output: product creation plan, target summary, variant/media counts, missing-field warnings, confirmation requirement, preview ID, and audit entry. This tool does not call Shopify or perform mutations.
 
 ### `product.create.execute`
 
@@ -53,7 +56,7 @@ Execute requirements: `write_products`, writes enabled, explicit confirmation.
 
 Required input: explicit product ID or handle plus user-provided changes.
 
-Preview output: before/after summary for title, description, price, variants, media, status, and metadata.
+Preview output: before/after summary for supplied fields such as title, description, price, variants, media, status, and metadata. Before values are `unknown` unless an existing product summary is supplied separately or a future read-only integration provides it. This tool does not call Shopify or perform mutations.
 
 ### `product.update.execute`
 
@@ -63,9 +66,9 @@ Execute requirements: `write_products`, writes enabled, explicit confirmation.
 
 ### `product.media.update.preview`
 
-Required input: explicit product ID and user-provided media files, URLs, alt text, ordering, or delete instructions.
+Required input: explicit product ID or handle and user-provided media files, URLs, alt text, ordering, or delete instructions.
 
-Preview output: media add/update/delete plan.
+Preview output: media add/update/delete/reorder plan and delete-review warnings. This tool does not call Shopify or perform mutations.
 
 ### `product.media.update.execute`
 
@@ -77,9 +80,9 @@ Execute requirements: `write_products` and possibly `write_files`, writes enable
 
 Required input: user-provided Shopify URL and explicit instruction about what may be imported or rewritten.
 
-Preview output: extracted public-page signals, generated original product description draft, media references, variant/color interpretation, and warnings.
+Preview output: safe import/rewrite plan, original-content guidance from public rendered-page or user-provided signals, URL summary, and warnings.
 
-Failure behavior: do not bypass private code or protected content; if the URL cannot be read, return a clear failure.
+Failure behavior: do not bypass private code or protected content. Current behavior does not fetch, scrape, or verify the URL; it only plans from the user-provided URL and explicit user instructions. It must not copy private Liquid, protected source code, or private assets.
 
 ### `product.importFromUserUrl.execute`
 
@@ -161,7 +164,7 @@ Execute requirements: relevant fulfillment scopes, writes enabled, explicit conf
 
 Required input: user-provided title, body/content, handle, SEO fields, and publish preference.
 
-Preview output: page creation summary and generated content warnings.
+Preview output: page creation summary, content summary, SEO/publish plan, warnings, preview ID, and audit entry. This tool does not call Shopify or perform mutations.
 
 ### `page.create.execute`
 
@@ -173,7 +176,7 @@ Execute requirements: `write_content`, writes enabled, explicit confirmation.
 
 Required input: user-provided title and either explicit product IDs or explicit collection rules.
 
-Preview output: collection plan, products/rules summary, and warnings.
+Preview output: collection plan, explicit products/rules summary, warnings, preview ID, and audit entry. This tool requires either explicit product IDs or explicit rules and does not call Shopify or perform mutations.
 
 ### `collection.create.execute`
 
