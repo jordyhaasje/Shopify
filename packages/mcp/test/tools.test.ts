@@ -233,6 +233,14 @@ describe("MCP tools", () => {
       ok: true,
       mode: "preview",
       status: "ok",
+      previewHash: expect.stringMatching(/^sha256:/),
+      binding: {
+        previewId: expect.any(String),
+        expectedTool: "product.create.preview",
+        target: "Linen Shirt",
+        previewHash: expect.stringMatching(/^sha256:/),
+        expiresAt: expect.any(String)
+      },
       target: { type: "product", title: "Linen Shirt" },
       auditContext: {
         tool: "product.create.preview",
@@ -249,6 +257,13 @@ describe("MCP tools", () => {
       tool: "product.create.preview",
       mode: "preview",
       result: "success"
+    });
+    expect(context.previewStore?.getPreview((result as { previewId: string }).previewId)).toMatchObject({
+      ok: true,
+      record: {
+        tool: "product.create.preview",
+        previewHash: (result as { previewHash: string }).previewHash
+      }
     });
   });
 
@@ -800,6 +815,74 @@ describe("MCP tools", () => {
       result: "not_implemented"
     });
     expect(fetchCalled).toBe(false);
+  });
+
+  it("uses a stored preview binding to keep execute placeholders not implemented", async () => {
+    const context = baseContext(undefined, false);
+    const preview = await callTool("product.create.preview", {
+      title: "Stored Preview Shirt",
+      description: "A reviewed product."
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+
+    const result = await callTool("product.create.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: { reviewed: true },
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: preview.previewHash,
+      title: "Stored Preview Shirt"
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: false,
+      status: "not_implemented",
+      placeholder: true
+    });
+    expect(context.audit.list()[1]).toMatchObject({
+      tool: "product.create.execute",
+      mode: "execute",
+      result: "not_implemented"
+    });
+  });
+
+  it("blocks expired stored preview binding before execute placeholder flow", async () => {
+    const context = baseContext(undefined, false);
+    const preview = await callTool("product.create.preview", {
+      title: "Expired Preview Shirt",
+      description: "A reviewed product."
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    context.previewStore?.expirePreview(preview.previewId);
+
+    const result = await callTool("product.create.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: { reviewed: true },
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: preview.previewHash,
+      title: "Expired Preview Shirt"
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: false,
+      status: "blocked",
+      placeholder: true,
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "stored_preview_expired" })])
+    });
+    expect(context.audit.list()[1]).toMatchObject({
+      tool: "product.create.execute",
+      mode: "execute",
+      result: "blocked"
+    });
   });
 
   it("keeps catalog and content execute tools not implemented without calling fetchers", async () => {
