@@ -97,11 +97,19 @@ async function enrichProductUpdateInput(
   if (!productId && !id && !handle) return { input };
   if (!hasProductUpdateChanges(input)) return { input };
 
-  const read = await getProduct(context.config, {
-    id: id || undefined,
-    productId: productId || undefined,
-    handle: handle || undefined
-  }, { fetcher: context.fetcher });
+  let read: ReadResult<ProductSummary>;
+  try {
+    read = await getProduct(context.config, {
+      id: id || undefined,
+      productId: productId || undefined,
+      handle: handle || undefined
+    }, { fetcher: context.fetcher });
+  } catch {
+    return {
+      input,
+      warning: readEnrichmentWarning()
+    };
+  }
   if (read.item) return { input: { ...input, existingProductSummary: minimalProductBefore(read.item) } };
 
   return {
@@ -128,10 +136,11 @@ function minimalProductBefore(product: ProductSummary): ProductSummary {
   };
 }
 
-function readEnrichmentWarning(read: ReadResult<ProductSummary>): PreviewWarning {
+function readEnrichmentWarning(read?: ReadResult<ProductSummary>): PreviewWarning {
+  const reason = read ? ` (${read.status})` : "";
   return {
     code: "read_enrichment_unavailable",
-    message: `Read-only product enrichment was unavailable (${read.status}); before values remain unknown.`
+    message: `Read-only product enrichment was unavailable${reason}; before values remain unknown.`
   };
 }
 

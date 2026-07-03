@@ -486,6 +486,38 @@ describe("MCP tools", () => {
     });
   });
 
+  it("keeps preview successful with a sanitized warning when read enrichment throws", async () => {
+    const context = baseContext(async () => {
+      throw new Error("network failed with token shpat_thrown_secret");
+    });
+
+    const result = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      enrichExistingProduct: true,
+      changes: { title: "New Shirt" }
+    }, context);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "preview",
+      status: "ok",
+      warnings: expect.arrayContaining([
+        {
+          code: "read_enrichment_unavailable",
+          message: "Read-only product enrichment was unavailable; before values remain unknown."
+        }
+      ])
+    });
+    expect(changeFor(result, "title")).toMatchObject({ before: "unknown", after: "New Shirt" });
+    expect(output).not.toContain("shpat_thrown_secret");
+    expect(context.audit.list()[0]).toMatchObject({
+      tool: "product.update.preview",
+      mode: "preview",
+      result: "success"
+    });
+  });
+
   it("redacts read-enriched secret-looking values from preview output and audit", async () => {
     const context = baseContext(async () => jsonResponse({
       data: {
