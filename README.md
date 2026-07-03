@@ -12,9 +12,11 @@ Shopify OAuth, when used, is only a local install/auth mechanism for the MCP/CLI
 
 ## Current Status
 
-Foundation work is in progress: auth, config storage, documentation, MCP SDK startup, safety helpers, Admin GraphQL diagnostics, and placeholder tool contracts.
+The foundation is in place: auth, config storage, documentation, MCP SDK startup, safety helpers, Admin GraphQL client, and capability diagnostics.
 
-Many Shopify operation tools are still placeholders/contracts. Real Shopify read/write API tools will be implemented in later PRs.
+Real read-only Shopify MCP tools are implemented for `shopify.capabilities.check`, `order.find`, `order.get`, `customer.find`, `tracking.get`, and `product.get`.
+
+Write tools are still guarded fail-closed placeholders, including product create/update execute, customer address update execute, refund execute, tracking update execute, page/collection execute, bulk execute, and theme apply. No Shopify mutations are implemented yet.
 
 ## Temporary GitHub Install
 

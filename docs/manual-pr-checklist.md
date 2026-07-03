@@ -15,6 +15,7 @@ pnpm run build
 ```
 
 - Review changed docs for product-boundary drift.
+- Review read-tool audit behavior: successful read, not found, and multiple matches use `success`; missing input uses `blocked`; Shopify/API/invalid response uses `failed`.
 - Review execute tools for read-only, preview, confirmation, and audit behavior.
 - Review capability or auth changes for token redaction and mocked tests only.
 - Merge manually only after local validation and reviewer approval.

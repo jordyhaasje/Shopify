@@ -8,6 +8,11 @@ import {
   createRefundPreview,
   emptyCapabilities,
   type FetchLike,
+  findCustomers,
+  findOrders,
+  getOrder,
+  getProduct,
+  getTracking,
   loadStoredConfig,
   planThemeSection,
   type StoreAgentConfig
@@ -55,6 +60,35 @@ function readResult(tool: string, target: string, summary: string, context: Tool
     result: "success"
   });
   return { ok: true, mode: "read", summary, audit, ...extra };
+}
+
+async function shopifyReadResult(
+  tool: string,
+  target: string,
+  summary: string,
+  context: ToolContext,
+  resultPromise: Promise<unknown>
+): Promise<Record<string, unknown>> {
+  const result = await resultPromise;
+  const ok = typeof result === "object" && result !== null && "ok" in result && typeof result.ok === "boolean" ? result.ok : true;
+  const auditResult = auditResultForRead(result);
+  const audit = context.audit.record({
+    tool,
+    target,
+    mode: "read",
+    summary,
+    result: auditResult
+  });
+  return { ok, mode: "read", audit, result };
+}
+
+function auditResultForRead(result: unknown): "success" | "blocked" | "failed" {
+  if (!result || typeof result !== "object" || !("status" in result)) return "failed";
+  const status = (result as { status: unknown }).status;
+  if (status === "ok" || status === "not_found" || status === "multiple_matches") return "success";
+  if (status === "missing_input") return "blocked";
+  if (status === "shopify_error" || status === "invalid_response") return "failed";
+  return "failed";
 }
 
 function executePlaceholder(tool: string, target: string, summary: string, input: Record<string, unknown>, context: ToolContext): Record<string, unknown> {
@@ -168,22 +202,68 @@ export const tools: ToolDefinition[] = [
     handler: (input, context) => executePlaceholder("product.importFromUserUrl.execute", stringInput(input, "url", "product-url"), "Product import-from-URL execution placeholder.", input, context)
   },
   {
+    name: "product.get",
+    description: "Read minimal product metadata by explicit product ID or handle.",
+    inputSchema: { type: "object" },
+    handler: (input, context) => shopifyReadResult(
+      "product.get",
+      stringInput(input, "productId") || stringInput(input, "id") || stringInput(input, "handle", "product"),
+      "Product get request completed.",
+      context,
+      getProduct(context.config, {
+        id: stringInput(input, "id") || undefined,
+        productId: stringInput(input, "productId") || undefined,
+        handle: stringInput(input, "handle") || undefined
+      }, { fetcher: context.fetcher })
+    )
+  },
+  {
     name: "order.find",
     description: "Find order candidates by explicit order number, customer email, or order ID.",
     inputSchema: { type: "object" },
-    handler: (input, context) => readResult("order.find", stringInput(input, "query", "order"), "Order find request prepared.", context)
+    handler: (input, context) => shopifyReadResult(
+      "order.find",
+      stringInput(input, "id") || stringInput(input, "orderNumber") || stringInput(input, "email") || stringInput(input, "query", "order"),
+      "Order find request completed.",
+      context,
+      findOrders(context.config, {
+        id: stringInput(input, "id") || undefined,
+        orderNumber: stringInput(input, "orderNumber") || undefined,
+        email: stringInput(input, "email") || undefined,
+        query: stringInput(input, "query") || undefined
+      }, { fetcher: context.fetcher })
+    )
   },
   {
     name: "order.get",
     description: "Get an order by explicit Shopify order ID.",
     inputSchema: { type: "object" },
-    handler: (input, context) => readResult("order.get", stringInput(input, "orderId", "order"), "Order get request prepared.", context)
+    handler: (input, context) => shopifyReadResult(
+      "order.get",
+      stringInput(input, "orderId") || stringInput(input, "id", "order"),
+      "Order get request completed.",
+      context,
+      getOrder(context.config, {
+        id: stringInput(input, "id") || undefined,
+        orderId: stringInput(input, "orderId") || undefined
+      }, { fetcher: context.fetcher })
+    )
   },
   {
     name: "customer.find",
     description: "Find customer candidates by user-provided email, name, phone, or Shopify ID.",
     inputSchema: { type: "object" },
-    handler: (input, context) => readResult("customer.find", stringInput(input, "query", "customer"), "Customer find request prepared.", context)
+    handler: (input, context) => shopifyReadResult(
+      "customer.find",
+      stringInput(input, "id") || stringInput(input, "email") || stringInput(input, "query", "customer"),
+      "Customer find request completed.",
+      context,
+      findCustomers(context.config, {
+        id: stringInput(input, "id") || undefined,
+        email: stringInput(input, "email") || undefined,
+        query: stringInput(input, "query") || undefined
+      }, { fetcher: context.fetcher })
+    )
   },
   {
     name: "customer.updateAddress.preview",
@@ -220,7 +300,18 @@ export const tools: ToolDefinition[] = [
     name: "tracking.get",
     description: "Get tracking details by explicit order, fulfillment, or tracking input.",
     inputSchema: { type: "object" },
-    handler: (input, context) => readResult("tracking.get", stringInput(input, "query", "tracking"), "Tracking get request prepared.", context)
+    handler: (input, context) => shopifyReadResult(
+      "tracking.get",
+      stringInput(input, "orderId") || stringInput(input, "fulfillmentId") || stringInput(input, "trackingNumber") || stringInput(input, "query", "tracking"),
+      "Tracking get request completed.",
+      context,
+      getTracking(context.config, {
+        orderId: stringInput(input, "orderId") || undefined,
+        fulfillmentId: stringInput(input, "fulfillmentId") || undefined,
+        trackingNumber: stringInput(input, "trackingNumber") || undefined,
+        query: stringInput(input, "query") || undefined
+      }, { fetcher: context.fetcher })
+    )
   },
   {
     name: "tracking.update.preview",

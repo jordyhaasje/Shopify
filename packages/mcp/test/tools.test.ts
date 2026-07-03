@@ -13,6 +13,7 @@ const expectedToolNames = [
   "product.media.update.execute",
   "product.importFromUserUrl.preview",
   "product.importFromUserUrl.execute",
+  "product.get",
   "order.find",
   "order.get",
   "customer.find",
@@ -126,6 +127,98 @@ describe("MCP tools", () => {
     });
   });
 
+  it("runs order.find as a real read tool with audit", async () => {
+    const context = readContext({
+      data: {
+        orders: {
+          nodes: [{
+            id: "gid://shopify/Order/1",
+            name: "#1001",
+            customer: { id: "gid://shopify/Customer/1", displayName: "Customer One", email: "customer@example.com" },
+            fulfillments: []
+          }]
+        }
+      }
+    });
+
+    const result = await callTool("order.find", { orderNumber: "1001" }, context);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "read",
+      result: {
+        status: "ok",
+        matches: [{ id: "gid://shopify/Order/1", name: "#1001" }]
+      }
+    });
+    expect(context.audit.list()[0]).toMatchObject({ tool: "order.find", mode: "read", result: "success" });
+    expect(JSON.stringify(result)).not.toContain("rawNodeOnly");
+  });
+
+  it("returns a clear missing input diagnostic for read tools", async () => {
+    const context = readContext({ data: { orders: { nodes: [] } } });
+
+    const result = await callTool("order.find", {}, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      result: {
+        ok: false,
+        status: "missing_input",
+        diagnostics: [{ code: "missing_input" }]
+      }
+    });
+    expect(context.audit.list()[0]).toMatchObject({ tool: "order.find", mode: "read", result: "blocked" });
+  });
+
+  it("records failed audit for Shopify read errors", async () => {
+    const context = readContext({
+      errors: [{ message: "Access denied for orders", extensions: { code: "ACCESS_DENIED" } }]
+    });
+
+    const result = await callTool("order.get", { orderId: "gid://shopify/Order/1" }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "read",
+      result: {
+        ok: false,
+        status: "shopify_error",
+        diagnostics: [{ code: "access_denied" }]
+      }
+    });
+    expect(context.audit.list()[0]).toMatchObject({ tool: "order.get", mode: "read", result: "failed" });
+  });
+
+  it("runs product.get as a real read tool", async () => {
+    const context = readContext({
+      data: {
+        productByHandle: {
+          id: "gid://shopify/Product/1",
+          title: "Shirt",
+          handle: "shirt",
+          status: "ACTIVE",
+          rawNodeOnly: true
+        }
+      }
+    });
+
+    const result = await callTool("product.get", { handle: "shirt" }, context);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "read",
+      result: {
+        item: {
+          id: "gid://shopify/Product/1",
+          title: "Shirt",
+          handle: "shirt"
+        }
+      }
+    });
+    expect(JSON.stringify(result)).not.toContain("rawNodeOnly");
+  });
+
   it("blocks theme apply without confirmation", async () => {
     const context: ToolContext = {
       config: createConfig({ storeUrl: "demo", readOnly: false }),
@@ -221,3 +314,21 @@ describe("MCP tools", () => {
     });
   });
 });
+
+function readContext(responseBody: unknown): ToolContext {
+  return {
+    config: createConfig({
+      storeUrl: "demo",
+      adminAccessToken: "shpat_test_secret",
+      readOnly: true
+    }),
+    audit: new MemoryAuditLog(),
+    fetcher: async () => ({
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify(responseBody);
+      }
+    })
+  };
+}
