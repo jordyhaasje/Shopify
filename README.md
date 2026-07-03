@@ -12,7 +12,7 @@ Shopify OAuth, when used, is only a local install/auth mechanism for the MCP/CLI
 
 ## Current Status
 
-Foundation work is in progress: auth, config storage, documentation, MCP SDK startup, safety helpers, and placeholder tool contracts.
+Foundation work is in progress: auth, config storage, documentation, MCP SDK startup, safety helpers, Admin GraphQL diagnostics, and placeholder tool contracts.
 
 Many Shopify operation tools are still placeholders/contracts. Real Shopify read/write API tools will be implemented in later PRs.
 
@@ -45,6 +45,8 @@ npx shopify-store-agent setup
 ```
 
 The wizard should guide users through auth, local config, capability checks, and MCP host snippets.
+
+`shopify.capabilities.check` is partially real: by default it only inspects local config and redacted capability flags. Optional live mode performs only a minimal shop identity check and does not fetch products, orders, customers, or other sensitive data.
 
 ## Safety Model
 

@@ -23,7 +23,9 @@ The agent must never autonomously search for products. Users provide the product
 
 Required input: store config location or environment-based config.
 
-Output: available Admin API, theme, file, and CLI capabilities, with missing scopes or credentials summarized.
+Output: store URL, API version, read-only mode, whether Admin API and Theme Access tokens are configured, local capability flags, diagnostics, and setup recommendations. Tokens are never returned.
+
+Default behavior is local-only. If called with `{ "live": true }` and an Admin API token is configured, it may run a minimal Admin GraphQL shop identity query. It must not fetch orders, customers, products, or other sensitive store data.
 
 Failure behavior: return a diagnostic result where possible; throw only for invalid local configuration.
 

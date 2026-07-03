@@ -56,6 +56,76 @@ describe("MCP tools", () => {
     await expect(callTool("product.create", {})).rejects.toThrow("Unknown tool");
   });
 
+  it("returns safe local capability diagnostics without exposing secrets", async () => {
+    const context: ToolContext = {
+      config: createConfig({
+        storeUrl: "demo",
+        adminAccessToken: "shpat_test_secret",
+        themeAccessToken: "theme_test_secret"
+      }),
+      audit: new MemoryAuditLog()
+    };
+
+    const result = await callTool("shopify.capabilities.check", {}, context);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "read",
+      diagnostics: {
+        mode: "local",
+        store: {
+          adminApiTokenConfigured: true,
+          themeAccessTokenConfigured: true
+        }
+      }
+    });
+    expect(JSON.stringify(result)).not.toContain("shpat_test_secret");
+    expect(JSON.stringify(result)).not.toContain("theme_test_secret");
+    expect(context.audit.list()[0]).toMatchObject({
+      tool: "shopify.capabilities.check",
+      mode: "read",
+      result: "success"
+    });
+  });
+
+  it("uses mocked fetch for live capability diagnostics only", async () => {
+    const context: ToolContext = {
+      config: createConfig({
+        storeUrl: "demo",
+        adminAccessToken: "token"
+      }),
+      audit: new MemoryAuditLog(),
+      fetcher: async () => ({
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            data: {
+              shop: {
+                name: "Demo Shop",
+                myshopifyDomain: "demo.myshopify.com",
+                primaryDomain: { host: "example.com" }
+              }
+            }
+          });
+        }
+      })
+    };
+
+    const result = await callTool("shopify.capabilities.check", { live: true }, context);
+
+    expect(result).toMatchObject({
+      ok: true,
+      diagnostics: {
+        mode: "live",
+        live: {
+          attempted: true,
+          ok: true
+        }
+      }
+    });
+  });
+
   it("blocks theme apply without confirmation", async () => {
     const context: ToolContext = {
       config: createConfig({ storeUrl: "demo", readOnly: false }),
@@ -75,9 +145,20 @@ describe("MCP tools", () => {
   });
 
   it("reports confirmed execute placeholders as not implemented", async () => {
+    let fetchCalled = false;
     const context: ToolContext = {
       config: createConfig({ storeUrl: "demo", readOnly: false }),
-      audit: new MemoryAuditLog()
+      audit: new MemoryAuditLog(),
+      fetcher: async () => {
+        fetchCalled = true;
+        return {
+          ok: true,
+          status: 200,
+          async text() {
+            return "{}";
+          }
+        };
+      }
     };
 
     const result = await callTool("product.create.execute", { title: "Test product", confirmed: true }, context);
@@ -95,6 +176,7 @@ describe("MCP tools", () => {
       mode: "execute",
       result: "not_implemented"
     });
+    expect(fetchCalled).toBe(false);
   });
 
   it("keeps refund execute as a not-implemented placeholder with idempotency context", async () => {

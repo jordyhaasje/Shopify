@@ -16,4 +16,5 @@ pnpm run build
 
 - Review changed docs for product-boundary drift.
 - Review execute tools for read-only, preview, confirmation, and audit behavior.
+- Review capability or auth changes for token redaction and mocked tests only.
 - Merge manually only after local validation and reviewer approval.

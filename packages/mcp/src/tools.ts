@@ -2,14 +2,14 @@ import {
   MemoryAuditLog,
   assertThemeApplyAllowed,
   assertWritable,
+  checkShopifyCapabilities,
   createBulkPreview,
   createConfig,
   createRefundPreview,
   emptyCapabilities,
+  type FetchLike,
   loadStoredConfig,
   planThemeSection,
-  redactConfig,
-  summarizeCapabilities,
   type StoreAgentConfig
 } from "@shopify-store-agent/core";
 
@@ -23,6 +23,7 @@ export interface ToolDefinition {
 export interface ToolContext {
   config: StoreAgentConfig;
   audit: MemoryAuditLog;
+  fetcher?: FetchLike;
 }
 
 function booleanInput(input: Record<string, unknown>, key: string): boolean {
@@ -97,16 +98,26 @@ export const tools: ToolDefinition[] = [
     name: "shopify.capabilities.check",
     description: "Check local Shopify Store Agent config and known capability flags.",
     inputSchema: { type: "object" },
-    handler: (_input, context) => readResult(
-      "shopify.capabilities.check",
-      context.config.storeUrl,
-      "Capability check placeholder generated from local config.",
-      context,
-      {
-        config: redactConfig(context.config),
-        capabilities: summarizeCapabilities(context.config.capabilities ?? emptyCapabilities())
-      }
-    )
+    handler: async (input, context) => {
+      const live = booleanInput(input, "live");
+      const result = await checkShopifyCapabilities(context.config, {
+        live,
+        fetcher: context.fetcher
+      });
+      const audit = context.audit.record({
+        tool: "shopify.capabilities.check",
+        target: context.config.storeUrl,
+        mode: "read",
+        summary: live ? "Live-safe Shopify capability diagnostics generated." : "Local Shopify capability diagnostics generated.",
+        result: "success"
+      });
+      return {
+        ok: result.ok,
+        mode: "read",
+        audit,
+        diagnostics: result
+      };
+    }
   },
   {
     name: "product.create.preview",
