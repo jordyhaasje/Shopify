@@ -719,6 +719,44 @@ describe("MCP tools", () => {
     expect(context.audit.list()[0]).toMatchObject({ result: "blocked" });
   });
 
+  it("blocks execute with secret-looking mismatched hashes without leaking them", async () => {
+    const context: ToolContext = {
+      config: createConfig({ storeUrl: "demo", readOnly: false }),
+      audit: new MemoryAuditLog()
+    };
+
+    const result = await callTool("product.update.execute", {
+      previewId: "preview_123",
+      confirmed: true,
+      reviewedPayload: { reviewed: true },
+      expectedTool: "product.update.preview",
+      target: "gid://shopify/Product/1",
+      previewHash: "shpat_hash_a",
+      reviewedChangesHash: "shpat_hash_b",
+      productId: "gid://shopify/Product/1"
+    }, context);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: false,
+      status: "blocked",
+      placeholder: true,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "invalid_secret_like_hash" }),
+        expect.objectContaining({ code: "preview_hash_mismatch" })
+      ])
+    });
+    expect(output).not.toContain("shpat_hash_a");
+    expect(output).not.toContain("shpat_hash_b");
+    expect(context.audit.list()[0]).toMatchObject({
+      tool: "product.update.execute",
+      mode: "execute",
+      result: "blocked"
+    });
+  });
+
   it("reports validly bound execute placeholders as not implemented", async () => {
     let fetchCalled = false;
     const context: ToolContext = {
@@ -852,7 +890,7 @@ describe("MCP tools", () => {
     });
   });
 
-  it("redacts secret-looking execute binding values from output and audit", async () => {
+  it("blocks and redacts secret-looking execute binding control values from output and audit", async () => {
     const context: ToolContext = {
       config: createConfig({ storeUrl: "demo", readOnly: false }),
       audit: new MemoryAuditLog()
@@ -873,11 +911,15 @@ describe("MCP tools", () => {
     expect(result).toMatchObject({
       ok: false,
       mode: "execute",
-      status: "not_implemented"
+      status: "blocked",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "invalid_secret_like_preview_id" }),
+        expect.objectContaining({ code: "target_mismatch" })
+      ])
     });
     expect(output).not.toContain("shpat_execute_secret");
     expect(context.audit.list()[0].target).not.toContain("shpat_execute_secret");
-    expect(context.audit.list()[0]).toMatchObject({ result: "not_implemented" });
+    expect(context.audit.list()[0]).toMatchObject({ result: "blocked" });
   });
 
   it("keeps theme apply binding guards before not implemented", async () => {

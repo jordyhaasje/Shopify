@@ -126,6 +126,80 @@ describe("execute preview binding", () => {
     ]);
   });
 
+  it("blocks different secret-looking hashes instead of comparing redacted values", () => {
+    const result = validateExecutePreviewBinding({
+      previewId: "preview_123",
+      confirmed: true,
+      reviewedPayload: { reviewed: true },
+      expectedTool: "product.update.preview",
+      target: "gid://shopify/Product/1",
+      previewHash: "shpat_hash_a",
+      reviewedChangesHash: "shpat_hash_b"
+    }, {
+      executeTool: "product.update.execute",
+      expectedPreviewTool: "product.update.preview",
+      target: "gid://shopify/Product/1"
+    });
+    const output = JSON.stringify(result);
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "invalid_secret_like_hash",
+      "invalid_secret_like_hash",
+      "preview_hash_mismatch"
+    ]);
+    expect(output).not.toContain("shpat_hash_a");
+    expect(output).not.toContain("shpat_hash_b");
+  });
+
+  it("blocks different secret-looking targets instead of comparing redacted values", () => {
+    const result = validateExecutePreviewBinding({
+      previewId: "preview_123",
+      confirmed: true,
+      reviewedPayload: { reviewed: true },
+      expectedTool: "product.update.preview",
+      target: "target_shpat_secret_a",
+      previewHash: "hash-a",
+      reviewedChangesHash: "hash-a"
+    }, {
+      executeTool: "product.update.execute",
+      expectedPreviewTool: "product.update.preview",
+      target: "target_shpat_secret_b"
+    });
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: [{ code: "target_mismatch" }]
+    });
+    expect(output).not.toContain("target_shpat_secret_a");
+    expect(output).not.toContain("target_shpat_secret_b");
+  });
+
+  it("blocks secret-looking preview IDs", () => {
+    const result = validateExecutePreviewBinding({
+      previewId: "preview_shpat_binding_secret",
+      confirmed: true,
+      reviewedPayload: { reviewed: true },
+      expectedTool: "product.create.preview",
+      target: "product",
+      previewHash: "hash-a",
+      reviewedChangesHash: "hash-a"
+    }, {
+      executeTool: "product.create.execute",
+      expectedPreviewTool: "product.create.preview",
+      target: "product"
+    });
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: false,
+      previewId: "[redacted]",
+      diagnostics: [{ code: "invalid_secret_like_preview_id" }]
+    });
+    expect(output).not.toContain("shpat_binding_secret");
+  });
+
   it("accepts complete preview binding input", () => {
     const result = validateExecutePreviewBinding({
       previewId: "preview_123",
@@ -148,9 +222,9 @@ describe("execute preview binding", () => {
     });
   });
 
-  it("redacts secret-looking binding scalars", () => {
+  it("redacts secret-looking returned target values", () => {
     const result = validateExecutePreviewBinding({
-      previewId: "preview_shpat_binding_secret",
+      previewId: "preview_123",
       confirmed: true,
       reviewedPayload: { reviewed: true },
       expectedTool: "product.create.preview",
@@ -160,14 +234,14 @@ describe("execute preview binding", () => {
     }, {
       executeTool: "product.create.execute",
       expectedPreviewTool: "product.create.preview",
-      target: "[redacted]"
+      target: "target_shpua_binding_secret"
     });
 
     expect(JSON.stringify(result)).not.toContain("shpat_binding_secret");
     expect(JSON.stringify(result)).not.toContain("shpua_binding_secret");
     expect(result).toMatchObject({
       ok: true,
-      previewId: "[redacted]",
+      previewId: "preview_123",
       target: "[redacted]"
     });
   });

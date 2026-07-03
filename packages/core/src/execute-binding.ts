@@ -35,13 +35,14 @@ export function validateExecutePreviewBinding(
   context: ExecutePreviewBindingContext
 ): ExecutePreviewBindingResult {
   const diagnostics: ExecutePreviewBindingDiagnostic[] = [];
-  const previewId = safeString(input.previewId);
-  const expectedTool = safeString(input.expectedTool);
-  const target = safeString(input.target);
-  const previewHash = safeString(input.previewHash);
-  const reviewedChangesHash = safeString(input.reviewedChangesHash);
+  const previewId = normalizeBindingString(input.previewId);
+  const expectedTool = normalizeBindingString(input.expectedTool);
+  const target = normalizeBindingString(input.target);
+  const previewHash = normalizeBindingString(input.previewHash);
+  const reviewedChangesHash = normalizeBindingString(input.reviewedChangesHash);
 
   if (!previewId) diagnostics.push(diagnostic("missing_preview_id", "Execute requires a previewId from a reviewed preview."));
+  if (previewId && looksLikeSecret(previewId)) diagnostics.push(diagnostic("invalid_secret_like_preview_id", "Execute previewId must be a non-secret preview reference."));
   if (input.confirmed !== true) diagnostics.push(diagnostic("missing_confirmation", "Execute requires explicit confirmation after preview review."));
   if (!isReviewedPayload(input.reviewedPayload)) diagnostics.push(diagnostic("missing_reviewed_payload", "Execute requires a reviewedPayload bound to the preview."));
   if (!expectedTool) diagnostics.push(diagnostic("missing_expected_tool", "Execute requires the reviewed preview tool name."));
@@ -49,14 +50,16 @@ export function validateExecutePreviewBinding(
   if (!target) diagnostics.push(diagnostic("missing_target", "Execute requires the reviewed preview target."));
   if (target && target !== context.target) diagnostics.push(diagnostic("target_mismatch", "Execute preview binding target does not match this execute target."));
   if (!previewHash) diagnostics.push(diagnostic("missing_preview_hash", "Execute requires the reviewed preview hash."));
+  if (previewHash && looksLikeSecret(previewHash)) diagnostics.push(diagnostic("invalid_secret_like_hash", "Execute binding hashes must be non-secret review hashes."));
   if (!reviewedChangesHash) diagnostics.push(diagnostic("missing_reviewed_changes_hash", "Execute requires the reviewed changes hash."));
+  if (reviewedChangesHash && looksLikeSecret(reviewedChangesHash)) diagnostics.push(diagnostic("invalid_secret_like_hash", "Execute binding hashes must be non-secret review hashes."));
   if (previewHash && reviewedChangesHash && previewHash !== reviewedChangesHash) diagnostics.push(diagnostic("preview_hash_mismatch", "Execute preview binding hash does not match the reviewed changes hash."));
 
   return {
     ok: diagnostics.length === 0,
-    previewId,
+    previewId: safeString(input.previewId),
     expectedPreviewTool: context.expectedPreviewTool,
-    target: context.target,
+    target: safeString(context.target) ?? context.target,
     diagnostics
   };
 }
@@ -69,11 +72,16 @@ function diagnostic(code: string, message: string): ExecutePreviewBindingDiagnos
   return { code, message };
 }
 
+function normalizeBindingString(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const normalized = value.trim();
+  return normalized.length > maxScalarLength ? `${normalized.slice(0, maxScalarLength)}...` : normalized;
+}
+
 function safeString(value: unknown): string | undefined {
   if (typeof value !== "string" || !value.trim()) return undefined;
   if (looksLikeSecret(value)) return redacted;
-  const normalized = value.trim();
-  return normalized.length > maxScalarLength ? `${normalized.slice(0, maxScalarLength)}...` : normalized;
+  return normalizeBindingString(value);
 }
 
 function looksLikeSecret(value: string): boolean {
