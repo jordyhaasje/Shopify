@@ -3,6 +3,7 @@ import {
   MemoryPreviewStore,
   hashPreviewContent,
   previewRecordBindingTarget,
+  reviewedPayloadForPreviewRecord,
   verifyStoredPreviewBinding
 } from "../src/preview-store.js";
 
@@ -26,14 +27,15 @@ describe("preview store", () => {
     });
   });
 
-  it("keeps provided preview IDs stable and generated preview IDs unique by content", () => {
+  it("keeps provided preview IDs stable and generated preview IDs unique per event", () => {
     const store = new MemoryPreviewStore();
     const provided = store.savePreview({ ...productPreview(), previewId: "preview_supplied" });
-    const first = store.savePreview(productPreview({ target: { type: "product", title: "A" } }));
-    const second = store.savePreview(productPreview({ target: { type: "product", title: "B" } }));
+    const first = store.savePreview(productPreview());
+    const second = store.savePreview(productPreview());
 
     expect(provided.previewId).toBe("preview_supplied");
     expect(first.previewId).not.toBe(second.previewId);
+    expect(first.previewHash).toBe(second.previewHash);
   });
 
   it("hashes deterministic safe content independent of object key order", () => {
@@ -117,7 +119,7 @@ describe("preview store", () => {
     expect(output).not.toContain("Reviewed");
   });
 
-  it("verifies matching stored preview binding and still only authorizes placeholder flow", () => {
+  it("blocks when reviewed payload does not hash to the stored preview content", () => {
     const store = new MemoryPreviewStore();
     const record = store.savePreview(productPreview());
     const target = previewRecordBindingTarget(record);
@@ -125,6 +127,30 @@ describe("preview store", () => {
       previewId: record.previewId,
       confirmed: true,
       reviewedPayload: { reviewed: true },
+      expectedTool: "product.create.preview",
+      target,
+      previewHash: record.previewHash,
+      reviewedChangesHash: hashPreviewContent({ reviewed: true })
+    }, {
+      executeTool: "product.create.execute",
+      expectedPreviewTool: "product.create.preview",
+      target
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "reviewed_payload_hash_mismatch" })])
+    });
+  });
+
+  it("does not accept arbitrary reviewed payload with copied preview hash", () => {
+    const store = new MemoryPreviewStore();
+    const record = store.savePreview(productPreview());
+    const target = previewRecordBindingTarget(record);
+    const result = verifyStoredPreviewBinding(store, {
+      previewId: record.previewId,
+      confirmed: true,
+      reviewedPayload: { arbitrary: "payload" },
       expectedTool: "product.create.preview",
       target,
       previewHash: record.previewHash,
@@ -136,20 +162,77 @@ describe("preview store", () => {
     });
 
     expect(result).toMatchObject({
+      ok: false,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "reviewed_payload_hash_mismatch" }),
+        expect.objectContaining({ code: "reviewed_changes_hash_mismatch" })
+      ])
+    });
+  });
+
+  it("requires caller reviewed changes hash to match the actual reviewed payload", () => {
+    const store = new MemoryPreviewStore();
+    const record = store.savePreview(productPreview());
+    const target = previewRecordBindingTarget(record);
+    const reviewedPayload = reviewedPayloadForPreviewRecord(record);
+    const result = verifyStoredPreviewBinding(store, {
+      previewId: record.previewId,
+      confirmed: true,
+      reviewedPayload,
+      expectedTool: "product.create.preview",
+      target,
+      previewHash: record.previewHash,
+      reviewedChangesHash: "sha256:not-the-reviewed-payload"
+    }, {
+      executeTool: "product.create.execute",
+      expectedPreviewTool: "product.create.preview",
+      target
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "reviewed_changes_hash_mismatch" })])
+    });
+  });
+
+  it("verifies matching stored preview binding and still only authorizes placeholder flow", () => {
+    const store = new MemoryPreviewStore();
+    const record = store.savePreview(productPreview());
+    const target = previewRecordBindingTarget(record);
+    const reviewedPayload = reviewedPayloadForPreviewRecord(record);
+    const reviewedChangesHash = hashPreviewContent(reviewedPayload);
+    const result = verifyStoredPreviewBinding(store, {
+      previewId: record.previewId,
+      confirmed: true,
+      reviewedPayload,
+      expectedTool: "product.create.preview",
+      target,
+      previewHash: record.previewHash,
+      reviewedChangesHash
+    }, {
+      executeTool: "product.create.execute",
+      expectedPreviewTool: "product.create.preview",
+      target
+    });
+
+    expect(result).toMatchObject({
       ok: true,
       diagnostics: []
     });
+    expect(reviewedChangesHash).toBe(record.previewHash);
+    expect(JSON.stringify(result)).not.toContain("proposedChanges");
   });
 
   it("blocks expired and mismatched stored preview bindings", () => {
     const store = new MemoryPreviewStore();
     const record = store.savePreview(productPreview());
     store.expirePreview(record.previewId);
+    const reviewedPayload = reviewedPayloadForPreviewRecord(record);
 
     const expired = verifyStoredPreviewBinding(store, {
       previewId: record.previewId,
       confirmed: true,
-      reviewedPayload: { reviewed: true },
+      reviewedPayload,
       expectedTool: "product.create.preview",
       target: "Linen Shirt",
       previewHash: record.previewHash,
@@ -162,10 +245,11 @@ describe("preview store", () => {
 
     const active = new MemoryPreviewStore();
     const activeRecord = active.savePreview(productPreview());
+    const activePayload = reviewedPayloadForPreviewRecord(activeRecord);
     const mismatched = verifyStoredPreviewBinding(active, {
       previewId: activeRecord.previewId,
       confirmed: true,
-      reviewedPayload: { reviewed: true },
+      reviewedPayload: activePayload,
       expectedTool: "product.create.preview",
       target: "Different Shirt",
       previewHash: "sha256:different",
@@ -186,6 +270,46 @@ describe("preview store", () => {
         expect.objectContaining({ code: "stored_preview_target_mismatch" }),
         expect.objectContaining({ code: "stored_preview_hash_mismatch" })
       ])
+    });
+  });
+
+  it("does not leak raw reviewed payload secrets through binding diagnostics", () => {
+    const store = new MemoryPreviewStore();
+    const record = store.savePreview(productPreview());
+    const target = previewRecordBindingTarget(record);
+    const result = verifyStoredPreviewBinding(store, {
+      previewId: record.previewId,
+      confirmed: true,
+      reviewedPayload: { token: "shpat_reviewed_payload_secret" },
+      expectedTool: "product.create.preview",
+      target,
+      previewHash: record.previewHash,
+      reviewedChangesHash: record.previewHash
+    }, {
+      executeTool: "product.create.execute",
+      expectedPreviewTool: "product.create.preview",
+      target
+    });
+
+    expect(result.ok).toBe(false);
+    expect(JSON.stringify(result)).not.toContain("shpat_reviewed_payload_secret");
+  });
+
+  it("keeps expired preview invalid when identical content is saved again", () => {
+    const store = new MemoryPreviewStore();
+    const stale = store.savePreview(productPreview());
+    store.expirePreview(stale.previewId);
+    const fresh = store.savePreview(productPreview());
+
+    expect(fresh.previewId).not.toBe(stale.previewId);
+    expect(fresh.previewHash).toBe(stale.previewHash);
+    expect(store.getPreview(stale.previewId)).toMatchObject({
+      ok: false,
+      status: "expired"
+    });
+    expect(store.getPreview(fresh.previewId)).toMatchObject({
+      ok: true,
+      status: "active"
     });
   });
 });

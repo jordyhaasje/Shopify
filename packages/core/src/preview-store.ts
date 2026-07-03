@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   type ExecutePreviewBindingDiagnostic,
   type ExecutePreviewBindingInput,
@@ -47,6 +47,15 @@ export interface PreviewStoreReviewResult extends PreviewStoreLookupResult {
   reviewedChangesHash?: string;
 }
 
+export interface StoredPreviewReviewPayload {
+  tool: string;
+  target: unknown;
+  summary?: unknown;
+  proposedChanges?: unknown;
+  requiredConfirmationForExecute?: unknown;
+  auditContext?: unknown;
+}
+
 export interface MemoryPreviewStoreOptions {
   ttlMs?: number;
   now?: () => Date;
@@ -79,15 +88,16 @@ export class MemoryPreviewStore {
     const proposedChanges = sanitizePreviewValue(input.proposedChanges);
     const requiredConfirmationForExecute = sanitizePreviewValue(input.requiredConfirmationForExecute);
     const auditContext = sanitizePreviewValue(input.auditContext);
-    const previewHash = hashPreviewContent({
+    const reviewPayload = {
       tool,
-      target: input.target,
-      summary: input.summary,
-      proposedChanges: input.proposedChanges,
-      requiredConfirmationForExecute: input.requiredConfirmationForExecute,
-      auditContext: input.auditContext
-    });
-    const previewId = safePreviewId(input.previewId) ?? `preview_${previewHash.replace(/^sha256:/, "").slice(0, 16)}`;
+      target,
+      summary,
+      proposedChanges,
+      requiredConfirmationForExecute,
+      auditContext
+    };
+    const previewHash = hashPreviewContent(reviewPayload);
+    const previewId = safePreviewId(input.previewId) ?? `preview_${randomUUID()}`;
     const record: StoredPreviewRecord = {
       previewId,
       tool,
@@ -174,6 +184,22 @@ export function sanitizePreviewValue(value: unknown, key = "", depth = 0): unkno
   if (typeof value !== "object") return omitted;
   if (depth >= maxDepth) return omitted;
 
+  if (isSanitizedArraySummary(value)) {
+    const items = value.items.slice(0, maxArrayItems);
+    return {
+      count: value.count,
+      items: items.map((item) => sanitizePreviewValue(item, key, depth + 1)),
+      omittedItemCount: value.omittedItemCount + Math.max(0, value.items.length - items.length)
+    };
+  }
+  if (isSanitizedObjectSummary(value)) {
+    const entries = Object.entries(value.fields).slice(0, maxObjectFields);
+    return {
+      fields: Object.fromEntries(entries.map(([entryKey, entryValue]) => [safeObjectKey(entryKey), sanitizePreviewValue(entryValue, entryKey, depth + 1)])),
+      omittedFieldCount: value.omittedFieldCount + Math.max(0, Object.keys(value.fields).length - entries.length)
+    };
+  }
+
   const entries = Object.entries(value as Record<string, unknown>).slice(0, maxObjectFields);
   return {
     fields: Object.fromEntries(entries.map(([entryKey, entryValue]) => [safeObjectKey(entryKey), sanitizePreviewValue(entryValue, entryKey, depth + 1)])),
@@ -188,6 +214,17 @@ export function previewRecordBindingTarget(record: StoredPreviewRecord): string 
   const fields = (target as { fields?: Record<string, unknown> }).fields;
   const value = stringFromUnknown(fields?.id) ?? stringFromUnknown(fields?.handle) ?? stringFromUnknown(fields?.title) ?? stringFromUnknown(fields?.url) ?? stringFromUnknown(fields?.type);
   return value ?? record.previewId;
+}
+
+export function reviewedPayloadForPreviewRecord(record: StoredPreviewRecord): StoredPreviewReviewPayload {
+  return {
+    tool: record.tool,
+    target: record.target,
+    summary: record.summary,
+    proposedChanges: record.proposedChanges,
+    requiredConfirmationForExecute: record.requiredConfirmationForExecute,
+    auditContext: record.auditContext
+  };
 }
 
 export function verifyStoredPreviewBinding(
@@ -210,12 +247,12 @@ export function verifyStoredPreviewBinding(
   }
 
   const storedTarget = previewRecordBindingTarget(lookup.record);
+  const computedReviewedHash = isReviewedPayload(input.reviewedPayload) ? hashPreviewContent(input.reviewedPayload) : undefined;
   const validation = validateExecutePreviewBinding({
     ...input,
     expectedTool: input.expectedTool ?? lookup.record.tool,
     target: input.target ?? storedTarget,
-    previewHash: input.previewHash ?? lookup.record.previewHash,
-    reviewedChangesHash: input.reviewedChangesHash ?? lookup.record.reviewedChangesHash
+    previewHash: input.previewHash ?? lookup.record.previewHash
   }, {
     executeTool: context.executeTool,
     expectedPreviewTool: context.expectedPreviewTool,
@@ -226,12 +263,23 @@ export function verifyStoredPreviewBinding(
   if (input.expectedTool && input.expectedTool !== lookup.record.tool) diagnostics.push(diagnostic("stored_preview_tool_mismatch", "Execute binding tool does not match the stored preview."));
   if (input.target && String(input.target).trim() !== storedTarget) diagnostics.push(diagnostic("stored_preview_target_mismatch", "Execute binding target does not match the stored preview."));
   if (input.previewHash && input.previewHash !== lookup.record.previewHash) diagnostics.push(diagnostic("stored_preview_hash_mismatch", "Execute binding hash does not match the stored preview."));
+  if (computedReviewedHash && computedReviewedHash !== lookup.record.previewHash) diagnostics.push(diagnostic("reviewed_payload_hash_mismatch", "Reviewed payload hash does not match the stored preview."));
+  if (typeof input.reviewedChangesHash === "string" && computedReviewedHash && input.reviewedChangesHash !== computedReviewedHash) {
+    diagnostics.push(diagnostic("reviewed_changes_hash_mismatch", "Reviewed changes hash does not match the actual reviewed payload."));
+  }
+  if (typeof input.reviewedChangesHash === "string" && input.reviewedChangesHash !== lookup.record.previewHash) {
+    diagnostics.push(diagnostic("reviewed_changes_hash_mismatch", "Reviewed changes hash does not match the stored preview."));
+  }
 
   return {
     ...validation,
     ok: diagnostics.length === 0,
     diagnostics
   };
+}
+
+function isReviewedPayload(value: unknown): boolean {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0);
 }
 
 function canonicalValue(value: unknown): unknown {
@@ -278,6 +326,16 @@ function safeObjectKey(value: string): string {
 
 function stringFromUnknown(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function isSanitizedArraySummary(value: object): value is { count: number; items: unknown[]; omittedItemCount: number } {
+  const candidate = value as { count?: unknown; items?: unknown; omittedItemCount?: unknown };
+  return typeof candidate.count === "number" && Array.isArray(candidate.items) && typeof candidate.omittedItemCount === "number";
+}
+
+function isSanitizedObjectSummary(value: object): value is { fields: Record<string, unknown>; omittedFieldCount: number } {
+  const candidate = value as { fields?: unknown; omittedFieldCount?: unknown };
+  return Boolean(candidate.fields && typeof candidate.fields === "object" && !Array.isArray(candidate.fields) && typeof candidate.omittedFieldCount === "number");
 }
 
 function parseDate(value: unknown): Date | undefined {

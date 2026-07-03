@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createConfig } from "@shopify-store-agent/core";
+import { createConfig, hashPreviewContent, reviewedPayloadForPreviewRecord } from "@shopify-store-agent/core";
 import { callTool, listTools, type ToolContext } from "../src/tools.js";
 import { MemoryAuditLog } from "@shopify-store-agent/core";
 
@@ -824,15 +824,16 @@ describe("MCP tools", () => {
       description: "A reviewed product."
     }, context) as Record<string, unknown>;
     const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
 
     const result = await callTool("product.create.execute", {
       previewId: preview.previewId,
       confirmed: true,
-      reviewedPayload: { reviewed: true },
+      reviewedPayload: reviewed.reviewedPayload,
       expectedTool: binding.expectedTool,
       target: binding.target,
       previewHash: preview.previewHash,
-      reviewedChangesHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash,
       title: "Stored Preview Shirt"
     }, context);
 
@@ -850,6 +851,82 @@ describe("MCP tools", () => {
     });
   });
 
+  it("blocks stored preview execute when reviewed payload does not match", async () => {
+    const context = baseContext(undefined, false);
+    const preview = await callTool("product.create.preview", {
+      title: "Mismatch Preview Shirt",
+      description: "A reviewed product."
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+
+    const result = await callTool("product.create.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: { title: "Different reviewed payload" },
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: hashPreviewContent({ title: "Different reviewed payload" }),
+      title: "Mismatch Preview Shirt"
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: false,
+      status: "blocked",
+      placeholder: true,
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "reviewed_payload_hash_mismatch" })])
+    });
+    expect(context.audit.list()[1]).toMatchObject({
+      tool: "product.create.execute",
+      mode: "execute",
+      result: "blocked"
+    });
+  });
+
+  it("blocks arbitrary reviewed payload even when preview hash is copied", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    const preview = await callTool("product.create.preview", {
+      title: "Copied Hash Shirt",
+      description: "A reviewed product."
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+
+    const result = await callTool("product.create.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: { arbitrary: "payload", token: "shpat_arbitrary_review_secret" },
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: preview.previewHash,
+      title: "Copied Hash Shirt"
+    }, context);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      status: "blocked",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "reviewed_payload_hash_mismatch" }),
+        expect.objectContaining({ code: "reviewed_changes_hash_mismatch" })
+      ])
+    });
+    expect(output).not.toContain("shpat_arbitrary_review_secret");
+    expect(context.audit.list()[1]).toMatchObject({
+      tool: "product.create.execute",
+      mode: "execute",
+      result: "blocked"
+    });
+    expect(fetchCalled).toBe(false);
+  });
+
   it("blocks expired stored preview binding before execute placeholder flow", async () => {
     const context = baseContext(undefined, false);
     const preview = await callTool("product.create.preview", {
@@ -857,16 +934,17 @@ describe("MCP tools", () => {
       description: "A reviewed product."
     }, context) as Record<string, unknown>;
     const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
     context.previewStore?.expirePreview(preview.previewId);
 
     const result = await callTool("product.create.execute", {
       previewId: preview.previewId,
       confirmed: true,
-      reviewedPayload: { reviewed: true },
+      reviewedPayload: reviewed.reviewedPayload,
       expectedTool: binding.expectedTool,
       target: binding.target,
       previewHash: preview.previewHash,
-      reviewedChangesHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash,
       title: "Expired Preview Shirt"
     }, context);
 
@@ -1098,5 +1176,15 @@ function executeBinding(expectedTool: string, target: string): Record<string, un
     previewHash: "reviewed_hash_123",
     reviewedChangesHash: "reviewed_hash_123",
     reviewedPayload: { reviewed: true }
+  };
+}
+
+function reviewedBindingFor(context: ToolContext, preview: Record<string, unknown>): { reviewedPayload: unknown; reviewedChangesHash: string } {
+  const lookup = context.previewStore?.getPreview(preview.previewId);
+  if (!lookup?.record) throw new Error("Expected preview to be stored for test");
+  const reviewedPayload = reviewedPayloadForPreviewRecord(lookup.record);
+  return {
+    reviewedPayload,
+    reviewedChangesHash: hashPreviewContent(reviewedPayload)
   };
 }

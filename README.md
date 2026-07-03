@@ -20,7 +20,7 @@ Structured preview tools are implemented for `product.create.preview`, `product.
 
 `product.update.preview` can optionally enrich before-values with the read-only `product.get` path when the caller supplies an explicit `productId`, `id`, or `handle` and sets `enrichExistingProduct: true`. It does not search for products, does not fetch when an existing product summary is already supplied, and falls back to `before: "unknown"` with a warning when enrichment is unavailable.
 
-Preview results are also saved to a local in-memory preview store. Stored records contain safe preview content, TTL metadata, and deterministic `previewHash` values that can later be compared with reviewed payload hashes. The store is not file-backed yet, does not persist across process restarts, and never performs Shopify calls.
+Preview results are also saved to a local in-memory preview store. Stored records contain safe preview content, TTL metadata, unique per-preview `previewId` values, and deterministic `previewHash` values that can later be compared with hashes recomputed from the actual reviewed payload. The store is not file-backed yet, does not persist across process restarts, and never performs Shopify calls.
 
 Write tools are still guarded fail-closed placeholders, including product create/update execute, customer address update execute, refund execute, tracking update execute, page/collection execute, bulk execute, and theme apply. No Shopify mutations are implemented yet.
 
