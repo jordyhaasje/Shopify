@@ -1,35 +1,24 @@
 # Shopify Store Agent
 
-Shopify Store Agent is a local-first MCP and CLI toolkit that lets non-technical merchants manage Shopify store operations through AI hosts such as Codex, Claude Code, Cursor, and other MCP-compatible tools.
+Shopify Store Agent is a local-first MCP server, CLI wizard, and bootstrap skill package for AI hosts such as Codex, Claude Code, Cursor, and other MCP-compatible tools.
 
-The first version focuses on safe store operations:
+It helps an AI host work with Shopify store data and store-management workflows. Existing email MCP servers can be connected separately in the same host so the model can combine customer emails with Shopify order/customer context.
 
-- Products, variants, media, pages, collections, orders, customers, refunds, tracking, bulk edits, and theme section workflows.
-- Preview-first writes for risky actions.
-- No autonomous product discovery. Users provide products, links, CSV files, order numbers, or customer identifiers.
-- Existing email MCP servers can be used alongside this MCP inside the same AI host.
+## What It Is Not
 
-## Packages
+Shopify Store Agent is not a Shopify App Store app, not an embedded Shopify Admin app, and not a merchant-facing Shopify application.
 
-- `packages/core`: Shopify clients, capability routing, audit logging, safety helpers.
-- `packages/cli`: setup wizard and MCP config snippet generator.
-- `packages/mcp`: stdio MCP server and tool registry.
-- `skills`: bootstrap skill instructions for AI hosts.
-- `docs`: installation, scopes, safety, and theme workflow documentation.
+Shopify OAuth, when used, is only a local install/auth mechanism for the MCP/CLI package. Manual Admin API token setup remains supported.
 
-## Development
+## Current Status
 
-```bash
-pnpm install
-pnpm run lint
-pnpm run typecheck
-pnpm test
-pnpm run build
-```
+Foundation work is in progress: auth, config storage, documentation, MCP SDK startup, safety helpers, and placeholder tool contracts.
 
-## GitHub Install
+Many Shopify operation tools are still placeholders/contracts. Real Shopify read/write API tools will be implemented in later PRs.
 
-For the current GitHub-only phase:
+## Temporary GitHub Install
+
+While npm publishing is not active, install from GitHub:
 
 ```bash
 git clone https://github.com/jordyhaasje/Shopify.git
@@ -39,18 +28,43 @@ pnpm run build
 pnpm --filter shopify-store-agent exec shopify-store-agent auth --store your-store.myshopify.com
 ```
 
-Add this redirect URL to the Shopify Dev Dashboard app before running OAuth:
+For local OAuth, add this redirect URL to the Shopify Dev Dashboard app:
 
 ```text
 http://127.0.0.1:3456/auth/callback
 ```
 
-## User Setup Shape
+See [docs/installation.md](docs/installation.md) for OAuth and manual token setup.
 
-The intended user-facing setup is:
+## Future NPM Setup
+
+The intended future setup is:
 
 ```bash
 npx shopify-store-agent setup
 ```
 
-The wizard collects a Shopify store URL, an Admin API token, and optionally a Theme Access token. It then generates MCP configuration snippets for Codex, Claude Code, and Cursor.
+The wizard should guide users through auth, local config, capability checks, and MCP host snippets.
+
+## Safety Model
+
+- V1 defaults to read-only mode unless the user explicitly enables writes.
+- Risky writes require preview or dry-run output plus explicit confirmation.
+- Users provide products, URLs, CSV files, images, customer emails, order numbers, or Shopify IDs.
+- The agent must never autonomously search for products.
+- No secrets belong in the repo, docs, tests, or logs.
+
+See [docs/safety.md](docs/safety.md), [docs/scopes.md](docs/scopes.md), and [docs/tool-contracts.md](docs/tool-contracts.md).
+
+## Local Validation
+
+GitHub Actions is intentionally not used for validation in this phase. Run checks locally:
+
+```bash
+pnpm run lint
+pnpm run typecheck
+pnpm test
+pnpm run build
+```
+
+PRs are reviewed manually and merged manually.

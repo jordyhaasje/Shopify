@@ -1,6 +1,6 @@
-# GitHub Install Flow
+# Temporary GitHub Install Flow
 
-Until the packages are published to npm, users install Shopify Store Agent from GitHub with help from their coding harness.
+Until the packages are published to npm, users install Shopify Store Agent from GitHub with help from their coding harness. This document is temporary and should be replaced by the future `npx shopify-store-agent setup` flow once package publishing is ready.
 
 ```bash
 git clone https://github.com/jordyhaasje/Shopify.git
@@ -28,3 +28,5 @@ The CLI prints the Shopify install URL. After the user approves the app, Shopify
 ```
 
 The token must never be committed to GitHub or pasted into chat.
+
+GitHub Actions is not used for validation in this phase. Run local validation commands from the repository root.

@@ -1,16 +1,10 @@
 # Installation
 
-Shopify Store Agent is designed for non-technical merchants who use an AI host that supports MCP, such as Codex, Claude Code, Cursor, or a compatible desktop harness.
+Shopify Store Agent is a local-first MCP + CLI + bootstrap skill package for AI hosts. It is not a Shopify App Store app or embedded Shopify Admin app.
 
-## Recommended Setup
+## Current GitHub-Only Setup
 
-The intended npm setup command is:
-
-```bash
-npx shopify-store-agent setup
-```
-
-For the current GitHub-only phase, use the GitHub install flow:
+This path is temporary while npm publishing is not active:
 
 ```bash
 git clone https://github.com/jordyhaasje/Shopify.git
@@ -20,29 +14,80 @@ pnpm run build
 pnpm --filter shopify-store-agent exec shopify-store-agent auth --store your-store.myshopify.com
 ```
 
-The wizard asks for:
+See [github-install.md](github-install.md) for the temporary GitHub install notes.
 
-- Shopify store URL.
-- Shopify app client ID.
-- Shopify app client secret.
-- Whether the MCP should start in read-only mode.
+## Future NPM Setup
 
-The OAuth flow generates and stores an offline Admin API access token locally. Tokens are never printed back in config snippets.
+The intended future user flow is:
 
-Before running OAuth, add this redirect URL in the Shopify Dev Dashboard app:
+```bash
+npx shopify-store-agent setup
+```
+
+The wizard should collect or create local Shopify credentials, run capability checks, and generate MCP configuration snippets for hosts such as Codex, Claude Code, and Cursor.
+
+## Local OAuth Setup
+
+Local OAuth is only an install/auth mechanism for this MCP/CLI package.
+
+Before running OAuth, add this redirect URL to the Shopify Dev Dashboard app:
 
 ```text
 http://127.0.0.1:3456/auth/callback
 ```
 
-## Email
+Then run:
 
-This project does not include an email MCP. Users should connect their existing Gmail, Outlook, IMAP, or helpdesk MCP in the same AI host. The host can then combine email context with Shopify tools.
-
-Example:
-
-```text
-Look at the latest email from this customer and check the Shopify order status.
+```bash
+pnpm --filter shopify-store-agent exec shopify-store-agent auth --store your-store.myshopify.com
 ```
 
-The AI host should use the email MCP to read the email and this Shopify MCP to look up the order.
+The CLI asks for the Shopify app client ID and client secret, opens or prints an install URL, validates the callback state/HMAC, exchanges the OAuth code, and stores the resulting Admin API token locally.
+
+V1 defaults to read-only mode unless writes are explicitly enabled.
+
+## Manual Admin API Token Setup
+
+Manual token setup remains supported. A tester can create or use a Shopify custom app for their own development store, choose only the scopes required for the enabled workflow, install the app, and copy the Admin API access token into local config or environment variables.
+
+Manual config should provide:
+
+- Store URL.
+- Admin API access token.
+- Optional Theme Access token.
+- Read-only setting.
+
+## Local Config Storage
+
+The OAuth flow stores local config here by default:
+
+```text
+~/.shopify-store-agent/config.json
+```
+
+That file is local machine state. It must not be committed, pasted into chat, or copied into docs/tests/logs.
+
+Never paste or commit:
+
+- Admin API access tokens.
+- OAuth client secrets.
+- Theme Access tokens.
+- Real customer/order data.
+- Store credentials or private app credentials.
+
+## Email MCPs
+
+This project does not include an email MCP. Users should connect an existing Gmail, Outlook, IMAP, or helpdesk MCP in the same AI host. The host can combine email context with Shopify tools.
+
+## Validation
+
+GitHub Actions is not currently used for validation because the GitHub account has an Actions/billing issue. Validate locally:
+
+```bash
+pnpm run lint
+pnpm run typecheck
+pnpm test
+pnpm run build
+```
+
+PRs are reviewed manually and merged manually for now.
