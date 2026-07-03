@@ -178,4 +178,69 @@ describe("catalog and content previews", () => {
     expect(output.length).toBeLessThan(3000);
     expect(output).toContain("[redacted]");
   });
+
+  it("redacts secret-looking query values from import URL targets", () => {
+    const preview = previewProductImportFromUserUrl({
+      url: "https://user:pass@example.com/products/linen-shirt?access_token=shpat_url_secret&color=blue&ref=shpua_ref_secret&key=plain-secret",
+      instructions: "Rewrite only from visible rendered page signals."
+    });
+    const output = JSON.stringify(preview);
+
+    expect(preview).toMatchObject({ ok: true, status: "ok" });
+    expect(output).not.toContain("shpat_url_secret");
+    expect(output).not.toContain("shpua_ref_secret");
+    expect(output).not.toContain("plain-secret");
+    expect(output).not.toContain("user:pass");
+    expect(preview.auditContext.target).not.toContain("shpat_url_secret");
+    expect(preview.auditContext.target).not.toContain("shpua_ref_secret");
+  });
+
+  it("caps oversized product title, vendor, and tag strings", () => {
+    const oversizedTitle = `Linen Shirt ${"title".repeat(120)}`;
+    const oversizedVendor = `Vendor ${"vendor".repeat(120)}`;
+    const oversizedTag = `tag-${"long".repeat(120)}`;
+    const preview = previewProductCreate({
+      title: oversizedTitle,
+      vendor: oversizedVendor,
+      tags: [oversizedTag],
+      description: "A short description."
+    });
+    const output = JSON.stringify(preview);
+
+    expect(preview).toMatchObject({ ok: true, status: "ok" });
+    expect(output).not.toContain(oversizedTitle);
+    expect(output).not.toContain(oversizedVendor);
+    expect(output).not.toContain(oversizedTag);
+    expect(output.length).toBeLessThan(2500);
+  });
+
+  it("redacts secret-looking comma-separated tags", () => {
+    const preview = previewProductCreate({
+      title: "Comma Tags",
+      description: "A short description.",
+      tags: "safe-tag, shpat_tag_secret, another-tag"
+    });
+    const output = JSON.stringify(preview);
+
+    expect(output).not.toContain("shpat_tag_secret");
+    expect(output).toContain("[redacted]");
+  });
+
+  it("sanitizes page target title and handle", () => {
+    const preview = previewPageCreate({
+      title: "Care Guide shpat_page_secret",
+      handle: "care-guide-shpua_handle_secret",
+      body: "Wash cold."
+    });
+    const output = JSON.stringify(preview);
+
+    expect(preview).toMatchObject({
+      ok: true,
+      status: "ok",
+      target: { type: "page", title: "[redacted]", handle: "[redacted]" }
+    });
+    expect(output).not.toContain("shpat_page_secret");
+    expect(output).not.toContain("shpua_handle_secret");
+    expect(preview.auditContext.target).toBe("[redacted]");
+  });
 });

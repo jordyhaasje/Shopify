@@ -325,6 +325,30 @@ describe("MCP tools", () => {
     expect(output).toContain("[redacted]");
   });
 
+  it("redacts URL secrets from preview output and audit target", async () => {
+    const context = baseContext();
+    const result = await callTool("product.importFromUserUrl.preview", {
+      url: "https://user:pass@example.com/products/shirt?access_token=shpat_url_secret&color=blue&ref=shpua_ref_secret&key=plain-secret",
+      instructions: "Rewrite only from public rendered-page signals."
+    }, context);
+    const output = JSON.stringify(result);
+    const [audit] = context.audit.list();
+
+    expect(result).toMatchObject({ ok: true, mode: "preview", status: "ok" });
+    expect(output).not.toContain("shpat_url_secret");
+    expect(output).not.toContain("shpua_ref_secret");
+    expect(output).not.toContain("plain-secret");
+    expect(output).not.toContain("user:pass");
+    expect(audit.target).not.toContain("shpat_url_secret");
+    expect(audit.target).not.toContain("shpua_ref_secret");
+    expect(audit.target).not.toContain("plain-secret");
+    expect(audit).toMatchObject({
+      tool: "product.importFromUserUrl.preview",
+      mode: "preview",
+      result: "success"
+    });
+  });
+
   it("blocks theme apply without confirmation", async () => {
     const context: ToolContext = {
       config: createConfig({ storeUrl: "demo", readOnly: false }),

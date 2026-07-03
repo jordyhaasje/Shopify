@@ -54,6 +54,8 @@ type PreviewTool =
 const requiredConfirmationForExecute = "Execute is not implemented. A future execute tool must require this preview ID and explicit user confirmation before any Shopify mutation.";
 const omitted = "[omitted]";
 const redacted = "[redacted]";
+const maxScalarLength = 180;
+const maxSummaryLength = 240;
 
 export function previewProductCreate(input: Record<string, unknown>): CatalogPreviewResult {
   const title = firstString(input.title);
@@ -159,7 +161,7 @@ export function previewProductImportFromUserUrl(input: Record<string, unknown>):
     {
       field: "sourceUrl",
       action: "plan",
-      value: safeString(url, 180),
+      value: sanitizeUrl(url),
       summary: "Use only the user-provided public URL as a planning reference."
     },
     {
@@ -253,13 +255,15 @@ function buildResult(
   proposedChanges: PreviewChange[],
   warnings: PreviewWarning[]
 ): CatalogPreviewResult {
-  const auditTarget = targetLabel(target);
+  const safeTarget = sanitizeTarget(target);
+  const auditTarget = targetLabel(safeTarget);
+  const safeSummary = safeString(summary, maxSummaryLength);
   return {
     ok: status === "ok",
     status,
     previewId: previewId(tool, auditTarget, proposedChanges),
-    summary,
-    target,
+    summary: safeSummary,
+    target: safeTarget,
     proposedChanges,
     warnings,
     requiredConfirmationForExecute,
@@ -271,6 +275,16 @@ function buildResult(
       performsShopifyMutation: false,
       usesShopifyWriteOperation: false
     }
+  };
+}
+
+function sanitizeTarget(target: PreviewTarget): PreviewTarget {
+  return {
+    type: target.type,
+    id: target.id ? safeString(target.id, maxScalarLength) : undefined,
+    handle: target.handle ? safeString(target.handle, maxScalarLength) : undefined,
+    title: target.title ? safeString(target.title, maxScalarLength) : undefined,
+    url: target.url ? sanitizeUrl(target.url) : undefined
   };
 }
 
@@ -309,7 +323,7 @@ function compactChanges(changes: Array<PreviewChange | undefined>): PreviewChang
 
 function createChange(field: string, value: unknown): PreviewChange | undefined {
   if (value === undefined || value === "" || value === omitted) return undefined;
-  return { field, action: "create", value };
+  return { field, action: "create", value: summarizeValue(field, value) };
 }
 
 function mediaChange(field: string, action: "add" | "update" | "delete" | "reorder", items: unknown[]): PreviewChange {
@@ -350,8 +364,8 @@ function objectAsArray(value: unknown): unknown[] | undefined {
 }
 
 function tagSummary(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map((tag) => summarizeValue("tag", tag));
-  if (typeof value === "string" && value.trim()) return value.split(",").map((tag) => tag.trim()).filter(Boolean).slice(0, 20);
+  if (Array.isArray(value)) return value.slice(0, 20).map((tag) => summarizeValue("tag", tag));
+  if (typeof value === "string" && value.trim()) return value.split(",").map((tag) => summarizeValue("tag", tag.trim())).filter(Boolean).slice(0, 20);
   return undefined;
 }
 
@@ -385,7 +399,8 @@ function contentSummary(value: string): unknown {
 function summarizeValue(key: string, value: unknown): unknown {
   if (value === undefined) return undefined;
   if (isSecretKey(key)) return redacted;
-  if (typeof value === "string") return safeString(value, 180);
+  if (key.toLowerCase().includes("url") && typeof value === "string") return sanitizeUrl(value);
+  if (typeof value === "string") return safeString(value, maxScalarLength);
   if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
   if (Array.isArray(value)) {
     return {
@@ -408,8 +423,26 @@ function safeString(value: string, maxLength: number): string {
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
 }
 
+function sanitizeUrl(value: string): string {
+  try {
+    const url = new URL(value.trim());
+    url.username = "";
+    url.password = "";
+    for (const [key, paramValue] of url.searchParams.entries()) {
+      if (isSensitiveQueryKey(key) || looksLikeSecret(paramValue)) url.searchParams.set(key, redacted);
+    }
+    return safeString(url.toString(), maxScalarLength);
+  } catch {
+    return safeString(value, maxScalarLength);
+  }
+}
+
 function isSecretKey(key: string): boolean {
-  return /token|secret|password|authorization|accessToken/i.test(key);
+  return /token|secret|password|authorization|access[_-]?token|api[_-]?key|client[_-]?secret|key/i.test(key);
+}
+
+function isSensitiveQueryKey(key: string): boolean {
+  return /token|secret|password|authorization|access[_-]?token|accessToken|api[_-]?key|client[_-]?secret|key/i.test(key);
 }
 
 function looksLikeSecret(value: string): boolean {
