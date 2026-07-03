@@ -8,7 +8,8 @@ describe("MCP server", () => {
     const tools = listTools();
 
     expect(server).toBeTruthy();
-    expect(tools.map((tool) => tool.name)).toContain("product.create");
+    expect(tools.map((tool) => tool.name)).toContain("product.create.preview");
+    expect(tools.map((tool) => tool.name)).toContain("shopify.capabilities.check");
     expect(tools.map((tool) => tool.name)).toContain("theme.apply");
   });
 });

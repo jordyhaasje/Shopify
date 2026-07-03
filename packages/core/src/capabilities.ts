@@ -29,15 +29,7 @@ export function chooseThemeWriteRoute(capabilities: CapabilitySnapshot | undefin
 }
 
 export function requiresConfirmation(toolName: string): boolean {
-  return [
-    "refund.execute",
-    "tracking.update",
-    "customer.updateAddress",
-    "product.update",
-    "product.create",
-    "bulk.execute",
-    "theme.apply"
-  ].includes(toolName);
+  return toolName.endsWith(".execute") || toolName === "theme.apply";
 }
 
 export function assertWritable(config: StoreAgentConfig, toolName: string, confirmed: boolean): void {
