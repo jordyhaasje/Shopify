@@ -108,7 +108,7 @@ export function previewProductUpdate(input: Record<string, unknown>): CatalogPre
   const target = productTarget(input);
   if (!target.id && !target.handle) return missingInput("product.update.preview", target, "Provide an explicit product ID or handle.");
 
-  const updateFields = updatePayload(input, ["id", "productId", "handle", "existingProduct", "existingProductSummary"]);
+  const updateFields = updatePayload(input, ["id", "productId", "handle", "existingProduct", "existingProductSummary", "enrichExistingProduct"]);
   if (Object.keys(updateFields).length === 0) return validationError("product.update.preview", target, "Provide at least one product change to preview.");
 
   const existing = objectInput(input.existingProduct) ?? objectInput(input.existingProductSummary);

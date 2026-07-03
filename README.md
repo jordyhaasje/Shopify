@@ -18,6 +18,8 @@ Real read-only Shopify MCP tools are implemented for `shopify.capabilities.check
 
 Structured preview tools are implemented for `product.create.preview`, `product.update.preview`, `product.media.update.preview`, `product.importFromUserUrl.preview`, `page.create.preview`, and `collection.create.preview`. These previews summarize user-provided inputs, validate required fields, create audit entries, and do not call Shopify write APIs or perform mutations.
 
+`product.update.preview` can optionally enrich before-values with the read-only `product.get` path when the caller supplies an explicit `productId`, `id`, or `handle` and sets `enrichExistingProduct: true`. It does not search for products, does not fetch when an existing product summary is already supplied, and falls back to `before: "unknown"` with a warning when enrichment is unavailable.
+
 Write tools are still guarded fail-closed placeholders, including product create/update execute, customer address update execute, refund execute, tracking update execute, page/collection execute, bulk execute, and theme apply. No Shopify mutations are implemented yet.
 
 ## Temporary GitHub Install

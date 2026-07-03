@@ -56,7 +56,11 @@ Execute requirements: `write_products`, writes enabled, explicit confirmation.
 
 Required input: explicit product ID or handle plus user-provided changes.
 
-Preview output: before/after summary for supplied fields such as title, description, price, variants, media, status, and metadata. Before values are `unknown` unless an existing product summary is supplied separately or a future read-only integration provides it. This tool does not call Shopify or perform mutations.
+Preview output: before/after summary for supplied fields such as title, description, price, variants, media, status, and metadata. Before values are `unknown` unless an existing product summary is supplied separately or read-only enrichment is explicitly requested.
+
+Read enrichment: when the caller supplies an explicit `productId`, `id`, or `handle` and sets `enrichExistingProduct: true`, the MCP runtime may use the read-only `product.get` path to fetch a minimal product summary for before-values. It must not use a loose search query, must not autonomously discover products, and must not fetch when `existingProduct` or `existingProductSummary` is already supplied. If read enrichment fails, the preview remains usable with a warning and `before: "unknown"`. No raw product node, variants, media, or other dumps are returned.
+
+This tool does not perform Shopify mutations.
 
 ### `product.update.execute`
 
