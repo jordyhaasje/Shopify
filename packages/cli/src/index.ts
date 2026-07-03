@@ -1,9 +1,19 @@
 #!/usr/bin/env node
+import { createServer } from "node:http";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import {
+  buildInstallUrl,
+  createOAuthState,
+  defaultAdminScopes,
+  defaultConfigPath,
+  exchangeCodeForOfflineToken,
   createConfig,
   emptyCapabilities,
+  normalizeScopes,
+  saveStoredConfig,
+  scopesToString,
+  validateOAuthCallback,
   redactConfig,
   summarizeCapabilities,
   type StoreAgentConfig
@@ -15,6 +25,17 @@ export interface SetupOptions {
   themeAccessToken?: string;
   readOnly?: boolean;
   dryRun?: boolean;
+}
+
+export interface AuthOptions {
+  storeUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
+  scopes?: string;
+  redirectPort?: number;
+  readOnly?: boolean;
+  open?: boolean;
+  configPath?: string;
 }
 
 export function generateMcpConfigSnippets(config: StoreAgentConfig): Record<string, string> {
@@ -56,6 +77,68 @@ export function generateMcpConfigSnippets(config: StoreAgentConfig): Record<stri
   };
 }
 
+export async function runOAuthInstall(options: AuthOptions): Promise<{
+  configPath: string;
+  storeUrl: string;
+  grantedScopes: string[];
+}> {
+  const interactive = !options.storeUrl || !options.clientId || !options.clientSecret;
+  const rl = interactive ? createInterface({ input, output }) : undefined;
+  try {
+    const storeUrl = options.storeUrl ?? await rl!.question("Shopify store URL: ");
+    const clientId = options.clientId ?? await rl!.question("Shopify app client ID: ");
+    const clientSecret = options.clientSecret ?? await rl!.question("Shopify app client secret: ");
+    const scopes = normalizeScopes(options.scopes ?? defaultAdminScopes);
+    const port = options.redirectPort ?? 3456;
+    const redirectUri = `http://127.0.0.1:${port}/auth/callback`;
+    const state = createOAuthState();
+    const installUrl = buildInstallUrl({
+      shop: storeUrl,
+      clientId,
+      scopes,
+      redirectUri,
+      state,
+      accessMode: "offline"
+    });
+
+    console.log("Open this Shopify install URL in your browser:");
+    console.log(installUrl.toString());
+    console.log(`\nWaiting for callback on ${redirectUri}`);
+
+    const callback = await waitForOAuthCallback(port);
+    validateOAuthCallback(callback, state, clientSecret);
+    const token = await exchangeCodeForOfflineToken({
+      shop: callback.shop ?? storeUrl,
+      clientId,
+      clientSecret,
+      code: callback.code!
+    });
+    const config = createConfig({
+      storeUrl: callback.shop ?? storeUrl,
+      adminAccessToken: token.access_token,
+      readOnly: options.readOnly ?? true
+    });
+    const configPath = options.configPath ?? defaultConfigPath();
+    await saveStoredConfig({
+      ...config,
+      clientId,
+      grantedScopes: normalizeScopes(token.scope)
+    }, configPath);
+
+    console.log(`\nSaved Shopify Store Agent config to ${configPath}`);
+    console.log("Granted scopes:");
+    console.log(scopesToString(normalizeScopes(token.scope)));
+
+    return {
+      configPath,
+      storeUrl: config.storeUrl,
+      grantedScopes: normalizeScopes(token.scope)
+    };
+  } finally {
+    rl?.close();
+  }
+}
+
 export async function runSetup(options: SetupOptions): Promise<{
   config: StoreAgentConfig;
   snippets: Record<string, string>;
@@ -82,9 +165,9 @@ export async function runSetup(options: SetupOptions): Promise<{
   }
 }
 
-function parseArgs(argv: string[]): SetupOptions & { command: string } {
+function parseArgs(argv: string[]): (SetupOptions & AuthOptions & { command: string }) {
   const [command = "help", ...rest] = argv;
-  const options: SetupOptions & { command: string } = { command };
+  const options: SetupOptions & AuthOptions & { command: string } = { command };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     const next = rest[index + 1];
@@ -101,6 +184,21 @@ function parseArgs(argv: string[]): SetupOptions & { command: string } {
       options.readOnly = false;
     } else if (arg === "--dry-run") {
       options.dryRun = true;
+    } else if (arg === "--client-id" && next) {
+      options.clientId = next;
+      index += 1;
+    } else if (arg === "--client-secret" && next) {
+      options.clientSecret = next;
+      index += 1;
+    } else if (arg === "--scopes" && next) {
+      options.scopes = next;
+      index += 1;
+    } else if (arg === "--redirect-port" && next) {
+      options.redirectPort = Number(next);
+      index += 1;
+    } else if (arg === "--config" && next) {
+      options.configPath = next;
+      index += 1;
     }
   }
   return options;
@@ -108,8 +206,15 @@ function parseArgs(argv: string[]): SetupOptions & { command: string } {
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
-  if (options.command !== "setup") {
-    console.log("Usage: shopify-store-agent setup --store example.myshopify.com [--dry-run]");
+  if (options.command !== "setup" && options.command !== "auth") {
+    console.log("Usage:");
+    console.log("  shopify-store-agent setup --store example.myshopify.com [--dry-run]");
+    console.log("  shopify-store-agent auth --store example.myshopify.com --client-id ... --client-secret ...");
+    return;
+  }
+
+  if (options.command === "auth") {
+    await runOAuthInstall(options);
     return;
   }
 
@@ -125,6 +230,27 @@ async function main(): Promise<void> {
   console.log(result.snippets.codex);
   console.log("\nClaude/Cursor MCP config");
   console.log(result.snippets.claude);
+}
+
+function waitForOAuthCallback(port: number): Promise<Record<string, string>> {
+  return new Promise((resolve, reject) => {
+    const server = createServer((request, response) => {
+      if (!request.url) return;
+      const url = new URL(request.url, `http://127.0.0.1:${port}`);
+      if (url.pathname !== "/auth/callback") {
+        response.writeHead(404);
+        response.end("Not found");
+        return;
+      }
+      const query = Object.fromEntries(url.searchParams.entries());
+      response.writeHead(200, { "Content-Type": "text/plain" });
+      response.end("Shopify Store Agent is authorized. You can close this browser tab.");
+      server.close();
+      resolve(query);
+    });
+    server.on("error", reject);
+    server.listen(port, "127.0.0.1");
+  });
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

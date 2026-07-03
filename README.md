@@ -27,6 +27,24 @@ pnpm test
 pnpm run build
 ```
 
+## GitHub Install
+
+For the current GitHub-only phase:
+
+```bash
+git clone https://github.com/jordyhaasje/Shopify.git
+cd Shopify
+pnpm install
+pnpm run build
+pnpm --filter shopify-store-agent exec shopify-store-agent auth --store your-store.myshopify.com
+```
+
+Add this redirect URL to the Shopify Dev Dashboard app before running OAuth:
+
+```text
+http://127.0.0.1:3456/auth/callback
+```
+
 ## User Setup Shape
 
 The intended user-facing setup is:

@@ -4,20 +4,36 @@ Shopify Store Agent is designed for non-technical merchants who use an AI host t
 
 ## Recommended Setup
 
-The intended public setup command is:
+The intended npm setup command is:
 
 ```bash
 npx shopify-store-agent setup
 ```
 
+For the current GitHub-only phase, use the GitHub install flow:
+
+```bash
+git clone https://github.com/jordyhaasje/Shopify.git
+cd Shopify
+pnpm install
+pnpm run build
+pnpm --filter shopify-store-agent exec shopify-store-agent auth --store your-store.myshopify.com
+```
+
 The wizard asks for:
 
 - Shopify store URL.
-- Admin API access token.
-- Optional Theme Access token.
+- Shopify app client ID.
+- Shopify app client secret.
 - Whether the MCP should start in read-only mode.
 
-The wizard then prints MCP config snippets for Codex, Claude Code, and Cursor. Tokens are never printed back in config snippets.
+The OAuth flow generates and stores an offline Admin API access token locally. Tokens are never printed back in config snippets.
+
+Before running OAuth, add this redirect URL in the Shopify Dev Dashboard app:
+
+```text
+http://127.0.0.1:3456/auth/callback
+```
 
 ## Email
 

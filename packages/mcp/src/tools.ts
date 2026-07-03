@@ -6,6 +6,7 @@ import {
   createConfig,
   createRefundPreview,
   emptyCapabilities,
+  loadStoredConfig,
   planThemeSection,
   type StoreAgentConfig
 } from "@shopify-store-agent/core";
@@ -42,9 +43,10 @@ function previewResult(tool: string, target: string, summary: string, context: T
   return { ok: true, mode: "preview", summary, audit };
 }
 
-export function createDefaultContext(): ToolContext {
+export async function createDefaultContext(): Promise<ToolContext> {
+  const stored = await loadStoredConfig(process.env.SHOPIFY_STORE_AGENT_CONFIG);
   return {
-    config: createConfig({
+    config: stored ?? createConfig({
       storeUrl: process.env.SHOPIFY_STORE_AGENT_STORE ?? "example.myshopify.com",
       adminAccessToken: process.env.SHOPIFY_STORE_AGENT_ADMIN_TOKEN,
       themeAccessToken: process.env.SHOPIFY_STORE_AGENT_THEME_TOKEN,
@@ -207,8 +209,8 @@ export function listTools(): Array<{ name: string; description: string; inputSch
   return tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema }));
 }
 
-export async function callTool(name: string, input: Record<string, unknown>, context = createDefaultContext()): Promise<unknown> {
+export async function callTool(name: string, input: Record<string, unknown>, context?: ToolContext): Promise<unknown> {
   const tool = tools.find((candidate) => candidate.name === name);
   if (!tool) throw new Error(`Unknown tool: ${name}`);
-  return tool.handler(input, context);
+  return tool.handler(input, context ?? await createDefaultContext());
 }

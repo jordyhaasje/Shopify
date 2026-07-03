@@ -8,17 +8,31 @@ Help a non-technical merchant configure the Shopify Store Agent CLI and MCP serv
 
 ## Setup Flow
 
-1. Run the setup wizard:
+1. Install from GitHub while the project is not yet published to npm:
 
    ```bash
-   npx shopify-store-agent setup
+   git clone https://github.com/jordyhaasje/Shopify.git
+   cd Shopify
+   pnpm install
+   pnpm run build
    ```
 
-2. Ask the user for their Shopify store URL.
-3. Guide them to create or provide an Admin API token through Shopify Dev Dashboard or Shopify CLI.
-4. Ask whether they want theme/section editing. If yes, guide them to add a Theme Access token.
-5. Add the generated MCP snippet to the current AI host.
-6. Restart the host if needed.
+2. Confirm the Shopify Dev Dashboard app has this redirect URL:
+
+   ```text
+   http://127.0.0.1:3456/auth/callback
+   ```
+
+3. Run the OAuth setup wizard:
+
+   ```bash
+   pnpm --filter shopify-store-agent exec shopify-store-agent auth --store your-store.myshopify.com
+   ```
+
+4. Ask the user for their Shopify store URL, client ID, and client secret.
+5. Never display or store secrets in the repository.
+6. Add the generated MCP snippet to the current AI host.
+7. Restart the host if needed.
 
 ## Operating Rules
 
