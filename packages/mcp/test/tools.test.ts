@@ -168,6 +168,26 @@ describe("MCP tools", () => {
         diagnostics: [{ code: "missing_input" }]
       }
     });
+    expect(context.audit.list()[0]).toMatchObject({ tool: "order.find", mode: "read", result: "blocked" });
+  });
+
+  it("records failed audit for Shopify read errors", async () => {
+    const context = readContext({
+      errors: [{ message: "Access denied for orders", extensions: { code: "ACCESS_DENIED" } }]
+    });
+
+    const result = await callTool("order.get", { orderId: "gid://shopify/Order/1" }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "read",
+      result: {
+        ok: false,
+        status: "shopify_error",
+        diagnostics: [{ code: "access_denied" }]
+      }
+    });
+    expect(context.audit.list()[0]).toMatchObject({ tool: "order.get", mode: "read", result: "failed" });
   });
 
   it("runs product.get as a real read tool", async () => {

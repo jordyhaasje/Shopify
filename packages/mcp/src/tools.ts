@@ -71,14 +71,24 @@ async function shopifyReadResult(
 ): Promise<Record<string, unknown>> {
   const result = await resultPromise;
   const ok = typeof result === "object" && result !== null && "ok" in result && typeof result.ok === "boolean" ? result.ok : true;
+  const auditResult = auditResultForRead(result);
   const audit = context.audit.record({
     tool,
     target,
     mode: "read",
     summary,
-    result: "success"
+    result: auditResult
   });
   return { ok, mode: "read", audit, result };
+}
+
+function auditResultForRead(result: unknown): "success" | "blocked" | "failed" {
+  if (!result || typeof result !== "object" || !("status" in result)) return "failed";
+  const status = (result as { status: unknown }).status;
+  if (status === "ok" || status === "not_found" || status === "multiple_matches") return "success";
+  if (status === "missing_input") return "blocked";
+  if (status === "shopify_error" || status === "invalid_response") return "failed";
+  return "failed";
 }
 
 function executePlaceholder(tool: string, target: string, summary: string, input: Record<string, unknown>, context: ToolContext): Record<string, unknown> {
