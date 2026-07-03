@@ -31,6 +31,12 @@ Failure behavior: return a diagnostic result where possible; throw only for inva
 
 ## Products
 
+### `product.get`
+
+Required input: explicit product ID or handle.
+
+Output: minimal product summary with ID, title, handle, status, vendor, and product type. This is read-only and must not return raw product nodes or variant/media dumps.
+
 ### `product.create.preview`
 
 Required input: user-provided title and product fields. Optional variants, images, collections, SEO fields, and metafields.
@@ -87,19 +93,19 @@ Execute requirements: relevant product/media scopes, writes enabled, explicit co
 
 Required input: user-provided order number, customer email, Shopify ID, or other explicit query.
 
-Output: matching order candidates with minimal necessary data.
+Output: matching order candidates with minimal necessary data, including Shopify IDs, order names, status summaries, customer identifier summary, totals, and tracking summaries. This read tool is implemented with Admin GraphQL and must not return raw order nodes or full address data.
 
 ### `order.get`
 
 Required input: explicit order ID.
 
-Output: order details allowed by scopes and Shopify permissions.
+Output: minimal order details allowed by scopes and Shopify permissions. This read tool is implemented with Admin GraphQL and intentionally avoids raw order dumps.
 
 ### `customer.find`
 
 Required input: user-provided email, name, phone, or Shopify ID.
 
-Output: matching customer candidates with minimal necessary data.
+Output: matching customer candidates with minimal necessary data, including Shopify ID, display name, email, and order count. This read tool is implemented with Admin GraphQL and does not return addresses.
 
 ### `customer.updateAddress.preview`
 
@@ -135,7 +141,7 @@ Failure behavior: use idempotency and return Shopify user errors without retryin
 
 Required input: explicit order ID, fulfillment order ID, fulfillment ID, or tracking number.
 
-Output: tracking company, number, URL, fulfillment status, and shipment status where available.
+Output: tracking company, number, URL, fulfillment status, and order identifier where available. This read tool is implemented with Admin GraphQL and returns `matches: []` when no tracking is found.
 
 ### `tracking.update.preview`
 

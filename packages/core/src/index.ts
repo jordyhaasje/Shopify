@@ -5,6 +5,7 @@ export * from "./config-store.js";
 export * from "./config.js";
 export * from "./file-audit.js";
 export * from "./oauth.js";
+export * from "./read-tools.js";
 export * from "./refunds.js";
 export * from "./scopes.js";
 export * from "./shopify-client.js";
