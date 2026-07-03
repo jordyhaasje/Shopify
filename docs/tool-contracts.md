@@ -231,8 +231,8 @@ Preview output: files that would be restored and warnings.
 
 Execute requirements: confirmation and write-capable theme route if rollback execute is added.
 
-## Current Tool-Name Normalization TODO
+## Runtime Naming Status
 
-The current MCP implementation still exposes placeholder names such as `product.create`, `product.update`, `order.lookup`, `tracking.update`, `theme.analyzeReference`, and `theme.generateSection`.
+The runtime MCP tool registry exposes the final V1 names documented here.
 
-The next PR should normalize runtime MCP tool names to the contracts in this document, add compatibility aliases only if needed, and extend tests for the final tool list.
+No legacy aliases are exposed for the earlier placeholder names such as `product.create`, `product.update`, `order.lookup`, `tracking.update`, `theme.analyzeReference`, or `theme.generateSection`.
