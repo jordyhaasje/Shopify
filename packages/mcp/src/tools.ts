@@ -3,6 +3,7 @@ import {
   assertThemeApplyAllowed,
   assertWritable,
   checkShopifyCapabilities,
+  type CatalogPreviewResult,
   createBulkPreview,
   createConfig,
   createRefundPreview,
@@ -15,6 +16,12 @@ import {
   getTracking,
   loadStoredConfig,
   planThemeSection,
+  previewCollectionCreate,
+  previewPageCreate,
+  previewProductCreate,
+  previewProductImportFromUserUrl,
+  previewProductMediaUpdate,
+  previewProductUpdate,
   type StoreAgentConfig
 } from "@shopify-store-agent/core";
 
@@ -49,6 +56,17 @@ function previewResult(tool: string, target: string, summary: string, context: T
     result: "success"
   });
   return { ok: true, mode: "preview", summary, audit };
+}
+
+function catalogPreviewResult(result: CatalogPreviewResult, context: ToolContext): Record<string, unknown> {
+  const audit = context.audit.record({
+    tool: result.auditContext.tool,
+    target: result.auditContext.target,
+    mode: "preview",
+    summary: result.summary,
+    result: result.status === "ok" ? "success" : "blocked"
+  });
+  return { ...result, mode: "preview", audit };
 }
 
 function readResult(tool: string, target: string, summary: string, context: ToolContext, extra: Record<string, unknown> = {}): Record<string, unknown> {
@@ -157,7 +175,7 @@ export const tools: ToolDefinition[] = [
     name: "product.create.preview",
     description: "Preview creating a Shopify product from user-provided data. Does not search for products autonomously.",
     inputSchema: { type: "object" },
-    handler: (input, context) => previewResult("product.create.preview", stringInput(input, "title", "product"), "Product create preview generated.", context)
+    handler: (input, context) => catalogPreviewResult(previewProductCreate(input), context)
   },
   {
     name: "product.create.execute",
@@ -169,7 +187,7 @@ export const tools: ToolDefinition[] = [
     name: "product.update.preview",
     description: "Preview updating price, media, variants, or description for an explicit product ID.",
     inputSchema: { type: "object" },
-    handler: (input, context) => previewResult("product.update.preview", stringInput(input, "productId", "product"), "Product update preview generated.", context)
+    handler: (input, context) => catalogPreviewResult(previewProductUpdate(input), context)
   },
   {
     name: "product.update.execute",
@@ -181,7 +199,7 @@ export const tools: ToolDefinition[] = [
     name: "product.media.update.preview",
     description: "Preview product media changes from user-provided media inputs.",
     inputSchema: { type: "object" },
-    handler: (input, context) => previewResult("product.media.update.preview", stringInput(input, "productId", "product"), "Product media update preview generated.", context)
+    handler: (input, context) => catalogPreviewResult(previewProductMediaUpdate(input), context)
   },
   {
     name: "product.media.update.execute",
@@ -193,7 +211,7 @@ export const tools: ToolDefinition[] = [
     name: "product.importFromUserUrl.preview",
     description: "Preview importing product data from a user-provided Shopify URL without private-source access.",
     inputSchema: { type: "object" },
-    handler: (input, context) => previewResult("product.importFromUserUrl.preview", stringInput(input, "url", "product-url"), "Product import-from-URL preview generated.", context)
+    handler: (input, context) => catalogPreviewResult(previewProductImportFromUserUrl(input), context)
   },
   {
     name: "product.importFromUserUrl.execute",
@@ -329,7 +347,7 @@ export const tools: ToolDefinition[] = [
     name: "page.create.preview",
     description: "Preview creation of a Shopify page from user-provided title and body.",
     inputSchema: { type: "object" },
-    handler: (input, context) => previewResult("page.create.preview", stringInput(input, "title", "page"), "Page create preview generated.", context)
+    handler: (input, context) => catalogPreviewResult(previewPageCreate(input), context)
   },
   {
     name: "page.create.execute",
@@ -341,7 +359,7 @@ export const tools: ToolDefinition[] = [
     name: "collection.create.preview",
     description: "Preview collection creation from explicit user criteria or product IDs.",
     inputSchema: { type: "object" },
-    handler: (input, context) => previewResult("collection.create.preview", stringInput(input, "title", "collection"), "Collection create preview generated.", context)
+    handler: (input, context) => catalogPreviewResult(previewCollectionCreate(input), context)
   },
   {
     name: "collection.create.execute",
