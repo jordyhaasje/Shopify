@@ -1,0 +1,17 @@
+{
+  "name": "shopify-store-agent-mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "shopify-store-agent-mcp": "./dist/server.js"
+  },
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "@shopify-store-agent/core": "workspace:*"
+  }
+}
