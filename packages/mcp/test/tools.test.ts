@@ -551,7 +551,23 @@ describe("MCP tools", () => {
       audit: new MemoryAuditLog()
     };
 
-    await expect(callTool("theme.apply", { previewId: "preview-1" }, context)).rejects.toThrow("confirmation");
+    const result = await callTool("theme.apply", { previewId: "preview-1" }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: false,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "missing_confirmation" }),
+        expect.objectContaining({ code: "missing_reviewed_payload" })
+      ])
+    });
+    expect(context.audit.list()[0]).toMatchObject({
+      tool: "theme.apply",
+      mode: "execute",
+      result: "blocked"
+    });
   });
 
   it("blocks writes in read-only mode", async () => {
@@ -560,10 +576,188 @@ describe("MCP tools", () => {
       audit: new MemoryAuditLog()
     };
 
-    await expect(callTool("product.create.execute", { confirmed: true }, context)).rejects.toThrow("read-only");
+    await expect(callTool("product.create.execute", {
+      ...executeBinding("product.create.preview", "Test product"),
+      confirmed: true,
+      title: "Test product"
+    }, context)).rejects.toThrow("read-only");
   });
 
-  it("reports confirmed execute placeholders as not implemented", async () => {
+  it("blocks execute without explicit confirmation", async () => {
+    const context: ToolContext = {
+      config: createConfig({ storeUrl: "demo", readOnly: false }),
+      audit: new MemoryAuditLog()
+    };
+
+    const result = await callTool("product.create.execute", {
+      ...executeBinding("product.create.preview", "Test product"),
+      title: "Test product"
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: false,
+      status: "blocked",
+      placeholder: true,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "missing_confirmation" })
+      ])
+    });
+    expect(context.audit.list()[0]).toMatchObject({
+      tool: "product.create.execute",
+      mode: "execute",
+      result: "blocked"
+    });
+  });
+
+  it("blocks execute without previewId", async () => {
+    const context: ToolContext = {
+      config: createConfig({ storeUrl: "demo", readOnly: false }),
+      audit: new MemoryAuditLog()
+    };
+
+    const result = await callTool("product.create.execute", {
+      confirmed: true,
+      reviewedPayload: { title: "Test product" },
+      expectedTool: "product.create.preview",
+      target: "Test product",
+      title: "Test product"
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: false,
+      status: "blocked",
+      placeholder: true,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "missing_preview_id" })
+      ])
+    });
+    expect(context.audit.list()[0]).toMatchObject({ result: "blocked" });
+  });
+
+  it("blocks execute with confirmation but missing reviewed payload", async () => {
+    const context: ToolContext = {
+      config: createConfig({ storeUrl: "demo", readOnly: false }),
+      audit: new MemoryAuditLog()
+    };
+
+    const result = await callTool("product.update.execute", {
+      confirmed: true,
+      previewId: "preview_123",
+      expectedTool: "product.update.preview",
+      productId: "gid://shopify/Product/1"
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: false,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "missing_reviewed_payload" })
+      ])
+    });
+    expect(context.audit.list()[0]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
+  });
+
+  it("blocks execute with previewId, confirmation, and payload but missing binding context", async () => {
+    const context: ToolContext = {
+      config: createConfig({ storeUrl: "demo", readOnly: false }),
+      audit: new MemoryAuditLog()
+    };
+
+    const result = await callTool("product.create.execute", {
+      previewId: "preview_123",
+      confirmed: true,
+      reviewedPayload: { title: "Test product" },
+      title: "Test product"
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: false,
+      status: "blocked",
+      placeholder: true,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "missing_expected_tool" }),
+        expect.objectContaining({ code: "missing_target" }),
+        expect.objectContaining({ code: "missing_preview_hash" }),
+        expect.objectContaining({ code: "missing_reviewed_changes_hash" })
+      ])
+    });
+    expect(context.audit.list()[0]).toMatchObject({
+      tool: "product.create.execute",
+      mode: "execute",
+      result: "blocked"
+    });
+  });
+
+  it("blocks execute when preview binding expected tool mismatches", async () => {
+    const context: ToolContext = {
+      config: createConfig({ storeUrl: "demo", readOnly: false }),
+      audit: new MemoryAuditLog()
+    };
+
+    const result = await callTool("product.update.execute", {
+      ...executeBinding("product.create.preview", "gid://shopify/Product/1"),
+      confirmed: true,
+      productId: "gid://shopify/Product/1"
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      status: "blocked",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "preview_tool_mismatch" })
+      ])
+    });
+    expect(context.audit.list()[0]).toMatchObject({ result: "blocked" });
+  });
+
+  it("blocks execute with secret-looking mismatched hashes without leaking them", async () => {
+    const context: ToolContext = {
+      config: createConfig({ storeUrl: "demo", readOnly: false }),
+      audit: new MemoryAuditLog()
+    };
+
+    const result = await callTool("product.update.execute", {
+      previewId: "preview_123",
+      confirmed: true,
+      reviewedPayload: { reviewed: true },
+      expectedTool: "product.update.preview",
+      target: "gid://shopify/Product/1",
+      previewHash: "shpat_hash_a",
+      reviewedChangesHash: "shpat_hash_b",
+      productId: "gid://shopify/Product/1"
+    }, context);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: false,
+      status: "blocked",
+      placeholder: true,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "invalid_secret_like_hash" }),
+        expect.objectContaining({ code: "preview_hash_mismatch" })
+      ])
+    });
+    expect(output).not.toContain("shpat_hash_a");
+    expect(output).not.toContain("shpat_hash_b");
+    expect(context.audit.list()[0]).toMatchObject({
+      tool: "product.update.execute",
+      mode: "execute",
+      result: "blocked"
+    });
+  });
+
+  it("reports validly bound execute placeholders as not implemented", async () => {
     let fetchCalled = false;
     const context: ToolContext = {
       config: createConfig({ storeUrl: "demo", readOnly: false }),
@@ -580,16 +774,26 @@ describe("MCP tools", () => {
       }
     };
 
-    const result = await callTool("product.create.execute", { title: "Test product", confirmed: true }, context);
+    const result = await callTool("product.create.execute", {
+      ...executeBinding("product.create.preview", "Test product"),
+      title: "Test product",
+      confirmed: true
+    }, context);
 
     expect(result).toMatchObject({
       ok: false,
       mode: "execute",
       implemented: false,
       status: "not_implemented",
-      placeholder: true
+      placeholder: true,
+      previewBinding: {
+        previewId: "preview_123",
+        expectedTool: "product.create.preview",
+        target: "Test product"
+      }
     });
     expect(JSON.stringify(result)).toContain("No Shopify change was made");
+    expect(JSON.stringify(result)).not.toContain("mutation");
     expect(context.audit.list()[0]).toMatchObject({
       tool: "product.create.execute",
       mode: "execute",
@@ -611,12 +815,40 @@ describe("MCP tools", () => {
       };
     }, false);
     const executeCalls: Array<[string, Record<string, unknown>]> = [
-      ["product.create.execute", { title: "Linen Shirt", confirmed: true }],
-      ["product.update.execute", { productId: "gid://shopify/Product/1", confirmed: true }],
-      ["product.media.update.execute", { productId: "gid://shopify/Product/1", confirmed: true }],
-      ["product.importFromUserUrl.execute", { url: "https://example.com/products/shirt", confirmed: true }],
-      ["page.create.execute", { title: "Care Guide", confirmed: true }],
-      ["collection.create.execute", { title: "Summer", confirmed: true }]
+      ["product.create.execute", { ...executeBinding("product.create.preview", "Linen Shirt"), title: "Linen Shirt", confirmed: true }],
+      ["product.update.execute", { ...executeBinding("product.update.preview", "gid://shopify/Product/1"), productId: "gid://shopify/Product/1", confirmed: true }],
+      ["product.media.update.execute", { ...executeBinding("product.media.update.preview", "gid://shopify/Product/1"), productId: "gid://shopify/Product/1", confirmed: true }],
+      ["product.importFromUserUrl.execute", { ...executeBinding("product.importFromUserUrl.preview", "https://example.com/products/shirt"), url: "https://example.com/products/shirt", confirmed: true }],
+      ["page.create.execute", { ...executeBinding("page.create.preview", "Care Guide"), title: "Care Guide", confirmed: true }],
+      ["collection.create.execute", { ...executeBinding("collection.create.preview", "Summer"), title: "Summer", confirmed: true }]
+    ];
+
+    for (const [tool, input] of executeCalls) {
+      const result = await callTool(tool, input, context);
+      expect(result).toMatchObject({
+        ok: false,
+        mode: "execute",
+        implemented: false,
+        status: "not_implemented",
+        placeholder: true
+      });
+    }
+
+    expect(fetchCalled).toBe(false);
+    expect(context.audit.list()).toHaveLength(executeCalls.length);
+    expect(context.audit.list().every((entry) => entry.result === "not_implemented")).toBe(true);
+  });
+
+  it("keeps remaining execute tools not implemented with valid preview binding", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    const executeCalls: Array<[string, Record<string, unknown>]> = [
+      ["customer.updateAddress.execute", { ...executeBinding("customer.updateAddress.preview", "gid://shopify/Customer/1"), customerId: "gid://shopify/Customer/1", confirmed: true }],
+      ["tracking.update.execute", { ...executeBinding("tracking.update.preview", "gid://shopify/Fulfillment/1"), fulfillmentId: "gid://shopify/Fulfillment/1", confirmed: true }],
+      ["bulk.execute", { ...executeBinding("bulk.preview", "preview_123"), confirmed: true }]
     ];
 
     for (const [tool, input] of executeCalls) {
@@ -642,6 +874,7 @@ describe("MCP tools", () => {
     };
 
     const result = await callTool("refund.execute", {
+      ...executeBinding("refund.preview", "gid://shopify/Order/1"),
       orderId: "gid://shopify/Order/1",
       idempotencyKey: "refund-key-1",
       confirmed: true
@@ -657,15 +890,63 @@ describe("MCP tools", () => {
     });
   });
 
-  it("keeps theme apply preview and confirmation guards before not implemented", async () => {
+  it("blocks and redacts secret-looking execute binding control values from output and audit", async () => {
     const context: ToolContext = {
       config: createConfig({ storeUrl: "demo", readOnly: false }),
       audit: new MemoryAuditLog()
     };
 
-    await expect(callTool("theme.apply", { confirmed: true }, context)).rejects.toThrow("preview ID");
+    const result = await callTool("product.importFromUserUrl.execute", {
+      previewId: "preview_shpat_execute_secret",
+      confirmed: true,
+      expectedTool: "product.importFromUserUrl.preview",
+      target: "https://example.com/products/shirt?access_token=shpat_execute_secret",
+      previewHash: "hash-a",
+      reviewedChangesHash: "hash-a",
+      reviewedPayload: { token: "shpat_execute_secret" },
+      url: "https://example.com/products/shirt?access_token=shpat_execute_secret"
+    }, context);
+    const output = JSON.stringify(result);
 
-    const result = await callTool("theme.apply", { previewId: "preview-1", confirmed: true }, context);
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      status: "blocked",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "invalid_secret_like_preview_id" }),
+        expect.objectContaining({ code: "target_mismatch" })
+      ])
+    });
+    expect(output).not.toContain("shpat_execute_secret");
+    expect(context.audit.list()[0].target).not.toContain("shpat_execute_secret");
+    expect(context.audit.list()[0]).toMatchObject({ result: "blocked" });
+  });
+
+  it("keeps theme apply binding guards before not implemented", async () => {
+    const context: ToolContext = {
+      config: createConfig({ storeUrl: "demo", readOnly: false }),
+      audit: new MemoryAuditLog()
+    };
+
+    const missing = await callTool("theme.apply", { confirmed: true }, context);
+
+    expect(missing).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: false,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "missing_preview_id" }),
+        expect.objectContaining({ code: "missing_reviewed_payload" })
+      ])
+    });
+    expect(context.audit.list()[0]).toMatchObject({ tool: "theme.apply", mode: "execute", result: "blocked" });
+
+    const result = await callTool("theme.apply", {
+      ...executeBinding("theme.preview", "preview-1"),
+      previewId: "preview-1",
+      confirmed: true
+    }, context);
 
     expect(result).toMatchObject({
       ok: false,
@@ -675,6 +956,7 @@ describe("MCP tools", () => {
       placeholder: true,
       previewId: "preview-1"
     });
+    expect(context.audit.list()[1]).toMatchObject({ tool: "theme.apply", mode: "execute", result: "not_implemented" });
   });
 });
 
@@ -723,4 +1005,15 @@ function changeFor(result: unknown, field: string): Record<string, unknown> | un
   const changes = (result as { proposedChanges: unknown }).proposedChanges;
   if (!Array.isArray(changes)) return undefined;
   return changes.find((change): change is Record<string, unknown> => Boolean(change) && typeof change === "object" && (change as { field?: unknown }).field === field);
+}
+
+function executeBinding(expectedTool: string, target: string): Record<string, unknown> {
+  return {
+    previewId: "preview_123",
+    expectedTool,
+    target,
+    previewHash: "reviewed_hash_123",
+    reviewedChangesHash: "reviewed_hash_123",
+    reviewedPayload: { reviewed: true }
+  };
 }

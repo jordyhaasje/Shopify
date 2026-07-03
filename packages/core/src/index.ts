@@ -4,6 +4,7 @@ export * from "./capabilities.js";
 export * from "./catalog-previews.js";
 export * from "./config-store.js";
 export * from "./config.js";
+export * from "./execute-binding.js";
 export * from "./file-audit.js";
 export * from "./oauth.js";
 export * from "./read-tools.js";

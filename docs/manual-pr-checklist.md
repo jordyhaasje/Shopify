@@ -19,6 +19,7 @@ pnpm run build
 - Review preview-tool audit behavior: successful previews use `success`; missing input and validation errors use `blocked`.
 - Confirm preview output summarizes large payloads, redacts secret-looking values, and does not autonomously fetch products or call Shopify write APIs.
 - For optional preview read enrichment, confirm it is explicit opt-in, uses only explicit IDs/handles, returns minimal summaries, treats read failures as warnings, and performs no mutations.
-- Review execute tools for read-only, preview, confirmation, and audit behavior.
+- Review execute tools for read-only, preview binding, confirmation, and audit behavior.
+- Confirm execute placeholders require preview ID plus reviewed payload/context; missing or mismatched binding uses `blocked`, and valid placeholders use `not_implemented`, never `success`.
 - Review capability or auth changes for token redaction and mocked tests only.
 - Merge manually only after local validation and reviewer approval.

@@ -1,6 +1,5 @@
 import {
   MemoryAuditLog,
-  assertThemeApplyAllowed,
   assertWritable,
   checkShopifyCapabilities,
   type CatalogPreviewResult,
@@ -8,6 +7,7 @@ import {
   createConfig,
   createRefundPreview,
   emptyCapabilities,
+  type ExecutePreviewBindingResult,
   type FetchLike,
   findCustomers,
   findOrders,
@@ -19,6 +19,7 @@ import {
   type PreviewWarning,
   type ProductSummary,
   type ReadResult,
+  validateExecutePreviewBinding,
   previewCollectionCreate,
   previewPageCreate,
   previewProductCreate,
@@ -185,12 +186,19 @@ function auditResultForRead(result: unknown): "success" | "blocked" | "failed" {
 }
 
 function executePlaceholder(tool: string, target: string, summary: string, input: Record<string, unknown>, context: ToolContext): Record<string, unknown> {
-  const confirmed = booleanInput(input, "confirmed");
-  assertWritable(context.config, tool, confirmed);
+  assertWritable(context.config, tool, true);
+  const safeTarget = safeExecuteString(target);
+  const binding = validateExecutePreviewBinding(input, {
+    executeTool: tool,
+    expectedPreviewTool: expectedPreviewTool(tool),
+    target: safeTarget
+  });
+  if (!binding.ok) return blockedExecuteResult(tool, safeTarget, binding, context);
+
   const notImplementedSummary = `${summary} No Shopify change was made because this execute tool is not implemented yet.`;
   const audit = context.audit.record({
     tool,
-    target,
+    target: safeTarget,
     mode: "execute",
     summary: notImplementedSummary,
     result: "not_implemented"
@@ -202,8 +210,88 @@ function executePlaceholder(tool: string, target: string, summary: string, input
     status: "not_implemented",
     summary: notImplementedSummary,
     audit,
+    previewBinding: {
+      previewId: binding.previewId,
+      expectedTool: binding.expectedPreviewTool,
+      target: binding.target
+    },
     placeholder: true
   };
+}
+
+function blockedExecuteResult(
+  tool: string,
+  target: string,
+  binding: ExecutePreviewBindingResult,
+  context: ToolContext
+): Record<string, unknown> {
+  const summary = "Execute blocked because preview binding preconditions were not met.";
+  const audit = context.audit.record({
+    tool,
+    target,
+    mode: "execute",
+    summary,
+    result: "blocked"
+  });
+  return {
+    ok: false,
+    mode: "execute",
+    implemented: false,
+    status: "blocked",
+    summary,
+    audit,
+    diagnostics: binding.diagnostics,
+    previewBinding: {
+      previewId: binding.previewId,
+      expectedTool: binding.expectedPreviewTool,
+      target: binding.target
+    },
+    placeholder: true
+  };
+}
+
+function expectedPreviewTool(tool: string): string {
+  if (tool === "theme.apply") return "theme.preview";
+  return tool.replace(/\.execute$/, ".preview");
+}
+
+function safeExecuteString(value: string): string {
+  if (looksLikeSecret(value)) return "[redacted]";
+  if (isHttpUrl(value)) return sanitizeUrl(value);
+  const normalized = value.trim();
+  return normalized.length > 180 ? `${normalized.slice(0, 180)}...` : normalized;
+}
+
+function sanitizeUrl(value: string): string {
+  try {
+    const url = new URL(value.trim());
+    url.username = "";
+    url.password = "";
+    for (const [key, paramValue] of url.searchParams.entries()) {
+      if (isSensitiveQueryKey(key) || looksLikeSecret(paramValue)) url.searchParams.set(key, "[redacted]");
+    }
+    const result = url.toString();
+    return result.length > 180 ? `${result.slice(0, 180)}...` : result;
+  } catch {
+    return safeExecuteString(value);
+  }
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isSensitiveQueryKey(key: string): boolean {
+  return /token|secret|password|authorization|access[_-]?token|accessToken|api[_-]?key|client[_-]?secret|key/i.test(key);
+}
+
+function looksLikeSecret(value: string): boolean {
+  return /shpat_[A-Za-z0-9_]+|shpua_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|Bearer\s+[A-Za-z0-9._-]+/i.test(value);
 }
 
 export async function createDefaultContext(): Promise<ToolContext> {
@@ -386,7 +474,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: { type: "object" },
     handler: (input, context) => ({
       ...executePlaceholder("refund.execute", stringInput(input, "orderId", "refund"), "Refund execution placeholder.", input, context),
-      idempotencyKey: stringInput(input, "idempotencyKey")
+      idempotencyKey: safeExecuteString(stringInput(input, "idempotencyKey"))
     })
   },
   {
@@ -495,11 +583,8 @@ export const tools: ToolDefinition[] = [
     inputSchema: { type: "object" },
     handler: (input, context) => {
       const previewId = stringInput(input, "previewId") || undefined;
-      const confirmed = booleanInput(input, "confirmed");
-      assertThemeApplyAllowed(previewId, confirmed);
-      const confirmedPreviewId = previewId ?? "";
-      const result = executePlaceholder("theme.apply", confirmedPreviewId, "Theme apply execution placeholder.", input, context);
-      return { ...result, previewId };
+      const result = executePlaceholder("theme.apply", previewId ?? "theme", "Theme apply execution placeholder.", input, context);
+      return { ...result, previewId: previewId ? safeExecuteString(previewId) : previewId };
     }
   },
   {

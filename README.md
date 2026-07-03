@@ -22,6 +22,8 @@ Structured preview tools are implemented for `product.create.preview`, `product.
 
 Write tools are still guarded fail-closed placeholders, including product create/update execute, customer address update execute, refund execute, tracking update execute, page/collection execute, bulk execute, and theme apply. No Shopify mutations are implemented yet.
 
+Execute placeholders require preview binding context before they reach the not-implemented placeholder response. Confirmation alone is insufficient: callers must provide a `previewId` plus reviewed payload context that can be tied to the expected preview tool and target. Missing or mismatched binding fails closed and is audited as `blocked`; validly bound placeholders are audited as `not_implemented`, never `success`.
+
 ## Temporary GitHub Install
 
 While npm publishing is not active, install from GitHub:
