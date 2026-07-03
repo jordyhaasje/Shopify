@@ -4,7 +4,7 @@ export interface AuditEntry {
   target: string;
   mode: "preview" | "execute" | "read";
   summary: string;
-  result: "success" | "blocked" | "failed";
+  result: "success" | "blocked" | "failed" | "not_implemented";
 }
 
 export class MemoryAuditLog {

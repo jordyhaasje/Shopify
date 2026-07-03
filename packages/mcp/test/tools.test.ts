@@ -73,4 +73,69 @@ describe("MCP tools", () => {
 
     await expect(callTool("product.create.execute", { confirmed: true }, context)).rejects.toThrow("read-only");
   });
+
+  it("reports confirmed execute placeholders as not implemented", async () => {
+    const context: ToolContext = {
+      config: createConfig({ storeUrl: "demo", readOnly: false }),
+      audit: new MemoryAuditLog()
+    };
+
+    const result = await callTool("product.create.execute", { title: "Test product", confirmed: true }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: false,
+      status: "not_implemented",
+      placeholder: true
+    });
+    expect(JSON.stringify(result)).toContain("No Shopify change was made");
+    expect(context.audit.list()[0]).toMatchObject({
+      tool: "product.create.execute",
+      mode: "execute",
+      result: "not_implemented"
+    });
+  });
+
+  it("keeps refund execute as a not-implemented placeholder with idempotency context", async () => {
+    const context: ToolContext = {
+      config: createConfig({ storeUrl: "demo", readOnly: false }),
+      audit: new MemoryAuditLog()
+    };
+
+    const result = await callTool("refund.execute", {
+      orderId: "gid://shopify/Order/1",
+      idempotencyKey: "refund-key-1",
+      confirmed: true
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: false,
+      status: "not_implemented",
+      placeholder: true,
+      idempotencyKey: "refund-key-1"
+    });
+  });
+
+  it("keeps theme apply preview and confirmation guards before not implemented", async () => {
+    const context: ToolContext = {
+      config: createConfig({ storeUrl: "demo", readOnly: false }),
+      audit: new MemoryAuditLog()
+    };
+
+    await expect(callTool("theme.apply", { confirmed: true }, context)).rejects.toThrow("preview ID");
+
+    const result = await callTool("theme.apply", { previewId: "preview-1", confirmed: true }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: false,
+      status: "not_implemented",
+      placeholder: true,
+      previewId: "preview-1"
+    });
+  });
 });

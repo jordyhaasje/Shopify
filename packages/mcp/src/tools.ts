@@ -59,14 +59,23 @@ function readResult(tool: string, target: string, summary: string, context: Tool
 function executePlaceholder(tool: string, target: string, summary: string, input: Record<string, unknown>, context: ToolContext): Record<string, unknown> {
   const confirmed = booleanInput(input, "confirmed");
   assertWritable(context.config, tool, confirmed);
+  const notImplementedSummary = `${summary} No Shopify change was made because this execute tool is not implemented yet.`;
   const audit = context.audit.record({
     tool,
     target,
     mode: "execute",
-    summary,
-    result: "success"
+    summary: notImplementedSummary,
+    result: "not_implemented"
   });
-  return { ok: true, mode: "execute", summary, audit, placeholder: true };
+  return {
+    ok: false,
+    mode: "execute",
+    implemented: false,
+    status: "not_implemented",
+    summary: notImplementedSummary,
+    audit,
+    placeholder: true
+  };
 }
 
 export async function createDefaultContext(): Promise<ToolContext> {

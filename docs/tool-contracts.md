@@ -13,6 +13,8 @@ Every write tool has the same safety requirements:
 - Audit requirement: preview and execute attempts must be written to the audit log with tool name, target, mode, summary, and result.
 - Failure behavior: fail closed, do not partially continue silently, return a clear error, and leave enough audit context for review.
 
+Current execute tools are placeholders. After read-only and confirmation checks pass, placeholder execute tools return `ok: false`, `implemented: false`, `status: "not_implemented"`, and `placeholder: true`. They must not be interpreted as successful Shopify writes, and their audit entries use `result: "not_implemented"` rather than `success`.
+
 The agent must never autonomously search for products. Users provide the product data, source URL, CSV, images, or IDs.
 
 ## Capability
