@@ -23,7 +23,7 @@ describe("capability routing", () => {
         themeAccessTokenConfigured: false
       }
     });
-    expect(result.config.adminAccessToken).toBeUndefined();
+    expect("config" in result).toBe(false);
     expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain("missing_admin_token");
   });
 
@@ -70,6 +70,7 @@ describe("capability routing", () => {
     });
     expect(JSON.stringify(result)).not.toContain("shpat_test_secret");
     expect(JSON.stringify(result)).not.toContain("theme_test_secret");
+    expect("config" in result).toBe(false);
   });
 
   it("returns a live diagnostic instead of throwing when live mode fails", async () => {

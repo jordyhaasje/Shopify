@@ -1,4 +1,4 @@
-import { CapabilitySnapshot, redactConfig, StoreAgentConfig } from "./config.js";
+import { CapabilitySnapshot, StoreAgentConfig } from "./config.js";
 import { FetchLike, ShopifyGraphqlClient, type ShopifyGraphqlResult } from "./shopify-client.js";
 
 export type ThemeWriteRoute = "graphql-theme-files" | "rest-assets" | "shopify-cli" | "unavailable";
@@ -31,7 +31,6 @@ export interface CapabilityCheckResult {
     adminApiTokenConfigured: boolean;
     themeAccessTokenConfigured: boolean;
   };
-  config: StoreAgentConfig;
   capabilities: CapabilityProbe[];
   diagnostics: CapabilityDiagnostic[];
   recommendations: string[];
@@ -141,7 +140,6 @@ export async function checkShopifyCapabilities(
       adminApiTokenConfigured: hasAdminToken,
       themeAccessTokenConfigured: hasThemeToken
     },
-    config: redactConfig(config),
     capabilities: summarizeCapabilities(config.capabilities ?? emptyCapabilities()),
     diagnostics,
     recommendations
