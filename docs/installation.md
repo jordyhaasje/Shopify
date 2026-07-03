@@ -26,6 +26,8 @@ npx shopify-store-agent setup
 
 The wizard should collect or create local Shopify credentials, run capability checks, and generate MCP configuration snippets for hosts such as Codex, Claude Code, and Cursor.
 
+Capability checks are safe by default. Local mode reports config status, redacted credential presence, read-only mode, local capability flags, diagnostics, and setup recommendations. Optional live mode uses the Admin API token only for a minimal shop identity check and must not return sensitive store data.
+
 ## Local OAuth Setup
 
 Local OAuth is only an install/auth mechanism for this MCP/CLI package.
