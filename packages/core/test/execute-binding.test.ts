@@ -14,8 +14,92 @@ describe("execute preview binding", () => {
       diagnostics: [
         { code: "missing_preview_id" },
         { code: "missing_confirmation" },
-        { code: "missing_reviewed_payload" }
+        { code: "missing_reviewed_payload" },
+        { code: "missing_expected_tool" },
+        { code: "missing_target" },
+        { code: "missing_preview_hash" },
+        { code: "missing_reviewed_changes_hash" }
       ]
+    });
+  });
+
+  it("blocks missing expected tool", () => {
+    const result = validateExecutePreviewBinding({
+      previewId: "preview_123",
+      confirmed: true,
+      reviewedPayload: { reviewed: true },
+      target: "product",
+      previewHash: "hash-a",
+      reviewedChangesHash: "hash-a"
+    }, {
+      executeTool: "product.create.execute",
+      expectedPreviewTool: "product.create.preview",
+      target: "product"
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: [{ code: "missing_expected_tool" }]
+    });
+  });
+
+  it("blocks missing target", () => {
+    const result = validateExecutePreviewBinding({
+      previewId: "preview_123",
+      confirmed: true,
+      reviewedPayload: { reviewed: true },
+      expectedTool: "product.create.preview",
+      previewHash: "hash-a",
+      reviewedChangesHash: "hash-a"
+    }, {
+      executeTool: "product.create.execute",
+      expectedPreviewTool: "product.create.preview",
+      target: "product"
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: [{ code: "missing_target" }]
+    });
+  });
+
+  it("blocks missing preview hash", () => {
+    const result = validateExecutePreviewBinding({
+      previewId: "preview_123",
+      confirmed: true,
+      reviewedPayload: { reviewed: true },
+      expectedTool: "product.create.preview",
+      target: "product",
+      reviewedChangesHash: "hash-a"
+    }, {
+      executeTool: "product.create.execute",
+      expectedPreviewTool: "product.create.preview",
+      target: "product"
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: [{ code: "missing_preview_hash" }]
+    });
+  });
+
+  it("blocks missing reviewed changes hash", () => {
+    const result = validateExecutePreviewBinding({
+      previewId: "preview_123",
+      confirmed: true,
+      reviewedPayload: { reviewed: true },
+      expectedTool: "product.create.preview",
+      target: "product",
+      previewHash: "hash-a"
+    }, {
+      executeTool: "product.create.execute",
+      expectedPreviewTool: "product.create.preview",
+      target: "product"
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: [{ code: "missing_reviewed_changes_hash" }]
     });
   });
 
@@ -69,7 +153,10 @@ describe("execute preview binding", () => {
       previewId: "preview_shpat_binding_secret",
       confirmed: true,
       reviewedPayload: { reviewed: true },
-      target: "target_shpua_binding_secret"
+      expectedTool: "product.create.preview",
+      target: "target_shpua_binding_secret",
+      previewHash: "hash-a",
+      reviewedChangesHash: "hash-a"
     }, {
       executeTool: "product.create.execute",
       expectedPreviewTool: "product.create.preview",

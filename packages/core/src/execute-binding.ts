@@ -44,8 +44,12 @@ export function validateExecutePreviewBinding(
   if (!previewId) diagnostics.push(diagnostic("missing_preview_id", "Execute requires a previewId from a reviewed preview."));
   if (input.confirmed !== true) diagnostics.push(diagnostic("missing_confirmation", "Execute requires explicit confirmation after preview review."));
   if (!isReviewedPayload(input.reviewedPayload)) diagnostics.push(diagnostic("missing_reviewed_payload", "Execute requires a reviewedPayload bound to the preview."));
+  if (!expectedTool) diagnostics.push(diagnostic("missing_expected_tool", "Execute requires the reviewed preview tool name."));
   if (expectedTool && expectedTool !== context.expectedPreviewTool) diagnostics.push(diagnostic("preview_tool_mismatch", "Execute preview binding expectedTool does not match this execute tool."));
+  if (!target) diagnostics.push(diagnostic("missing_target", "Execute requires the reviewed preview target."));
   if (target && target !== context.target) diagnostics.push(diagnostic("target_mismatch", "Execute preview binding target does not match this execute target."));
+  if (!previewHash) diagnostics.push(diagnostic("missing_preview_hash", "Execute requires the reviewed preview hash."));
+  if (!reviewedChangesHash) diagnostics.push(diagnostic("missing_reviewed_changes_hash", "Execute requires the reviewed changes hash."));
   if (previewHash && reviewedChangesHash && previewHash !== reviewedChangesHash) diagnostics.push(diagnostic("preview_hash_mismatch", "Execute preview binding hash does not match the reviewed changes hash."));
 
   return {

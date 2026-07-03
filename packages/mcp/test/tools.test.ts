@@ -663,6 +663,39 @@ describe("MCP tools", () => {
     expect(context.audit.list()[0]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
   });
 
+  it("blocks execute with previewId, confirmation, and payload but missing binding context", async () => {
+    const context: ToolContext = {
+      config: createConfig({ storeUrl: "demo", readOnly: false }),
+      audit: new MemoryAuditLog()
+    };
+
+    const result = await callTool("product.create.execute", {
+      previewId: "preview_123",
+      confirmed: true,
+      reviewedPayload: { title: "Test product" },
+      title: "Test product"
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: false,
+      status: "blocked",
+      placeholder: true,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "missing_expected_tool" }),
+        expect.objectContaining({ code: "missing_target" }),
+        expect.objectContaining({ code: "missing_preview_hash" }),
+        expect.objectContaining({ code: "missing_reviewed_changes_hash" })
+      ])
+    });
+    expect(context.audit.list()[0]).toMatchObject({
+      tool: "product.create.execute",
+      mode: "execute",
+      result: "blocked"
+    });
+  });
+
   it("blocks execute when preview binding expected tool mismatches", async () => {
     const context: ToolContext = {
       config: createConfig({ storeUrl: "demo", readOnly: false }),
@@ -830,6 +863,8 @@ describe("MCP tools", () => {
       confirmed: true,
       expectedTool: "product.importFromUserUrl.preview",
       target: "https://example.com/products/shirt?access_token=shpat_execute_secret",
+      previewHash: "hash-a",
+      reviewedChangesHash: "hash-a",
       reviewedPayload: { token: "shpat_execute_secret" },
       url: "https://example.com/products/shirt?access_token=shpat_execute_secret"
     }, context);
