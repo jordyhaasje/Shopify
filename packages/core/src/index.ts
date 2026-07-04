@@ -14,3 +14,4 @@ export * from "./refunds.js";
 export * from "./scopes.js";
 export * from "./shopify-client.js";
 export * from "./theme.js";
+export * from "./write-preflight.js";

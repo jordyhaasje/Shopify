@@ -15,6 +15,14 @@ export interface PageCreateSummary {
   handle?: string;
 }
 
+export interface PageVerificationSummary {
+  ok: boolean;
+  status: "verified" | "warning";
+  summary: string;
+  page?: PageCreateSummary;
+  diagnostics: PageWriteDiagnostic[];
+}
+
 export interface PageWriteDiagnostic {
   severity: "warning" | "error";
   code: string;
@@ -26,6 +34,7 @@ export interface PageCreateResult {
   status: "ok" | "blocked" | "missing_input" | "user_errors" | "shopify_error" | "invalid_response";
   summary: string;
   page?: PageCreateSummary;
+  verification?: PageVerificationSummary;
   userErrors: GraphqlUserError[];
   diagnostics: PageWriteDiagnostic[];
 }
@@ -42,6 +51,15 @@ interface PageCreateData {
       handle?: unknown;
     } | null;
     userErrors?: GraphqlUserError[];
+  } | null;
+}
+
+interface PageVerifyData {
+  node?: {
+    __typename?: unknown;
+    id?: unknown;
+    title?: unknown;
+    handle?: unknown;
   } | null;
 }
 
@@ -105,13 +123,17 @@ export async function createPage(
     title: safeText(pageNode?.title, 255),
     handle: safeHandle(pageNode?.handle)
   };
+  const verification = await verifyCreatedPage(client, created.id);
   return {
     ok: true,
     status: "ok",
-    summary: `Created Shopify page "${created.title ?? created.handle ?? created.id}".`,
+    summary: verification.ok
+      ? `Created and verified Shopify page "${created.title ?? created.handle ?? created.id}".`
+      : `Created Shopify page "${created.title ?? created.handle ?? created.id}"; verification returned a warning.`,
     page: created,
+    verification,
     userErrors: [],
-    diagnostics: []
+    diagnostics: verification.ok ? [] : verification.diagnostics
   };
 }
 
@@ -126,6 +148,19 @@ const pageCreateMutation = /* GraphQL */ `
       userErrors {
         field
         message
+      }
+    }
+  }
+`;
+
+const pageVerifyQuery = /* GraphQL */ `
+  query ShopifyStoreAgentPageVerify($id: ID!) {
+    node(id: $id) {
+      __typename
+      ... on Page {
+        id
+        title
+        handle
       }
     }
   }
@@ -172,6 +207,54 @@ function shopifyFailure(message: string): PageCreateResult {
     summary: message,
     userErrors: [],
     diagnostics: [{ severity: "warning", code: "shopify_request_failed", message }]
+  };
+}
+
+async function verifyCreatedPage(client: ShopifyGraphqlClient, id: string): Promise<PageVerificationSummary> {
+  let result: ShopifyGraphqlResult<PageVerifyData>;
+  try {
+    result = await client.request<PageVerifyData>({
+      query: pageVerifyQuery,
+      variables: { id }
+    });
+  } catch {
+    return verificationWarning("page_verification_unavailable", "Created page verification was unavailable after page create.");
+  }
+
+  if (!result.ok) {
+    return verificationWarning("page_verification_unavailable", "Created page verification was unavailable after page create.");
+  }
+
+  const node = result.data.node;
+  if (!node || node.__typename !== "Page") {
+    return verificationWarning("page_verification_not_found", "Created page could not be verified by ID after page create.");
+  }
+
+  const verifiedId = safeText(node.id, 180);
+  if (!verifiedId) {
+    return verificationWarning("page_verification_invalid_response", "Created page verification response did not include a safe page ID.");
+  }
+
+  const page = {
+    id: verifiedId,
+    title: safeText(node.title, 255),
+    handle: safeHandle(node.handle)
+  };
+  return {
+    ok: true,
+    status: "verified",
+    summary: `Verified created page "${page.title ?? page.handle ?? page.id}".`,
+    page,
+    diagnostics: []
+  };
+}
+
+function verificationWarning(code: string, message: string): PageVerificationSummary {
+  return {
+    ok: false,
+    status: "warning",
+    summary: message,
+    diagnostics: [{ severity: "warning", code, message }]
   };
 }
 

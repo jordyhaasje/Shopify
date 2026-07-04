@@ -6,6 +6,19 @@ describe("page write helper", () => {
     const requests: Array<{ url: string; body: string; token?: string }> = [];
     const fetcher: FetchLike = async (url, init) => {
       requests.push({ url, body: init.body, token: init.headers["X-Shopify-Access-Token"] });
+      if (init.body.includes("ShopifyStoreAgentPageVerify")) {
+        return jsonResponse({
+          data: {
+            node: {
+              __typename: "Page",
+              id: "gid://shopify/Page/1",
+              title: "Care Guide",
+              handle: "care-guide",
+              rawVerifyNodeOnly: "do not return"
+            }
+          }
+        });
+      }
       return jsonResponse({
         data: {
           pageCreate: {
@@ -39,15 +52,30 @@ describe("page write helper", () => {
         id: "gid://shopify/Page/1",
         title: "Care Guide",
         handle: "care-guide"
+      },
+      verification: {
+        ok: true,
+        status: "verified",
+        page: {
+          id: "gid://shopify/Page/1",
+          title: "Care Guide",
+          handle: "care-guide"
+        }
       }
     });
-    expect(requests).toHaveLength(1);
+    expect(requests).toHaveLength(2);
     expect(requests[0].body).toContain("mutation ShopifyStoreAgentPageCreate");
     expect(requests[0].body).toContain("pageCreate");
     expect(requests[0].body).not.toContain("productCreate");
     expect(requests[0].body).not.toContain("collectionCreate");
     expect(requests[0].body).not.toContain("refundCreate");
+    expect(requests[1].body).toContain("query ShopifyStoreAgentPageVerify");
+    expect(requests[1].body).toContain("\"id\":\"gid://shopify/Page/1\"");
+    expect(requests[1].body).not.toContain("product");
+    expect(requests[1].body).not.toContain("customer");
+    expect(requests[1].body).not.toContain("order");
     expect(JSON.stringify(result)).not.toContain("rawNodeOnly");
+    expect(JSON.stringify(result)).not.toContain("rawVerifyNodeOnly");
     expect(JSON.stringify(result)).not.toContain("shpat_page_secret");
   });
 
@@ -72,6 +100,44 @@ describe("page write helper", () => {
       userErrors: [{ field: ["title"], message: "Title has already been taken." }],
       diagnostics: [{ code: "shopify_user_errors" }]
     });
+  });
+
+  it("keeps page create successful with a safe verification warning", async () => {
+    const requests: string[] = [];
+    const result = await createPage(config(), {
+      title: "Care Guide",
+      body: "<p>Wash cold.</p>"
+    }, {
+      fetcher: async (_url, init) => {
+        requests.push(init.body);
+        if (init.body.includes("ShopifyStoreAgentPageVerify")) {
+          throw new Error("verify failed with token shpat_verify_secret");
+        }
+        return jsonResponse({
+          data: {
+            pageCreate: {
+              page: { id: "gid://shopify/Page/1", title: "Care Guide", handle: "care-guide" },
+              userErrors: []
+            }
+          }
+        });
+      }
+    });
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "ok",
+      verification: {
+        ok: false,
+        status: "warning",
+        diagnostics: [{ code: "page_verification_unavailable" }]
+      },
+      diagnostics: [{ code: "page_verification_unavailable" }]
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toContain("\"id\":\"gid://shopify/Page/1\"");
+    expect(output).not.toContain("shpat_verify_secret");
   });
 
   it("returns safe diagnostics for thrown network errors", async () => {

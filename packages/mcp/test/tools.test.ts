@@ -1145,10 +1145,88 @@ describe("MCP tools", () => {
     expect(fetchCalled).toBe(false);
   });
 
+  it("blocks page.create.execute before fetch when known granted scopes miss page write scope", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["read_content", "shpat_scope_secret"];
+    const preview = await callTool("page.create.preview", {
+      title: "Care Guide",
+      body: "Wash cold."
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("page.create.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "missing_write_scope" })])
+    });
+    expect(output).not.toContain("shpat_scope_secret");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "page.create.execute", result: "blocked" });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("blocks page.create.execute before fetch when granted scopes are unknown", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    const preview = await callTool("page.create.preview", {
+      title: "Care Guide",
+      body: "Wash cold."
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("page.create.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "unknown_write_scopes" })])
+    });
+    expect(context.audit.list()[1]).toMatchObject({ tool: "page.create.execute", result: "blocked" });
+    expect(fetchCalled).toBe(false);
+  });
+
   it("calls the Shopify pageCreate mutation only after valid stored preview binding", async () => {
     const requests: Array<{ body: string }> = [];
     const context = baseContext(async (_url, init) => {
       requests.push({ body: init.body });
+      if (init.body.includes("ShopifyStoreAgentPageVerify")) {
+        return jsonResponse({
+          data: {
+            node: { __typename: "Page", id: "gid://shopify/Page/1", title: "Care Guide", handle: "care-guide", rawVerifyNodeOnly: true }
+          }
+        });
+      }
       return jsonResponse({
         data: {
           pageCreate: {
@@ -1158,6 +1236,7 @@ describe("MCP tools", () => {
         }
       });
     }, false);
+    context.config.grantedScopes = ["write_content"];
     const preview = await callTool("page.create.preview", {
       title: "Care Guide",
       body: "Wash cold.",
@@ -1177,7 +1256,8 @@ describe("MCP tools", () => {
       reviewedChangesHash: reviewed.reviewedChangesHash,
       body: "UNRELATED EXECUTE BODY"
     }, context);
-    const request = JSON.parse(requests[0].body);
+    const createRequest = JSON.parse(requests[0].body);
+    const verifyRequest = JSON.parse(requests[1].body);
     const output = JSON.stringify(result);
 
     expect(result).toMatchObject({
@@ -1189,23 +1269,135 @@ describe("MCP tools", () => {
         id: "gid://shopify/Page/1",
         title: "Care Guide",
         handle: "care-guide"
+      },
+      verification: {
+        ok: true,
+        status: "verified",
+        page: {
+          id: "gid://shopify/Page/1"
+        }
       }
     });
-    expect(requests).toHaveLength(1);
-    expect(request.query).toContain("mutation ShopifyStoreAgentPageCreate");
-    expect(request.query).toContain("pageCreate");
-    expect(request.query).not.toContain("productCreate");
-    expect(request.query).not.toContain("collectionCreate");
-    expect(request.query).not.toContain("refundCreate");
-    expect(request.variables.page).toMatchObject({
+    expect(requests).toHaveLength(2);
+    expect(createRequest.query).toContain("mutation ShopifyStoreAgentPageCreate");
+    expect(createRequest.query).toContain("pageCreate");
+    expect(createRequest.query).not.toContain("productCreate");
+    expect(createRequest.query).not.toContain("collectionCreate");
+    expect(createRequest.query).not.toContain("refundCreate");
+    expect(createRequest.variables.page).toMatchObject({
       title: "Care Guide",
       body: "Wash cold.",
       handle: "care-guide",
       isPublished: false
     });
+    expect(verifyRequest.query).toContain("query ShopifyStoreAgentPageVerify");
+    expect(verifyRequest.variables).toEqual({ id: "gid://shopify/Page/1" });
+    expect(requests[1].body).not.toContain("Product");
+    expect(requests[1].body).not.toContain("Order");
+    expect(requests[1].body).not.toContain("Customer");
     expect(requests[0].body).not.toContain("UNRELATED EXECUTE BODY");
     expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("rawVerifyNodeOnly");
     expect(output).not.toContain("Wash cold.");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "page.create.execute", result: "success" });
+  });
+
+  it("allows page.create.execute with write_online_store_pages granted scope", async () => {
+    const requests: Array<{ body: string }> = [];
+    const context = baseContext(async (_url, init) => {
+      requests.push({ body: init.body });
+      if (init.body.includes("ShopifyStoreAgentPageVerify")) {
+        return jsonResponse({ data: { node: { __typename: "Page", id: "gid://shopify/Page/2", title: "Care Guide" } } });
+      }
+      return jsonResponse({
+        data: {
+          pageCreate: {
+            page: { id: "gid://shopify/Page/2", title: "Care Guide", handle: "care-guide" },
+            userErrors: []
+          }
+        }
+      });
+    }, false);
+    context.config.grantedScopes = ["write_online_store_pages"];
+    const preview = await callTool("page.create.preview", {
+      title: "Care Guide",
+      body: "Wash cold."
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("page.create.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({ ok: true, mode: "execute", status: "ok" });
+    expect(requests).toHaveLength(2);
+  });
+
+  it("returns safe page create verification warnings without raw dumps", async () => {
+    const requests: Array<{ body: string }> = [];
+    const context = baseContext(async (_url, init) => {
+      requests.push({ body: init.body });
+      if (init.body.includes("ShopifyStoreAgentPageVerify")) {
+        return jsonResponse({
+          data: {
+            node: {
+              __typename: "Product",
+              id: "gid://shopify/Product/1",
+              rawNodeOnly: "do not return"
+            }
+          }
+        });
+      }
+      return jsonResponse({
+        data: {
+          pageCreate: {
+            page: { id: "gid://shopify/Page/3", title: "Care Guide", handle: "care-guide" },
+            userErrors: []
+          }
+        }
+      });
+    }, false);
+    context.config.grantedScopes = ["write_content"];
+    const preview = await callTool("page.create.preview", {
+      title: "Care Guide",
+      body: "Wash cold."
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("page.create.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "execute",
+      status: "ok",
+      verification: {
+        ok: false,
+        status: "warning",
+        diagnostics: [{ code: "page_verification_not_found" }]
+      },
+      diagnostics: [{ code: "page_verification_not_found" }]
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1].body).toContain("\"id\":\"gid://shopify/Page/3\"");
+    expect(output).not.toContain("gid://shopify/Product/1");
+    expect(output).not.toContain("rawNodeOnly");
     expect(context.audit.list()[1]).toMatchObject({ tool: "page.create.execute", result: "success" });
   });
 
@@ -1218,6 +1410,7 @@ describe("MCP tools", () => {
         }
       }
     }), false);
+    context.config.grantedScopes = ["write_content"];
     const preview = await callTool("page.create.preview", {
       title: "Care Guide",
       body: "Wash cold."
@@ -1249,6 +1442,7 @@ describe("MCP tools", () => {
     const context = baseContext(async () => {
       throw new Error("network failed with token shpat_page_execute_secret");
     }, false);
+    context.config.grantedScopes = ["write_content"];
     const preview = await callTool("page.create.preview", {
       title: "Care Guide",
       body: "Wash cold."

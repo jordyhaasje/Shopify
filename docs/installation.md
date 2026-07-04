@@ -76,7 +76,7 @@ pnpm --filter shopify-store-agent run auth -- --store your-store.myshopify.com
 
 The CLI asks for the Shopify app client ID and client secret, opens or prints an install URL, validates the callback state/HMAC, exchanges the OAuth code, and stores the resulting Admin API token locally.
 
-V1 defaults to read-only mode unless writes are explicitly enabled. The default OAuth install URL uses read-only scopes only. Do not request write scopes for setup, smoke, reads, or previews; request the minimum page-content write scope only when intentionally testing the reviewed `page.create.execute` path in a development store.
+V1 defaults to read-only mode unless writes are explicitly enabled. The default OAuth install URL uses read-only scopes only. Do not request write scopes for setup, smoke, reads, or previews; request `write_content` or `write_online_store_pages` only when intentionally testing the reviewed `page.create.execute` path in a development store.
 
 ## Manual Admin API Token Setup
 

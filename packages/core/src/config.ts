@@ -6,6 +6,7 @@ export interface StoreAgentConfig {
   readOnly: boolean;
   auditLogPath?: string;
   capabilities?: CapabilitySnapshot;
+  grantedScopes?: string[];
 }
 
 export interface CapabilitySnapshot {
@@ -34,7 +35,8 @@ export function createConfig(input: Partial<StoreAgentConfig> & { storeUrl: stri
     apiVersion: input.apiVersion ?? defaultApiVersion,
     readOnly: input.readOnly ?? true,
     auditLogPath: input.auditLogPath,
-    capabilities: input.capabilities
+    capabilities: input.capabilities,
+    grantedScopes: input.grantedScopes
   };
 }
 
