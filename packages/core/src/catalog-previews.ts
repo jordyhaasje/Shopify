@@ -428,7 +428,8 @@ function summarizeUpdateOptions(options: unknown[]): unknown {
       const name = summarizeValue("name", object.name ?? object.optionName);
       const values = summarizeOptionValues(object.values ?? object.optionValues);
       const deleteValueIds = summarizeOptionValueIds(object.deleteValueIds ?? object.deletedValueIds ?? object.valuesToDelete ?? object.optionValuesToDelete ?? object.deleteValues);
-      const fields = Object.fromEntries(Object.entries({ id, name, values, deleteValueIds }).filter(([, entryValue]) => entryValue !== undefined));
+      const deleteOption = object.delete === true || object.remove === true || object.destroy === true || object.deleteOption === true ? true : undefined;
+      const fields = Object.fromEntries(Object.entries({ id, name, values, deleteValueIds, deleteOption }).filter(([, entryValue]) => entryValue !== undefined));
       return {
         fields,
         omittedFieldCount: Math.max(0, Object.keys(object).length - Object.keys(fields).length)

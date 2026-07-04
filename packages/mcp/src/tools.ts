@@ -36,6 +36,8 @@ import {
   type ProductCreateResult,
   type ProductOptionsCreateInput,
   type ProductOptionsCreateResult,
+  type ProductOptionsDeleteInput,
+  type ProductOptionsDeleteResult,
   type ProductOptionValueAddInput,
   type ProductOptionValueAddResult,
   type ProductOptionValueDeleteInput,
@@ -60,6 +62,7 @@ import {
   createProduct,
   createProductOptions,
   createProductVariants,
+  deleteProductOptions,
   deleteProductOptionValues,
   renameProductOption,
   renameProductOptionValue,
@@ -452,11 +455,12 @@ async function productUpdateExecuteResult(input: Record<string, unknown>, contex
   const variantPriceExtracted = productVariantPriceUpdateInputFromStoredPreview(lookup.record);
   const variantCreateExtracted = productVariantCreateInputFromStoredPreview(lookup.record);
   const optionCreateExtracted = productOptionsCreateInputFromStoredPreview(lookup.record);
+  const optionDeleteExtracted = productOptionsDeleteInputFromStoredPreview(lookup.record);
   const optionRenameExtracted = productOptionRenameInputFromStoredPreview(lookup.record);
   const optionValueRenameExtracted = productOptionValueRenameInputFromStoredPreview(lookup.record);
   const optionValueAddExtracted = productOptionValueAddInputFromStoredPreview(lookup.record);
   const optionValueDeleteExtracted = productOptionValueDeleteInputFromStoredPreview(lookup.record);
-  const extractedShapeCount = [extracted, variantPriceExtracted, variantCreateExtracted, optionCreateExtracted, optionRenameExtracted, optionValueRenameExtracted, optionValueAddExtracted, optionValueDeleteExtracted].filter((item) => item.ok).length;
+  const extractedShapeCount = [extracted, variantPriceExtracted, variantCreateExtracted, optionCreateExtracted, optionDeleteExtracted, optionRenameExtracted, optionValueRenameExtracted, optionValueAddExtracted, optionValueDeleteExtracted].filter((item) => item.ok).length;
   if (extractedShapeCount > 1) {
     return blockedImplementedExecuteResult(tool, storedTarget, [diagnostic("mixed_product_update_fields", "Stored product update preview mixes multiple product update shapes; create separate previews to avoid partial writes.")], context, binding);
   }
@@ -470,6 +474,7 @@ async function productUpdateExecuteResult(input: Record<string, unknown>, contex
     if (!variantPriceExtracted.ok && diagnostics.length === 0) diagnostics.push(...variantPriceExtracted.diagnostics);
     if (!variantCreateExtracted.ok && diagnostics.length === 0) diagnostics.push(...variantCreateExtracted.diagnostics);
     if (!optionCreateExtracted.ok && diagnostics.length === 0) diagnostics.push(...optionCreateExtracted.diagnostics);
+    if (!optionDeleteExtracted.ok && diagnostics.length === 0) diagnostics.push(...optionDeleteExtracted.diagnostics);
     if (!optionRenameExtracted.ok && diagnostics.length === 0) diagnostics.push(...optionRenameExtracted.diagnostics);
     if (!optionValueRenameExtracted.ok && diagnostics.length === 0) diagnostics.push(...optionValueRenameExtracted.diagnostics);
     if (!optionValueAddExtracted.ok && diagnostics.length === 0) diagnostics.push(...optionValueAddExtracted.diagnostics);
@@ -493,6 +498,11 @@ async function productUpdateExecuteResult(input: Record<string, unknown>, contex
   if (optionCreateExtracted.ok) {
     const write = await createProductOptions(context.config, optionCreateExtracted.input, { fetcher: context.fetcher });
     return productOptionCreateWriteResult(tool, storedTarget, binding, write, context);
+  }
+
+  if (optionDeleteExtracted.ok) {
+    const write = await deleteProductOptions(context.config, optionDeleteExtracted.input, { fetcher: context.fetcher });
+    return productOptionDeleteWriteResult(tool, storedTarget, binding, write, context);
   }
 
   if (optionRenameExtracted.ok) {
@@ -870,6 +880,39 @@ function productOptionCreateWriteResult(
   };
 }
 
+function productOptionDeleteWriteResult(
+  tool: string,
+  target: string,
+  binding: ExecutePreviewBindingResult,
+  write: ProductOptionsDeleteResult,
+  context: ToolContext
+): Record<string, unknown> {
+  const result = productUpdateAuditResult(write);
+  const audit = context.audit.record({
+    tool,
+    target: safeExecuteString(target),
+    mode: "execute",
+    summary: write.summary,
+    result
+  });
+  return {
+    ok: write.ok,
+    mode: "execute",
+    implemented: true,
+    status: write.status,
+    summary: write.summary,
+    audit,
+    deletedOptions: write.optionDelete,
+    userErrors: write.userErrors,
+    diagnostics: write.diagnostics,
+    previewBinding: {
+      previewId: binding.previewId,
+      expectedTool: binding.expectedPreviewTool,
+      target: binding.target
+    }
+  };
+}
+
 function productOptionRenameWriteResult(
   tool: string,
   target: string,
@@ -1041,7 +1084,7 @@ function productCreateAuditResult(write: ProductCreateResult): "success" | "bloc
   return "failed";
 }
 
-function productUpdateAuditResult(write: ProductUpdateResult | ProductVariantPriceUpdateResult | ProductVariantBulkCreateResult | ProductOptionsCreateResult | ProductOptionRenameResult | ProductOptionValueRenameResult | ProductOptionValueAddResult | ProductOptionValueDeleteResult): "success" | "blocked" | "failed" {
+function productUpdateAuditResult(write: ProductUpdateResult | ProductVariantPriceUpdateResult | ProductVariantBulkCreateResult | ProductOptionsCreateResult | ProductOptionsDeleteResult | ProductOptionRenameResult | ProductOptionValueRenameResult | ProductOptionValueAddResult | ProductOptionValueDeleteResult): "success" | "blocked" | "failed" {
   if (write.status === "ok") return "success";
   if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
   return "failed";
@@ -1196,6 +1239,26 @@ function productOptionsCreateInputFromStoredPreview(record: StoredPreviewRecord)
     input: {
       productId,
       options
+    }
+  };
+}
+
+function productOptionsDeleteInputFromStoredPreview(record: StoredPreviewRecord): { ok: true; input: ProductOptionsDeleteInput } | { ok: false; diagnostics: ExecutePreviewBindingDiagnostic[] } {
+  const productId = safeContentText(targetField(record, "id") ?? targetField(record, "productId") ?? changeAfterValue(record, "id") ?? changeAfterValue(record, "productId"), 180);
+  const optionIds = optionDeletesFromStoredPreview(record);
+
+  if (!productId || optionIds.length === 0) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_product_update_fields", "Stored product update preview did not include supported basic product fields, explicit variant fields, explicit option create fields, or explicit option delete fields for execution.")]
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      productId,
+      optionIds
     }
   };
 }
@@ -1434,6 +1497,31 @@ function optionCreatesFromStoredPreview(record: StoredPreviewRecord): ProductOpt
     if (result.length >= 3) break;
   }
   return result;
+}
+
+function optionDeletesFromStoredPreview(record: StoredPreviewRecord): ProductOptionsDeleteInput["optionIds"] {
+  const result: ProductOptionsDeleteInput["optionIds"] = [];
+  const seen = new Set<string>();
+  const add = (value: unknown) => {
+    const id = safeVariantText(value, 180);
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    result.push(id);
+  };
+
+  for (const item of arraySummaryItems(changeAfterValue(record, "deleteOptionIds"))) add(item);
+  for (const item of arraySummaryItems(changeAfterValue(record, "deletedOptionIds"))) add(item);
+  for (const item of arraySummaryItems(changeAfterValue(record, "optionsToDelete"))) add(item);
+  for (const item of arraySummaryItems(changeAfterValue(record, "productOptionsToDelete"))) add(item);
+
+  for (const item of storedChangeArray(record, "options", "after")) {
+    const fields = objectFields(item);
+    const markedForDelete = fields.delete === true || fields.remove === true || fields.destroy === true || fields.deleteOption === true;
+    if (!markedForDelete) continue;
+    add(fields.id ?? fields.optionId);
+  }
+
+  return result.slice(0, 3);
 }
 
 function optionValueAddsFromStoredPreview(record: StoredPreviewRecord): Array<{ optionId: string; values: ProductOptionValueAddInput["values"] }> {
@@ -1847,7 +1935,7 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: "product.update.execute",
-    description: "Update basic Shopify product fields, explicit variant prices, explicit variants, explicit options, explicit option names, explicit option value names, explicit option value additions, or explicit option value deletions after stored product update preview binding and explicit confirmation.",
+    description: "Update basic Shopify product fields, explicit variant prices, explicit variants, explicit options, explicit option deletes, explicit option names, explicit option value names, explicit option value additions, or explicit option value deletions after stored product update preview binding and explicit confirmation.",
     inputSchema: { type: "object" },
     handler: (input, context) => productUpdateExecuteResult(input, context)
   },

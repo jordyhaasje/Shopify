@@ -1909,6 +1909,98 @@ describe("MCP tools", () => {
     expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "success" });
   });
 
+  it("deletes explicit product options from stored product update preview via productOptionsDelete", async () => {
+    const requests: Array<{ body: string }> = [];
+    const context = baseContext(async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          productOptionsDelete: {
+            deletedOptionsIds: ["gid://shopify/ProductOption/2"],
+            product: {
+              id: "gid://shopify/Product/1",
+              options: [
+                {
+                  id: "gid://shopify/ProductOption/1",
+                  name: "Size",
+                  position: 1,
+                  optionValues: [
+                    { id: "gid://shopify/ProductOptionValue/1", name: "Small", hasVariants: true }
+                  ],
+                  rawNodeOnly: "do-not-return"
+                }
+              ],
+              variants: { nodes: [{ id: "do-not-return" }] },
+              metafields: { nodes: [{ id: "do-not-return" }] }
+            },
+            userErrors: []
+          }
+        }
+      });
+    }, false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      options: [{
+        id: "gid://shopify/ProductOption/2",
+        delete: true
+      }]
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash,
+      deleteOptionIds: ["gid://shopify/ProductOption/999"]
+    }, context);
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "execute",
+      implemented: true,
+      status: "ok",
+      deletedOptions: {
+        productId: "gid://shopify/Product/1",
+        deletedOptionCount: 1,
+        optionIds: ["gid://shopify/ProductOption/2"],
+        strategy: "NON_DESTRUCTIVE",
+        remainingOptions: [
+          {
+            id: "gid://shopify/ProductOption/1",
+            name: "Size",
+            position: 1,
+            values: ["Small"]
+          }
+        ]
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentProductOptionsDelete");
+    expect(request.query).toContain("productOptionsDelete");
+    expect(request.query).not.toContain("productUpdate");
+    expect(request.query).not.toContain("productOptionUpdate");
+    expect(request.query).not.toContain("inventory");
+    expect(request.query).not.toContain("metafields");
+    expect(request.variables).toEqual({
+      productId: "gid://shopify/Product/1",
+      options: ["gid://shopify/ProductOption/2"],
+      strategy: "NON_DESTRUCTIVE"
+    });
+    expect(requests[0].body).not.toContain("999");
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("metafields");
+    expect(output).not.toContain("variants");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "success" });
+  });
+
   it("renames an explicit product option from stored product update preview via productOptionUpdate", async () => {
     const requests: Array<{ body: string }> = [];
     const context = baseContext(async (_url, init) => {
@@ -2342,6 +2434,42 @@ describe("MCP tools", () => {
       productId: "gid://shopify/Product/1",
       title: "Mixed Option Create",
       options: [{ name: "Material", values: ["Cotton"] }]
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "mixed_product_update_fields" })])
+    });
+    expect(fetchCalled).toBe(false);
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
+  });
+
+  it("blocks mixed basic product and option delete preview before fetch", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      title: "Mixed Option Delete",
+      options: [{ id: "gid://shopify/ProductOption/2", delete: true }]
     }, context) as Record<string, unknown>;
     const binding = preview.binding as Record<string, unknown>;
     const reviewed = reviewedBindingFor(context, preview);

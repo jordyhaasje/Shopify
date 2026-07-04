@@ -93,6 +93,11 @@ export interface ProductOptionValueDeleteInput {
   valueIds: string[];
 }
 
+export interface ProductOptionsDeleteInput {
+  productId: string;
+  optionIds: string[];
+}
+
 export interface ProductCreateSummary {
   id: string;
   title?: string;
@@ -173,6 +178,14 @@ export interface ProductOptionValueDeleteSummary {
   variantStrategy: "LEAVE_AS_IS";
 }
 
+export interface ProductOptionsDeleteSummary {
+  productId: string;
+  deletedOptionCount: number;
+  optionIds: string[];
+  remainingOptions: ProductOptionSummary[];
+  strategy: "NON_DESTRUCTIVE";
+}
+
 export interface ProductWriteDiagnostic {
   severity: "warning" | "error";
   code: string;
@@ -220,6 +233,10 @@ export interface ProductOptionValueAddResult extends ProductWriteResultBase {
 
 export interface ProductOptionValueDeleteResult extends ProductWriteResultBase {
   optionValueDelete?: ProductOptionValueDeleteSummary;
+}
+
+export interface ProductOptionsDeleteResult extends ProductWriteResultBase {
+  optionDelete?: ProductOptionsDeleteSummary;
 }
 
 export interface ProductWriteOptions {
@@ -285,6 +302,17 @@ type ProductOptionSummaryNode = {
 
 interface ProductOptionsCreateData {
   productOptionsCreate?: {
+    product?: {
+      id?: unknown;
+      options?: Array<ProductOptionSummaryNode | null> | null;
+    } | null;
+    userErrors?: GraphqlUserError[];
+  } | null;
+}
+
+interface ProductOptionsDeleteData {
+  productOptionsDelete?: {
+    deletedOptionsIds?: unknown[] | null;
     product?: {
       id?: unknown;
       options?: Array<ProductOptionSummaryNode | null> | null;
@@ -688,6 +716,101 @@ export async function createProductOptions(
       createdOptionCount: createdOptions.length,
       options: createdOptions,
       variantStrategy: "LEAVE_AS_IS"
+    },
+    userErrors: [],
+    diagnostics: []
+  };
+}
+
+export async function deleteProductOptions(
+  config: StoreAgentConfig,
+  input: ProductOptionsDeleteInput,
+  options: ProductWriteOptions = {}
+): Promise<ProductOptionsDeleteResult> {
+  if (config.readOnly) return blocked("Product option delete is blocked because read-only mode is enabled.");
+
+  const productId = safeText(input.productId, 180);
+  if (!productId) return missingInput("Provide a product ID.");
+
+  const optionIds = safeOptionIds(input.optionIds);
+  if (optionIds.length === 0) return missingInput("Provide at least one product option ID to delete.");
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  let result: ShopifyGraphqlResult<ProductOptionsDeleteData>;
+  try {
+    result = await client.request<ProductOptionsDeleteData>({
+      query: productOptionsDeleteMutation,
+      variables: {
+        productId,
+        options: optionIds,
+        strategy: "NON_DESTRUCTIVE"
+      }
+    });
+  } catch {
+    return shopifyFailure("Shopify product option delete request failed before a safe response was available.");
+  }
+
+  if (!result.ok) return mapGraphqlFailure(result);
+
+  const userErrors = result.data.productOptionsDelete?.userErrors ?? result.userErrors;
+  if (userErrors.length > 0) {
+    return {
+      ok: false,
+      status: "user_errors",
+      summary: "Shopify rejected the product option delete request.",
+      userErrors: sanitizeUserErrors(userErrors),
+      diagnostics: [{ severity: "warning", code: "shopify_user_errors", message: "Shopify returned product option delete user errors." }]
+    };
+  }
+
+  const productNode = result.data.productOptionsDelete?.product;
+  const updatedProductId = safeText(productNode?.id, 180);
+  if (!updatedProductId) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product option delete response did not include a product ID.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product option delete response did not include a product ID." }]
+    };
+  }
+
+  const returnedDeletedIds = safeOptionIds((result.data.productOptionsDelete?.deletedOptionsIds ?? []).map((id) => safeText(id, 180) ?? ""));
+  if (optionIds.some((optionId) => !returnedDeletedIds.includes(optionId))) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product option delete response did not include all deleted option IDs.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product option delete response did not include all deleted option IDs." }]
+    };
+  }
+
+  const remainingOptions = (productNode?.options ?? [])
+    .map((candidate) => optionSummaryFromNode(candidate))
+    .filter((option): option is ProductOptionSummary => Boolean(option))
+    .slice(0, 10);
+  const remainingIds = new Set(remainingOptions.map((option) => option.id).filter(Boolean));
+  if (optionIds.some((optionId) => remainingIds.has(optionId))) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product option delete response still included a deleted option ID.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product option delete response still included a deleted option ID." }]
+    };
+  }
+
+  return {
+    ok: true,
+    status: "ok",
+    summary: `Deleted ${optionIds.length} Shopify product option${optionIds.length === 1 ? "" : "s"}.`,
+    optionDelete: {
+      productId: updatedProductId,
+      deletedOptionCount: optionIds.length,
+      optionIds,
+      remainingOptions,
+      strategy: "NON_DESTRUCTIVE"
     },
     userErrors: [],
     diagnostics: []
@@ -1132,6 +1255,32 @@ const productOptionsCreateMutation = /* GraphQL */ `
   }
 `;
 
+const productOptionsDeleteMutation = /* GraphQL */ `
+  mutation ShopifyStoreAgentProductOptionsDelete($productId: ID!, $options: [ID!]!, $strategy: ProductOptionDeleteStrategy) {
+    productOptionsDelete(productId: $productId, options: $options, strategy: $strategy) {
+      deletedOptionsIds
+      product {
+        id
+        options {
+          id
+          name
+          position
+          optionValues {
+            id
+            name
+            hasVariants
+          }
+        }
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
 const productOptionUpdateMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentProductOptionUpdate($productId: ID!, $option: OptionUpdateInput!, $optionValuesToAdd: [OptionValueCreateInput!], $optionValuesToUpdate: [OptionValueUpdateInput!], $optionValuesToDelete: [ID!], $variantStrategy: ProductOptionUpdateVariantStrategy) {
     productOptionUpdate(productId: $productId, option: $option, optionValuesToAdd: $optionValuesToAdd, optionValuesToUpdate: $optionValuesToUpdate, optionValuesToDelete: $optionValuesToDelete, variantStrategy: $variantStrategy) {
@@ -1157,7 +1306,7 @@ const productOptionUpdateMutation = /* GraphQL */ `
   }
 `;
 
-function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<ProductCreateData | ProductUpdateData | ProductVariantsBulkUpdateData | ProductVariantsBulkCreateData | ProductOptionsCreateData | ProductOptionUpdateData>, { ok: false }>): ProductWriteResultBase {
+function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<ProductCreateData | ProductUpdateData | ProductVariantsBulkUpdateData | ProductVariantsBulkCreateData | ProductOptionsCreateData | ProductOptionsDeleteData | ProductOptionUpdateData>, { ok: false }>): ProductWriteResultBase {
   return {
     ok: false,
     status: "shopify_error",
@@ -1269,6 +1418,20 @@ function safeOptionCreateInputs(value: ProductOptionCreateInput[] | undefined): 
     if (!name || values.length === 0 || seen.has(name)) continue;
     seen.add(name);
     results.push({ name, values });
+    if (results.length >= 3) break;
+  }
+  return results;
+}
+
+function safeOptionIds(value: string[] | undefined): string[] {
+  if (!Array.isArray(value)) return [];
+  const results: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const id = safeText(item, 180);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    results.push(id);
     if (results.length >= 3) break;
   }
   return results;
