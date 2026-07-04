@@ -30,7 +30,7 @@ All other write tools are still guarded fail-closed placeholders, including prod
 
 ## Temporary GitHub Install
 
-While npm publishing is not active, install from GitHub:
+While npm publishing is not active, install from GitHub and build locally:
 
 ```bash
 git clone https://github.com/jordyhaasje/Shopify.git
@@ -40,13 +40,23 @@ pnpm run build
 pnpm --filter shopify-store-agent run setup -- --store your-store.myshopify.com
 ```
 
+The generated MCP snippets use the local build by default:
+
+```text
+node /absolute/path/to/Shopify/packages/mcp/dist/server.js
+```
+
+Snippets point to `SHOPIFY_STORE_AGENT_CONFIG` and non-secret environment values. They must not include Admin API tokens, OAuth client secrets, or Theme Access tokens.
+
 For local OAuth, add this redirect URL to the Shopify Dev Dashboard app:
 
 ```text
 http://127.0.0.1:3456/auth/callback
 ```
 
-See [docs/installation.md](docs/installation.md) for OAuth and manual token setup. For manual development-store validation of the current MVP, use [docs/dev-store-e2e-runbook.md](docs/dev-store-e2e-runbook.md).
+OAuth is the recommended auth route when the user has Shopify app client credentials. Run `shopify-store-agent auth` through pnpm to open the browser install flow and store the resulting Admin API token locally. `setup --auth oauth` only prints guidance and MCP snippets; it does not exchange a token. Manual Admin API token setup remains supported as a fallback.
+
+See [docs/installation.md](docs/installation.md) for OAuth and manual token setup, [docs/ai-operator-guide.md](docs/ai-operator-guide.md) for Codex/OpenCode/Claude Code/Cursor operator guidance, and [docs/dev-store-e2e-runbook.md](docs/dev-store-e2e-runbook.md) for manual development-store validation.
 
 ## Future NPM Setup
 
@@ -55,6 +65,8 @@ The intended future setup is:
 ```bash
 npx shopify-store-agent setup
 ```
+
+That npm/npx path is not the primary working route until package publishing is active.
 
 The wizard guides users through store URL normalization, manual-token or local-OAuth setup guidance, read-only local config, capability checks, and MCP host snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts. Setup and OAuth auth default to read-only scopes and do not request or activate write mode for read/preview validation.
 

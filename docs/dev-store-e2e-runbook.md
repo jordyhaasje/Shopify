@@ -19,8 +19,9 @@ The goal is to test the current local-first flow end to end:
 - Keep all credentials local. Never paste tokens, OAuth client secrets, Theme Access tokens, customer data, order data, or raw Shopify responses into docs, PRs, issues, chat, screenshots, or logs.
 - Node.js and pnpm are available locally.
 - The repository is cloned locally.
-- You have either a Shopify Admin API token for the development store or a local OAuth setup for that store.
+- You have local OAuth app credentials for the development store, or a manual Admin API token fallback.
 - Setup defaults to read-only mode. Disable read-only only for the deliberate development-store write steps below.
+- This runbook is manual. Do not add live automated tests or real dev-store writes to `pnpm run smoke:local`.
 
 ## Scopes
 
@@ -87,7 +88,33 @@ pnpm run build
 pnpm --filter shopify-store-agent run setup -- --store your-store.myshopify.com
 ```
 
-Setup writes local config only when run as the CLI command. It prints the config path and MCP snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts. Snippets point to local config and non-secret environment values; they must not include raw Admin API tokens or OAuth client secrets.
+Setup is for local config, MCP snippets, and guidance. It prints the config path and MCP snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts. In the current GitHub-only phase, snippets use the local build with a command like:
+
+```text
+node /absolute/path/to/Shopify/packages/mcp/dist/server.js
+```
+
+Snippets point to local config and non-secret environment values; they must not include raw Admin API tokens or OAuth client secrets.
+
+For OAuth-first read-only auth, configure the Shopify Dev Dashboard app redirect URL:
+
+```text
+http://127.0.0.1:3456/auth/callback
+```
+
+Then run:
+
+```bash
+pnpm --filter shopify-store-agent run auth -- \
+  --store your-store.myshopify.com \
+  --client-id "$SHOPIFY_CLIENT_ID" \
+  --client-secret "$SHOPIFY_CLIENT_SECRET" \
+  --scopes "read_products,read_content,read_online_store_pages"
+```
+
+`auth` is the real OAuth browser flow. `setup --auth oauth` only prints guidance and snippets; it does not exchange a token.
+
+Manual Admin API token setup remains available as a fallback:
 
 For a deliberate development-store write test with a manual Admin API token, use read-only off and explicit scopes:
 
@@ -102,11 +129,25 @@ pnpm --filter shopify-store-agent run setup -- \
 
 Use only the write scope needed for the specific test. For page-only validation, `write_content` or `write_online_store_pages` is enough. For product-create validation, `write_products` is required.
 
+For deliberate OAuth write testing on a development store, run `auth` with write mode and the minimal reviewed scope set:
+
+```bash
+pnpm --filter shopify-store-agent run auth -- \
+  --store your-store.myshopify.com \
+  --client-id "$SHOPIFY_CLIENT_ID" \
+  --client-secret "$SHOPIFY_CLIENT_SECRET" \
+  --write-enabled \
+  --scopes "read_products,read_content,read_online_store_pages,write_products,write_content"
+```
+
+Write mode is only for reviewed development-store tests of `page.create.execute` or `product.create.execute`. All other execute tools remain fail-closed placeholders.
+
 ## MCP Host Connection
 
 Use the generated Codex, Claude Code, Cursor, or generic MCP host snippet.
 
 - Confirm the snippet points to the intended local config path.
+- Confirm the snippet uses `command = "node"` or `"command": "node"` and points to the local `packages/mcp/dist/server.js` build while npm publishing is inactive.
 - Do not paste raw tokens directly into host config.
 - Start the MCP server locally through the generated command/snippet.
 - If you rerun setup, refresh the host snippet or restart the MCP host so it reads the current config.

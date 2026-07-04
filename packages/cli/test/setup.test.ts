@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createHmac } from "node:crypto";
 import { createServer } from "node:http";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createConfig } from "@shopify-store-agent/core";
@@ -16,26 +16,50 @@ describe("setup", () => {
 
     const snippets = generateMcpConfigSnippets(config);
     expect(snippets.codex).toContain("SHOPIFY_STORE_AGENT_STORE");
+    expect(snippets.codex).toContain("command = \"node\"");
+    expect(snippets.codex).toContain("packages/mcp/dist/server.js");
     expect(snippets.codex).not.toContain("secret-token");
   });
 
-  it("generates Codex, Claude Code, Cursor, and generic MCP snippets without raw secrets", () => {
+  it("generates Codex, Claude Code, Cursor, and generic local MCP snippets without raw secrets", () => {
     const config = createConfig({
       storeUrl: "demo.myshopify.com",
       adminAccessToken: "shpat_snippet_secret",
       themeAccessToken: "theme_snippet_secret"
     });
 
-    const snippets = generateMcpConfigSnippets(config, { configPath: "/tmp/shopify-store-agent/config.json" });
+    const localServerPath = "/absolute/path/to/Shopify/packages/mcp/dist/server.js";
+    const snippets = generateMcpConfigSnippets(config, {
+      configPath: "/tmp/shopify-store-agent/config.json",
+      localMcpServerPath: localServerPath
+    });
     const output = JSON.stringify(snippets);
 
     expect(snippets.codex).toContain("[mcp_servers.shopify-store-agent]");
+    expect(snippets.codex).toContain("command = \"node\"");
+    expect(snippets.codex).toContain(`args = ${JSON.stringify([localServerPath])}`);
     expect(snippets.claude).toContain("\"mcpServers\"");
+    expect(snippets.claude).toContain("\"command\": \"node\"");
+    expect(snippets.claude).toContain(localServerPath);
     expect(snippets.cursor).toContain("\"mcpServers\"");
+    expect(snippets.cursor).toContain("\"command\": \"node\"");
+    expect(snippets.cursor).toContain(localServerPath);
     expect(snippets.generic).toContain("\"shopify-store-agent\"");
+    expect(snippets.generic).toContain("\"command\": \"node\"");
+    expect(snippets.generic).toContain(localServerPath);
     expect(output).toContain("SHOPIFY_STORE_AGENT_CONFIG");
     expect(output).not.toContain("shpat_snippet_secret");
     expect(output).not.toContain("theme_snippet_secret");
+    expect(output).not.toContain("client-secret");
+  });
+
+  it("keeps the future npx MCP snippet mode explicit", () => {
+    const config = createConfig({ storeUrl: "demo.myshopify.com" });
+
+    const snippets = generateMcpConfigSnippets(config, { mcpCommandMode: "npx" });
+
+    expect(snippets.codex).toContain("command = \"npx\"");
+    expect(snippets.codex).toContain("shopify-store-agent-mcp");
   });
 
   it("supports non-interactive dry-run setup", async () => {
@@ -67,9 +91,14 @@ describe("setup", () => {
 
     expect(result.config.readOnly).toBe(false);
     expect(result.warnings).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "write_mode_requested" })
+      expect.objectContaining({
+        code: "write_mode_requested",
+        message: expect.stringContaining("page.create.execute")
+      })
     ]));
-    expect(JSON.stringify(result)).not.toContain("not_implemented");
+    const warningText = JSON.stringify(result.warnings);
+    expect(warningText).toContain("product.create.execute");
+    expect(warningText).toContain("fail-closed placeholders");
   });
 
   it("blocks explicit setup write scopes unless write mode is explicitly enabled", async () => {
@@ -87,8 +116,13 @@ describe("setup", () => {
     });
 
     expect(result.warnings).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "write_scopes_requested" })
+      expect.objectContaining({
+        code: "write_scopes_requested",
+        message: expect.stringContaining("minimal scopes")
+      })
     ]));
+    expect(JSON.stringify(result.warnings)).toContain("page.create.execute");
+    expect(JSON.stringify(result.warnings)).toContain("product.create.execute");
   });
 
   it("redacts manual token config in setup output while saving locally", async () => {
@@ -116,9 +150,14 @@ describe("setup", () => {
     expect(result.safeConfig.adminAccessToken).not.toBe("shpat_manual_secret");
   });
 
-  it("supports OAuth setup metadata without token or secret leaks", async () => {
+  it("keeps OAuth setup as guidance without overwriting token-bearing local config", async () => {
     const directory = await mkdtemp(join(tmpdir(), "shopify-store-agent-oauth-"));
     const configPath = join(directory, "config.json");
+    await writeFile(configPath, JSON.stringify({
+      storeUrl: "demo.myshopify.com",
+      adminAccessToken: "shpat_existing_oauth_secret",
+      readOnly: true
+    }, null, 2));
 
     const result = await runSetup({
       storeUrl: "demo",
@@ -132,10 +171,14 @@ describe("setup", () => {
     const output = JSON.stringify(result);
 
     expect(result.authMethod).toBe("oauth");
-    expect(saved).toContain("client-id-123");
+    expect(result.saved).toBe(false);
+    expect(saved).toContain("shpat_existing_oauth_secret");
+    expect(saved).not.toContain("client-id-123");
     expect(saved).not.toContain("shpat_should_not_be_used_for_oauth");
     expect(output).not.toContain("shpat_should_not_be_used_for_oauth");
-    expect(result.nextSteps.join(" ")).toContain("local OAuth");
+    expect(output).not.toContain("shpat_existing_oauth_secret");
+    expect(result.nextSteps.join(" ")).toContain("setup --auth oauth only prepares guidance and snippets");
+    expect(result.nextSteps.join(" ")).toContain("shopify-store-agent auth");
   });
 
   it("runs capability checks safely without live Shopify calls by default", async () => {
@@ -304,6 +347,9 @@ describe("setup", () => {
     ]));
     expect(fetchCalls).toBe(0);
     expect(output).not.toContain("shpat_smoke_secret");
+    expect(result.snippets.codex).toContain("command = \"node\"");
+    expect(JSON.parse(result.snippets.generic)).toMatchObject({ command: "node" });
+    expect(output).not.toContain("shopify-store-agent-mcp");
     expect(output).not.toContain("mutation");
     expect(output).not.toContain("Admin API write");
     expect(output).not.toContain("productCreate");
