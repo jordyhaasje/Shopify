@@ -229,6 +229,15 @@ export async function runSmokeValidation(options: SmokeOptions = {}): Promise<Sm
   checks.push(check("preview_output", preview.ok === true && preview.status === "ok", "Product create preview generated."));
   checks.push(check("preview_store_record", stored.ok === true, "Preview store received a record."));
 
+  const placeholderPreview = await callTool("collection.create.preview", {
+    title: "Smoke Test Collection",
+    productIds: ["gid://shopify/Product/1"]
+  }, context) as Record<string, unknown>;
+  const placeholderPreviewId = typeof placeholderPreview.previewId === "string" ? placeholderPreview.previewId : undefined;
+  const placeholderPreviewHash = typeof placeholderPreview.previewHash === "string" ? placeholderPreview.previewHash : undefined;
+  const placeholderBinding = placeholderPreview.binding && typeof placeholderPreview.binding === "object" ? placeholderPreview.binding as Record<string, unknown> : {};
+  const placeholderStored = previewStore.getPreview(placeholderPreviewId);
+
   const executeContext: ToolContext = {
     ...context,
     config: createConfig({
@@ -237,32 +246,31 @@ export async function runSmokeValidation(options: SmokeOptions = {}): Promise<Sm
       capabilities: emptyCapabilities()
     })
   };
-  const binding = preview.binding && typeof preview.binding === "object" ? preview.binding as Record<string, unknown> : {};
-  const invalidExecute = await callTool("product.create.execute", {
-    previewId,
+  const invalidExecute = await callTool("collection.create.execute", {
+    previewId: placeholderPreviewId,
     confirmed: true,
     reviewedPayload: { arbitrary: "payload" },
-    expectedTool: binding.expectedTool,
-    target: binding.target,
-    previewHash,
-    reviewedChangesHash: previewHash,
-    title: "Smoke Test Product"
+    expectedTool: placeholderBinding.expectedTool,
+    target: placeholderBinding.target,
+    previewHash: placeholderPreviewHash,
+    reviewedChangesHash: placeholderPreviewHash,
+    title: "Smoke Test Collection"
   }, executeContext) as Record<string, unknown>;
   checks.push(check("invalid_execute_blocked", invalidExecute.status === "blocked", "Invalid execute binding is blocked."));
 
-  const activeRecord = stored.record;
+  const activeRecord = placeholderStored.record;
   const reviewedPayload = activeRecord ? reviewedPayloadForPreviewRecord(activeRecord) : {};
   const reviewedChangesHash = hashPreviewContent(reviewedPayload);
-  const target = activeRecord ? previewRecordBindingTarget(activeRecord) : binding.target;
-  const validExecute = await callTool("product.create.execute", {
-    previewId,
+  const target = activeRecord ? previewRecordBindingTarget(activeRecord) : placeholderBinding.target;
+  const validExecute = await callTool("collection.create.execute", {
+    previewId: placeholderPreviewId,
     confirmed: true,
     reviewedPayload,
-    expectedTool: binding.expectedTool,
+    expectedTool: placeholderBinding.expectedTool,
     target,
-    previewHash,
+    previewHash: placeholderPreviewHash,
     reviewedChangesHash,
-    title: "Smoke Test Product"
+    title: "Smoke Test Collection"
   }, executeContext) as Record<string, unknown>;
   checks.push(check("valid_execute_not_implemented", validExecute.status === "not_implemented", "Valid stored binding reaches only the not-implemented placeholder."));
 

@@ -1,6 +1,6 @@
 # Tool Contracts
 
-These are the intended V1 Shopify Store Agent MCP tool contracts. The current implementation includes real read-only Admin GraphQL tools, structured catalog/content preview tools, a local preview store, and one limited real write tool: `page.create.execute`. All other execute/write tools remain fail-closed placeholders.
+These are the intended V1 Shopify Store Agent MCP tool contracts. The current implementation includes real read-only Admin GraphQL tools, structured catalog/content preview tools, a local preview store, and two limited real write tools: `page.create.execute` and `product.create.execute`. All other execute/write tools remain fail-closed placeholders.
 
 ## Global Write Contract
 
@@ -23,9 +23,11 @@ Preview tools may also return local binding metadata such as `previewHash` and `
 
 Stored previews expire by TTL. Missing, expired, invalid, or mismatched stored preview records must fail closed before any future write path. Store output and audit context must not include raw reviewed payloads, raw Shopify nodes, secrets, or oversized user content.
 
-Except for `page.create.execute`, current execute tools are placeholders. After read-only and preview-binding checks pass, placeholder execute tools return `ok: false`, `implemented: false`, `status: "not_implemented"`, and `placeholder: true`. They must not be interpreted as successful Shopify writes, and their audit entries use `result: "not_implemented"` rather than `success`. Missing confirmation, missing preview ID, missing reviewed payload, or binding mismatch is audited as `blocked` and must not expose raw reviewed payloads.
+Except for `page.create.execute` and `product.create.execute`, current execute tools are placeholders. After read-only and preview-binding checks pass, placeholder execute tools return `ok: false`, `implemented: false`, `status: "not_implemented"`, and `placeholder: true`. They must not be interpreted as successful Shopify writes, and their audit entries use `result: "not_implemented"` rather than `success`. Missing confirmation, missing preview ID, missing reviewed payload, or binding mismatch is audited as `blocked` and must not expose raw reviewed payloads.
 
 `page.create.execute` is implemented as the first narrow production-write foundation. It may call only the Shopify Admin GraphQL page create mutation, and only after read-only mode is disabled, local granted scopes include `write_content` or `write_online_store_pages`, a matching stored `page.create.preview` record exists, the record is active, `confirmed: true` is present, target/tool/hash binding matches, and the actual `reviewedPayload` hashes back to the stored preview. It uses the stored/reviewed preview content as the source of truth, not unrelated loose execute input. Shopify remains the ultimate scope enforcement layer, but the agent fails closed locally when known granted scopes are missing or unknown. Shopify `userErrors` are returned safely and audited as `blocked`; network/API/unexpected errors are audited as `failed`; successful mocked or live page creation is the only execute path that may audit `success`.
+
+`product.create.execute` is implemented as the second narrow production-write foundation. It may call only the Shopify Admin GraphQL product create mutation, and only after read-only mode is disabled, local granted scopes include `write_products`, a matching stored `product.create.preview` record exists, the record is active, `confirmed: true` is present, target/tool/hash binding matches, and the actual `reviewedPayload` hashes back to the stored preview. It uses stored/reviewed preview content as the source of truth and ignores unrelated loose execute input. It supports only minimal product fields from the preview: title, description/body HTML summary, vendor, product type, status, and tags. It does not implement variants, inventory, media/files/images, collections, metafields, SEO bulk changes, publications/channels, translations, product update/delete, or bulk operations. Missing or unknown local write scope blocks before fetch. Shopify `userErrors` are returned safely and audited as `blocked`; network/API/unexpected errors are audited as `failed`; successful mocked or live product creation is the only product execute path that may audit `success`.
 
 The agent must never autonomously search for products. Users provide the product data, source URL, CSV, images, or IDs.
 
@@ -57,9 +59,11 @@ Preview output: product creation plan, target summary, variant/media counts, mis
 
 ### `product.create.execute`
 
-Required input: preview ID or reviewed product payload and confirmation.
+Required input: stored `product.create.preview` `previewId`, `confirmed: true`, reviewed payload, expected preview tool, target, `previewHash`, and `reviewedChangesHash`.
 
-Execute requirements: `write_products`, writes enabled, explicit confirmation.
+Execute requirements: `write_products`, read-only mode disabled, explicit confirmation, active stored preview, matching target/tool/hash binding, and reviewed payload hash matching the stored preview. If local granted scopes are known and `write_products` is missing, execution is blocked before fetch. If local granted scopes are unknown, execution also fails closed before fetch. The mutation payload is limited to reviewed product creation fields: title, description/body HTML summary, vendor, product type, status, and tags. It does not implement variants, inventory, media/files/images, collections, metafields, SEO bulk changes, publications/channels, translations, product update/delete, or bulk operations.
+
+Output: safe status, created product ID/title/handle/status on success, safe Shopify `userErrors` or diagnostics on failure, and an audit entry. Output must not return raw reviewed payloads, raw Shopify response nodes, tokens, variant/media/collection dumps, or unrelated execute input.
 
 ### `product.update.preview`
 

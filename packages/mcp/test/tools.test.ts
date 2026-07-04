@@ -601,72 +601,112 @@ describe("MCP tools", () => {
     });
   });
 
-  it("blocks writes in read-only mode", async () => {
-    const context: ToolContext = {
-      config: createConfig({ storeUrl: "demo", readOnly: true }),
-      audit: new MemoryAuditLog()
-    };
-
-    await expect(callTool("product.create.execute", {
-      ...executeBinding("product.create.preview", "Test product"),
-      confirmed: true,
-      title: "Test product"
-    }, context)).rejects.toThrow("read-only");
-  });
-
-  it("blocks execute without explicit confirmation", async () => {
-    const context: ToolContext = {
-      config: createConfig({ storeUrl: "demo", readOnly: false }),
-      audit: new MemoryAuditLog()
-    };
+  it("blocks product.create.execute in read-only mode before fetch", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    });
+    const preview = await callTool("product.create.preview", {
+      title: "Test product",
+      description: "A reviewed product."
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
 
     const result = await callTool("product.create.execute", {
-      ...executeBinding("product.create.preview", "Test product"),
-      title: "Test product"
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
     }, context);
 
     expect(result).toMatchObject({
       ok: false,
       mode: "execute",
-      implemented: false,
+      implemented: true,
       status: "blocked",
-      placeholder: true,
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "read_only" })])
+    });
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.create.execute", result: "blocked" });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("blocks product.create.execute without explicit confirmation before fetch", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    const preview = await callTool("product.create.preview", {
+      title: "Test product",
+      description: "A reviewed product."
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.create.execute", {
+      previewId: preview.previewId,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
       diagnostics: expect.arrayContaining([
         expect.objectContaining({ code: "missing_confirmation" })
       ])
     });
-    expect(context.audit.list()[0]).toMatchObject({
+    expect(context.audit.list()[1]).toMatchObject({
       tool: "product.create.execute",
       mode: "execute",
       result: "blocked"
     });
+    expect(fetchCalled).toBe(false);
   });
 
-  it("blocks execute without previewId", async () => {
+  it("blocks product.create.execute without stored preview before fetch", async () => {
+    let fetchCalled = false;
     const context: ToolContext = {
-      config: createConfig({ storeUrl: "demo", readOnly: false }),
-      audit: new MemoryAuditLog()
+      config: createConfig({ storeUrl: "demo", adminAccessToken: "shpat_test_secret", readOnly: false }),
+      audit: new MemoryAuditLog(),
+      fetcher: async () => {
+        fetchCalled = true;
+        return jsonResponse({});
+      }
     };
 
     const result = await callTool("product.create.execute", {
+      previewId: "preview_missing",
       confirmed: true,
       reviewedPayload: { title: "Test product" },
       expectedTool: "product.create.preview",
       target: "Test product",
+      previewHash: "sha256:missing",
+      reviewedChangesHash: "sha256:missing",
       title: "Test product"
     }, context);
 
     expect(result).toMatchObject({
       ok: false,
       mode: "execute",
-      implemented: false,
+      implemented: true,
       status: "blocked",
-      placeholder: true,
       diagnostics: expect.arrayContaining([
-        expect.objectContaining({ code: "missing_preview_id" })
+        expect.objectContaining({ code: "stored_preview_missing" })
       ])
     });
     expect(context.audit.list()[0]).toMatchObject({ result: "blocked" });
+    expect(fetchCalled).toBe(false);
   });
 
   it("blocks execute with confirmation but missing reviewed payload", async () => {
@@ -694,7 +734,7 @@ describe("MCP tools", () => {
     expect(context.audit.list()[0]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
   });
 
-  it("blocks execute with previewId, confirmation, and payload but missing binding context", async () => {
+  it("blocks product.create.execute with previewId, confirmation, and payload but missing binding context", async () => {
     const context: ToolContext = {
       config: createConfig({ storeUrl: "demo", readOnly: false }),
       audit: new MemoryAuditLog()
@@ -710,14 +750,10 @@ describe("MCP tools", () => {
     expect(result).toMatchObject({
       ok: false,
       mode: "execute",
-      implemented: false,
+      implemented: true,
       status: "blocked",
-      placeholder: true,
       diagnostics: expect.arrayContaining([
-        expect.objectContaining({ code: "missing_expected_tool" }),
-        expect.objectContaining({ code: "missing_target" }),
-        expect.objectContaining({ code: "missing_preview_hash" }),
-        expect.objectContaining({ code: "missing_reviewed_changes_hash" })
+        expect.objectContaining({ code: "stored_preview_missing" })
       ])
     });
     expect(context.audit.list()[0]).toMatchObject({
@@ -788,7 +824,7 @@ describe("MCP tools", () => {
     });
   });
 
-  it("reports validly bound execute placeholders as not implemented", async () => {
+  it("keeps a validly bound product update execute placeholder not implemented", async () => {
     let fetchCalled = false;
     const context: ToolContext = {
       config: createConfig({ storeUrl: "demo", readOnly: false }),
@@ -805,9 +841,9 @@ describe("MCP tools", () => {
       }
     };
 
-    const result = await callTool("product.create.execute", {
-      ...executeBinding("product.create.preview", "Test product"),
-      title: "Test product",
+    const result = await callTool("product.update.execute", {
+      ...executeBinding("product.update.preview", "gid://shopify/Product/1"),
+      productId: "gid://shopify/Product/1",
       confirmed: true
     }, context);
 
@@ -819,22 +855,26 @@ describe("MCP tools", () => {
       placeholder: true,
       previewBinding: {
         previewId: "preview_123",
-        expectedTool: "product.create.preview",
-        target: "Test product"
+        expectedTool: "product.update.preview",
+        target: "gid://shopify/Product/1"
       }
     });
     expect(JSON.stringify(result)).toContain("No Shopify change was made");
     expect(JSON.stringify(result)).not.toContain("mutation");
     expect(context.audit.list()[0]).toMatchObject({
-      tool: "product.create.execute",
+      tool: "product.update.execute",
       mode: "execute",
       result: "not_implemented"
     });
     expect(fetchCalled).toBe(false);
   });
 
-  it("uses a stored preview binding to keep execute placeholders not implemented", async () => {
-    const context = baseContext(undefined, false);
+  it("blocks product.create.execute before fetch when granted scopes are unknown", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
     const preview = await callTool("product.create.preview", {
       title: "Stored Preview Shirt",
       description: "A reviewed product."
@@ -849,26 +889,71 @@ describe("MCP tools", () => {
       expectedTool: binding.expectedTool,
       target: binding.target,
       previewHash: preview.previewHash,
-      reviewedChangesHash: reviewed.reviewedChangesHash,
-      title: "Stored Preview Shirt"
+      reviewedChangesHash: reviewed.reviewedChangesHash
     }, context);
 
     expect(result).toMatchObject({
       ok: false,
       mode: "execute",
-      implemented: false,
-      status: "not_implemented",
-      placeholder: true
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "unknown_write_scopes" })])
     });
     expect(context.audit.list()[1]).toMatchObject({
       tool: "product.create.execute",
       mode: "execute",
-      result: "not_implemented"
+      result: "blocked"
     });
+    expect(fetchCalled).toBe(false);
   });
 
-  it("blocks stored preview execute when reviewed payload does not match", async () => {
-    const context = baseContext(undefined, false);
+  it("blocks product.create.execute before fetch when known granted scopes miss write_products", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["read_products", "shpat_scope_secret"];
+    const preview = await callTool("product.create.preview", {
+      title: "Missing Scope Shirt",
+      description: "A reviewed product."
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.create.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "missing_write_scope" })])
+    });
+    expect(output).not.toContain("shpat_scope_secret");
+    expect(context.audit.list()[1]).toMatchObject({
+      tool: "product.create.execute",
+      mode: "execute",
+      result: "blocked"
+    });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("blocks stored product preview execute when reviewed payload does not match", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
     const preview = await callTool("product.create.preview", {
       title: "Mismatch Preview Shirt",
       description: "A reviewed product."
@@ -878,63 +963,24 @@ describe("MCP tools", () => {
     const result = await callTool("product.create.execute", {
       previewId: preview.previewId,
       confirmed: true,
-      reviewedPayload: { title: "Different reviewed payload" },
+      reviewedPayload: { title: "Different reviewed payload", token: "shpat_review_secret" },
       expectedTool: binding.expectedTool,
       target: binding.target,
       previewHash: preview.previewHash,
-      reviewedChangesHash: hashPreviewContent({ title: "Different reviewed payload" }),
-      title: "Mismatch Preview Shirt"
-    }, context);
-
-    expect(result).toMatchObject({
-      ok: false,
-      mode: "execute",
-      implemented: false,
-      status: "blocked",
-      placeholder: true,
-      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "reviewed_payload_hash_mismatch" })])
-    });
-    expect(context.audit.list()[1]).toMatchObject({
-      tool: "product.create.execute",
-      mode: "execute",
-      result: "blocked"
-    });
-  });
-
-  it("blocks arbitrary reviewed payload even when preview hash is copied", async () => {
-    let fetchCalled = false;
-    const context = baseContext(async () => {
-      fetchCalled = true;
-      return jsonResponse({});
-    }, false);
-    const preview = await callTool("product.create.preview", {
-      title: "Copied Hash Shirt",
-      description: "A reviewed product."
-    }, context) as Record<string, unknown>;
-    const binding = preview.binding as Record<string, unknown>;
-
-    const result = await callTool("product.create.execute", {
-      previewId: preview.previewId,
-      confirmed: true,
-      reviewedPayload: { arbitrary: "payload", token: "shpat_arbitrary_review_secret" },
-      expectedTool: binding.expectedTool,
-      target: binding.target,
-      previewHash: preview.previewHash,
-      reviewedChangesHash: preview.previewHash,
-      title: "Copied Hash Shirt"
+      reviewedChangesHash: hashPreviewContent({ title: "Different reviewed payload", token: "shpat_review_secret" })
     }, context);
     const output = JSON.stringify(result);
 
     expect(result).toMatchObject({
       ok: false,
       mode: "execute",
+      implemented: true,
       status: "blocked",
       diagnostics: expect.arrayContaining([
-        expect.objectContaining({ code: "reviewed_payload_hash_mismatch" }),
-        expect.objectContaining({ code: "reviewed_changes_hash_mismatch" })
+        expect.objectContaining({ code: "reviewed_payload_hash_mismatch" })
       ])
     });
-    expect(output).not.toContain("shpat_arbitrary_review_secret");
+    expect(output).not.toContain("shpat_review_secret");
     expect(context.audit.list()[1]).toMatchObject({
       tool: "product.create.execute",
       mode: "execute",
@@ -943,8 +989,13 @@ describe("MCP tools", () => {
     expect(fetchCalled).toBe(false);
   });
 
-  it("blocks expired stored preview binding before execute placeholder flow", async () => {
-    const context = baseContext(undefined, false);
+  it("blocks expired stored product preview binding before fetch", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["write_products"];
     const preview = await callTool("product.create.preview", {
       title: "Expired Preview Shirt",
       description: "A reviewed product."
@@ -960,22 +1011,176 @@ describe("MCP tools", () => {
       expectedTool: binding.expectedTool,
       target: binding.target,
       previewHash: preview.previewHash,
-      reviewedChangesHash: reviewed.reviewedChangesHash,
-      title: "Expired Preview Shirt"
+      reviewedChangesHash: reviewed.reviewedChangesHash
     }, context);
 
     expect(result).toMatchObject({
       ok: false,
       mode: "execute",
-      implemented: false,
+      implemented: true,
       status: "blocked",
-      placeholder: true,
       diagnostics: expect.arrayContaining([expect.objectContaining({ code: "stored_preview_expired" })])
     });
     expect(context.audit.list()[1]).toMatchObject({
       tool: "product.create.execute",
       mode: "execute",
       result: "blocked"
+    });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("calls productCreate only after valid stored preview binding and write_products preflight", async () => {
+    const requests: Array<{ body: string }> = [];
+    const context = baseContext(async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          productCreate: {
+            product: { id: "gid://shopify/Product/1", title: "Linen Shirt", handle: "linen-shirt", status: "DRAFT", rawNodeOnly: true },
+            userErrors: []
+          }
+        }
+      });
+    }, false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("product.create.preview", {
+      title: "Linen Shirt",
+      description: "Light linen shirt.",
+      vendor: "Acme",
+      productType: "Shirts",
+      status: "draft",
+      tags: ["linen", "summer"],
+      variants: [{ sku: "UNUSED", price: "99.00" }],
+      media: [{ url: "https://example.com/ignored.jpg" }]
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.create.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash,
+      title: "UNRELATED EXECUTE TITLE",
+      vendor: "UNRELATED EXECUTE VENDOR"
+    }, context);
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "execute",
+      implemented: true,
+      status: "ok",
+      createdProduct: {
+        id: "gid://shopify/Product/1",
+        title: "Linen Shirt",
+        handle: "linen-shirt",
+        status: "DRAFT"
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentProductCreate");
+    expect(request.query).toContain("productCreate");
+    expect(request.query).not.toContain("pageCreate");
+    expect(request.query).not.toContain("collectionCreate");
+    expect(request.query).not.toContain("refundCreate");
+    expect(request.query).not.toContain("media");
+    expect(request.query).not.toContain("metafields");
+    expect(request.variables.product).toMatchObject({
+      title: "Linen Shirt",
+      descriptionHtml: "Light linen shirt.",
+      vendor: "Acme",
+      productType: "Shirts",
+      status: "DRAFT",
+      tags: ["linen", "summer"]
+    });
+    expect(request.variables.product).not.toHaveProperty("variants");
+    expect(request.variables.product).not.toHaveProperty("media");
+    expect(request.variables.product).not.toHaveProperty("collections");
+    expect(requests[0].body).not.toContain("UNRELATED EXECUTE TITLE");
+    expect(requests[0].body).not.toContain("UNRELATED EXECUTE VENDOR");
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("Light linen shirt.");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.create.execute", result: "success" });
+  });
+
+  it("returns Shopify product create user errors safely", async () => {
+    const context = baseContext(undefined, false);
+    context.fetcher = async () => jsonResponse({
+      data: {
+        productCreate: {
+          product: null,
+          userErrors: [{ field: ["title"], message: "Title has already been taken." }]
+        }
+      }
+    });
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("product.create.preview", {
+      title: "Linen Shirt",
+      description: "Light linen shirt."
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.create.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "user_errors",
+      userErrors: [{ field: ["title"], message: "Title has already been taken." }]
+    });
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.create.execute", result: "blocked" });
+  });
+
+  it("returns safe failed audit for product.create.execute network errors", async () => {
+    const context = baseContext(async () => {
+      throw new Error("network failed with token shpat_product_execute_secret");
+    }, false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("product.create.preview", {
+      title: "Linen Shirt",
+      description: "Light linen shirt."
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.create.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "shopify_error",
+      diagnostics: [{ code: "shopify_request_failed" }]
+    });
+    expect(output).not.toContain("shpat_product_execute_secret");
+    expect(context.audit.list()[1]).toMatchObject({
+      tool: "product.create.execute",
+      mode: "execute",
+      result: "failed"
     });
   });
 
@@ -1485,7 +1690,6 @@ describe("MCP tools", () => {
       };
     }, false);
     const executeCalls: Array<[string, Record<string, unknown>]> = [
-      ["product.create.execute", { ...executeBinding("product.create.preview", "Linen Shirt"), title: "Linen Shirt", confirmed: true }],
       ["product.update.execute", { ...executeBinding("product.update.preview", "gid://shopify/Product/1"), productId: "gid://shopify/Product/1", confirmed: true }],
       ["product.media.update.execute", { ...executeBinding("product.media.update.preview", "gid://shopify/Product/1"), productId: "gid://shopify/Product/1", confirmed: true }],
       ["product.importFromUserUrl.execute", { ...executeBinding("product.importFromUserUrl.preview", "https://example.com/products/shirt"), url: "https://example.com/products/shirt", confirmed: true }],
