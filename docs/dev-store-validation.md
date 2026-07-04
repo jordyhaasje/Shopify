@@ -36,6 +36,7 @@ pnpm --filter shopify-store-agent run smoke -- --live --admin-token "$SHOPIFY_AD
 - Run setup and review the generated MCP host snippet.
 - Confirm snippets point to a local config path, use the local `node /absolute/path/to/Shopify/packages/mcp/dist/server.js` command in the current GitHub-only phase, and do not print raw tokens.
 - Remember that npm/npx snippets are a future package-published route.
+- Before live write E2E, run `pnpm --filter shopify-store-agent run e2e-preflight -- --store your-store.myshopify.com --config /absolute/path/to/config.json --required-scopes "read_products,read_content,read_online_store_pages,write_products,write_content" --require-write-enabled` and confirm the local-only preflight passes with `no_fetch: true`.
 
 ## Manual Validation
 

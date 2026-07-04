@@ -189,6 +189,20 @@ pnpm --filter shopify-store-agent run auth -- \
 
 Write mode is only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field `product.update.execute`, or custom explicit-product `collection.create.execute`. All other execute tools remain fail-closed placeholders.
 
+## Local E2E Config Preflight
+
+Before any live development-store write step, run a local preflight against the exact config path and expected store. This command does not call Shopify and should report `no_fetch: true`.
+
+```bash
+pnpm --filter shopify-store-agent run e2e-preflight -- \
+  --store your-store.myshopify.com \
+  --config /absolute/path/to/config.json \
+  --required-scopes "read_products,read_content,read_online_store_pages,write_products,write_content" \
+  --require-write-enabled
+```
+
+The preflight must pass before live write E2E. It fails closed when the config is missing, points at a different store, lacks a local Admin API token, is still read-only while write testing is requested, or lacks required local granted scopes. Do not continue live E2E with a failed preflight.
+
 ## MCP Host Connection
 
 Use the generated Codex, Claude Code, Cursor, or generic MCP host snippet.

@@ -19,6 +19,7 @@ import {
   hashPreviewContent,
   MemoryAuditLog,
   MemoryPreviewStore,
+  loadStoredConfig,
   normalizeScopes,
   previewRecordBindingTarget,
   reviewedPayloadForPreviewRecord,
@@ -71,6 +72,13 @@ export interface SmokeOptions {
   fetcher?: FetchLike;
 }
 
+export interface DevStoreE2ePreflightOptions {
+  storeUrl?: string;
+  configPath?: string;
+  requiredScopes?: string;
+  requireWriteEnabled?: boolean;
+}
+
 export interface SetupWarning {
   code: string;
   message: string;
@@ -117,6 +125,18 @@ export interface SmokeValidationResult {
     validAuditResult?: string;
     anySuccessAudit: boolean;
   };
+}
+
+export interface DevStoreE2ePreflightResult {
+  ok: boolean;
+  mode: "local";
+  configPath: string;
+  expectedStoreUrl?: string;
+  configuredStoreUrl?: string;
+  readOnly?: boolean;
+  adminApiTokenConfigured: boolean;
+  requiredScopes: string[];
+  checks: SmokeCheck[];
 }
 
 export function resolveLocalMcpServerPath(): string {
@@ -326,6 +346,58 @@ export async function runSmokeValidation(options: SmokeOptions = {}): Promise<Sm
   };
 }
 
+export async function runDevStoreE2ePreflight(options: DevStoreE2ePreflightOptions = {}): Promise<DevStoreE2ePreflightResult> {
+  const configPath = options.configPath ?? defaultConfigPath();
+  const requiredScopes = options.requiredScopes ? normalizeScopes(options.requiredScopes) : [];
+  const expectedStoreUrl = options.storeUrl ? createConfig({ storeUrl: options.storeUrl }).storeUrl : undefined;
+  const stored = await loadStoredConfig(configPath);
+  const checks: SmokeCheck[] = [];
+
+  checks.push(check("config_exists", Boolean(stored), `Config ${stored ? "found" : "missing"} at ${configPath}.`));
+
+  if (!stored) {
+    checks.push(check("no_fetch", true, "Preflight is local-only and made no Shopify fetch calls."));
+    return {
+      ok: false,
+      mode: "local",
+      configPath,
+      expectedStoreUrl,
+      adminApiTokenConfigured: false,
+      requiredScopes,
+      checks
+    };
+  }
+
+  const configuredStoreUrl = stored.storeUrl;
+  if (expectedStoreUrl) {
+    checks.push(check("store_matches", configuredStoreUrl === expectedStoreUrl, `Config store is ${configuredStoreUrl}; expected ${expectedStoreUrl}.`));
+  }
+  checks.push(check("admin_token_configured", Boolean(stored.adminAccessToken), "Admin API token is configured locally."));
+
+  const grantedScopes = new Set(normalizeScopes(stored.grantedScopes ?? []));
+  const missingScopes = requiredScopes.filter((scope) => !grantedScopes.has(scope));
+  checks.push(check("required_scopes_configured", missingScopes.length === 0, missingScopes.length === 0 ? "Required scopes are present in local grantedScopes." : `Missing required scopes: ${missingScopes.join(", ")}.`));
+
+  const writeRequired = options.requireWriteEnabled === true || requiredScopes.some((scope) => scope.startsWith("write_"));
+  if (writeRequired) {
+    checks.push(check("write_mode_enabled", stored.readOnly === false, "Read-only mode is disabled only for deliberate dev-store write E2E."));
+  }
+
+  checks.push(check("no_fetch", true, "Preflight is local-only and made no Shopify fetch calls."));
+
+  return {
+    ok: checks.every((item) => item.ok),
+    mode: "local",
+    configPath,
+    expectedStoreUrl,
+    configuredStoreUrl,
+    readOnly: stored.readOnly,
+    adminApiTokenConfigured: Boolean(stored.adminAccessToken),
+    requiredScopes,
+    checks
+  };
+}
+
 export async function runOAuthInstall(options: AuthOptions): Promise<{
   configPath: string;
   storeUrl: string;
@@ -469,9 +541,9 @@ export async function runSetup(options: SetupOptions): Promise<{
   }
 }
 
-function parseArgs(argv: string[]): (SetupOptions & AuthOptions & SmokeOptions & { command: string }) {
+function parseArgs(argv: string[]): (SetupOptions & AuthOptions & SmokeOptions & DevStoreE2ePreflightOptions & { command: string }) {
   const [command = "help", ...rest] = argv;
-  const options: SetupOptions & AuthOptions & SmokeOptions & { command: string } = { command };
+  const options: SetupOptions & AuthOptions & SmokeOptions & DevStoreE2ePreflightOptions & { command: string } = { command };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     const next = rest[index + 1];
@@ -507,6 +579,11 @@ function parseArgs(argv: string[]): (SetupOptions & AuthOptions & SmokeOptions &
     } else if (arg === "--scopes" && next) {
       options.scopes = next;
       index += 1;
+    } else if (arg === "--required-scopes" && next) {
+      options.requiredScopes = next;
+      index += 1;
+    } else if (arg === "--require-write-enabled") {
+      options.requireWriteEnabled = true;
     } else if (arg === "--redirect-port" && next) {
       options.redirectPort = Number(next);
       index += 1;
@@ -526,11 +603,12 @@ function parseArgs(argv: string[]): (SetupOptions & AuthOptions & SmokeOptions &
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
-  if (options.command !== "setup" && options.command !== "auth" && options.command !== "smoke") {
+  if (options.command !== "setup" && options.command !== "auth" && options.command !== "smoke" && options.command !== "e2e-preflight") {
     console.log("Usage:");
     console.log("  shopify-store-agent setup --store example.myshopify.com [--auth manual|oauth] [--dry-run] [--mcp-command local|npx]");
     console.log("  shopify-store-agent auth --store example.myshopify.com --client-id ... --client-secret ...");
     console.log("  shopify-store-agent smoke [--store example.myshopify.com] [--live]");
+    console.log("  shopify-store-agent e2e-preflight --store example.myshopify.com --config /path/config.json --required-scopes read_products,write_products [--require-write-enabled]");
     return;
   }
 
@@ -547,6 +625,18 @@ async function main(): Promise<void> {
       adminAccessToken: options.adminAccessToken
     });
     console.log(JSON.stringify(redactSmokeResult(result), null, 2));
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
+
+  if (options.command === "e2e-preflight") {
+    const result = await runDevStoreE2ePreflight({
+      storeUrl: options.storeUrl,
+      configPath: options.configPath,
+      requiredScopes: options.requiredScopes,
+      requireWriteEnabled: options.requireWriteEnabled
+    });
+    console.log(JSON.stringify(result, null, 2));
     if (!result.ok) process.exitCode = 1;
     return;
   }
