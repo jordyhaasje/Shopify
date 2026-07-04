@@ -23,3 +23,4 @@ Durable project constraints:
 - All other execute tools remain fail-closed placeholders unless a future task explicitly implements one.
 - Do not return raw Shopify response nodes, raw reviewed payloads, or large customer/order/product dumps.
 - Users must provide explicit products, URLs, CSV files, images, customer emails, order numbers, Shopify IDs, handles, or tracking refs. Do not add autonomous product search.
+- Users may phrase requests in ordinary store language. The AI host should translate the request, ask for missing exact targets, and never guess which product, order, customer, or other store object was intended.
