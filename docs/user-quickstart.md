@@ -230,6 +230,6 @@ theme.rollback
 - npm/npx package install as the primary route.
 - Product update execute beyond basic title, description/descriptionHtml, vendor, product type, status, and tags.
 - Production-store write automation.
-- Product update, collection create, refund, tracking, customer, bulk, theme, variants, media, inventory, metafields, and collection execute implementations.
+- Collection create, refund, tracking, customer, bulk, theme, variants, media, inventory, metafields, publications, translations, and other advanced execute implementations.
 - Automated live Shopify tests.
 - Persistent preview storage across MCP server restarts.
