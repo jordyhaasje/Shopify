@@ -4,6 +4,7 @@ GitHub Actions is not active for this phase. Use this checklist before manual re
 
 - Confirm the PR is scoped to the stated task.
 - Confirm no `.github/workflows` files are added.
+- Confirm documentation-only validation PRs do not change core write helpers, MCP execute implementations, Shopify client mutations, package publishing, or automated live-test behavior.
 - Confirm no secrets, tokens, real customer data, or real order data appear in code, docs, tests, or logs.
 - Run local validation:
 
@@ -12,6 +13,7 @@ pnpm run lint
 pnpm run typecheck
 pnpm test
 pnpm run build
+pnpm run smoke:local
 ```
 
 - Review changed docs for product-boundary drift.
@@ -27,4 +29,5 @@ pnpm run build
 - Review capability or auth changes for token redaction and mocked tests only.
 - Review setup wizard changes for read-only defaults, OAuth auth read-only default scopes, explicit handling of requested `write_` scopes, local-only config storage, safe capability checks, host snippets without raw secrets, and no Shopify write-scope requirement for read/preview setup.
 - Review smoke validation changes for local/mocked defaults, no default fetches, no writes or mutations, preview-store coverage, and execute placeholders auditing `blocked` or `not_implemented` but never `success`.
+- Review dev-store runbook changes for manual-only language, development-store-only writes, no production customer store guidance, in-memory preview-store caveats, read-only defaults, explicit write scopes, and `fetchCalls: 0` local smoke expectations.
 - Merge manually only after local validation and reviewer approval.

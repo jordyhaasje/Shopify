@@ -46,7 +46,7 @@ For local OAuth, add this redirect URL to the Shopify Dev Dashboard app:
 http://127.0.0.1:3456/auth/callback
 ```
 
-See [docs/installation.md](docs/installation.md) for OAuth and manual token setup.
+See [docs/installation.md](docs/installation.md) for OAuth and manual token setup. For manual development-store validation of the current MVP, use [docs/dev-store-e2e-runbook.md](docs/dev-store-e2e-runbook.md).
 
 ## Future NPM Setup
 
@@ -56,7 +56,7 @@ The intended future setup is:
 npx shopify-store-agent setup
 ```
 
-The wizard guides users through store URL normalization, manual-token or local-OAuth setup guidance, read-only local config, capability checks, and MCP host snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts. Setup and OAuth auth default to read-only scopes, do not request write scopes for read/preview mode, and do not implement or activate Shopify writes.
+The wizard guides users through store URL normalization, manual-token or local-OAuth setup guidance, read-only local config, capability checks, and MCP host snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts. Setup and OAuth auth default to read-only scopes and do not request or activate write mode for read/preview validation.
 
 Local smoke validation is available before connecting a store:
 
@@ -77,7 +77,7 @@ The default smoke path is local/mocked only. It checks setup, MCP snippets, loca
 - No secrets belong in the repo, docs, tests, or logs.
 
 See [docs/safety.md](docs/safety.md), [docs/scopes.md](docs/scopes.md), and [docs/tool-contracts.md](docs/tool-contracts.md).
-For dev-store readiness, see [docs/dev-store-validation.md](docs/dev-store-validation.md).
+For dev-store readiness, see [docs/dev-store-validation.md](docs/dev-store-validation.md) and the full [docs/dev-store-e2e-runbook.md](docs/dev-store-e2e-runbook.md).
 
 ## Local Validation
 
@@ -88,6 +88,7 @@ pnpm run lint
 pnpm run typecheck
 pnpm test
 pnpm run build
+pnpm run smoke:local
 ```
 
 PRs are reviewed manually and merged manually.

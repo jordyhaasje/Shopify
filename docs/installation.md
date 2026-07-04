@@ -56,7 +56,7 @@ Optional live mode is limited to the minimal capability check and must be explic
 pnpm --filter shopify-store-agent run smoke -- --live --admin-token "$SHOPIFY_ADMIN_TOKEN"
 ```
 
-Smoke validation does not perform Shopify writes, does not run mutations, and does not fetch products, orders, or customers by default. Use [dev-store-validation.md](dev-store-validation.md) as the manual readiness checklist.
+Smoke validation does not perform Shopify writes, does not run mutations, and does not fetch products, orders, or customers by default. It should report `fetchCalls: 0` in local mode. Use [dev-store-validation.md](dev-store-validation.md) as the quick readiness checklist and [dev-store-e2e-runbook.md](dev-store-e2e-runbook.md) as the full manual development-store MVP runbook.
 
 ## Local OAuth Setup
 
@@ -77,6 +77,8 @@ pnpm --filter shopify-store-agent run auth -- --store your-store.myshopify.com
 The CLI asks for the Shopify app client ID and client secret, opens or prints an install URL, validates the callback state/HMAC, exchanges the OAuth code, and stores the resulting Admin API token locally.
 
 V1 defaults to read-only mode unless writes are explicitly enabled. The default OAuth install URL uses read-only scopes only. Do not request write scopes for setup, smoke, reads, or previews; request `write_content` or `write_online_store_pages` only when intentionally testing the reviewed `page.create.execute` path in a development store, and request `write_products` only when intentionally testing the reviewed minimal `product.create.execute` path.
+
+For deliberate development-store write testing, read-only mode must be explicitly disabled and local granted scopes must include the write scope required by the execute path. Missing or unknown write scopes fail closed before fetch. The only real execute tools in this phase are `page.create.execute` and `product.create.execute`; all other execute tools remain placeholders.
 
 ## Manual Admin API Token Setup
 
