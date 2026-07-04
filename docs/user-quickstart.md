@@ -190,7 +190,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --scopes "read_products,read_content,read_online_store_pages,write_products,write_content"
 ```
 
-Use only a development or disposable store. `write_products` is required for `product.create.execute`, `product.update.execute`, and custom `collection.create.execute`; `write_content` or `write_online_store_pages` is required for `page.create.execute`. `product.update.execute` supports one update shape per preview: basic product fields, explicit variant price updates with product ID plus variant IDs and prices, explicit variant creation with product ID plus option values and optional price/SKU, explicit option creation with product ID plus option names and values, explicit option rename with product ID, option ID, and new option name, explicit option value rename with product ID, option ID, option value ID, and new value name, explicit option value add with product ID, option ID, and new value names, or explicit option value delete with product ID, option ID, and option value IDs. Option creation, option rename, option value rename, option value add, and option value delete use `LEAVE_AS_IS` to avoid automatic variant expansion. Do not mix update shapes in one preview. All other execute tools are placeholders.
+Use only a development or disposable store. `write_products` is required for `product.create.execute`, `product.update.execute`, and custom `collection.create.execute`; `write_content` or `write_online_store_pages` is required for `page.create.execute`. `product.update.execute` supports one update shape per preview: basic product fields, explicit variant price updates with product ID plus variant IDs and prices, explicit variant creation with product ID plus option values and optional price/SKU, explicit option creation with product ID plus option names and values, explicit option delete with product ID plus option IDs, explicit option rename with product ID, option ID, and new option name, explicit option value rename with product ID, option ID, option value ID, and new value name, explicit option value add with product ID, option ID, and new value names, or explicit option value delete with product ID, option ID, and option value IDs. Option creation, option rename, option value rename, option value add, and option value delete use `LEAVE_AS_IS`; option delete uses `NON_DESTRUCTIVE`. Do not mix update shapes in one preview. All other execute tools are placeholders.
 
 ## Safety rules
 
@@ -265,7 +265,7 @@ theme.rollback
 ## Not available yet
 
 - npm/npx package install as the primary route.
-- Product update execute beyond basic fields, explicit variant price updates, explicit variant creation, explicit option creation, explicit option rename, explicit option value rename, explicit option value add, and explicit option value delete.
+- Product update execute beyond basic fields, explicit variant price updates, explicit variant creation, explicit option creation, explicit option delete, explicit option rename, explicit option value rename, explicit option value add, and explicit option value delete.
 - Production-store write automation.
-- Rule-based/smart collection create, collection publishing, refund, tracking, customer, bulk, theme, option reorder/delete, media, inventory, metafields, publications, translations, and other advanced execute implementations.
+- Rule-based/smart collection create, collection publishing, refund, tracking, customer, bulk, theme, option reorder, media, inventory, metafields, publications, translations, and other advanced execute implementations.
 - Automated live Shopify tests.

@@ -148,6 +148,32 @@ describe("catalog and content previews", () => {
     expect(JSON.stringify(optionChange)).not.toContain("linkedMetafield");
   });
 
+  it("keeps product update option delete IDs compact for stored option delete execution", () => {
+    const preview = previewProductUpdate({
+      productId: "gid://shopify/Product/1",
+      options: [{
+        id: "gid://shopify/ProductOption/1",
+        delete: true,
+        linkedMetafield: { namespace: "custom", key: "hidden" }
+      }]
+    });
+    const optionChange = preview.proposedChanges.find((change) => change.field === "options");
+
+    expect(optionChange).toMatchObject({
+      field: "options",
+      after: {
+        count: 1,
+        items: [expect.objectContaining({
+          fields: {
+            id: "gid://shopify/ProductOption/1",
+            deleteOption: true
+          }
+        })]
+      }
+    });
+    expect(JSON.stringify(optionChange)).not.toContain("linkedMetafield");
+  });
+
   it("keeps product update option value IDs compact for stored option value rename execution", () => {
     const preview = previewProductUpdate({
       productId: "gid://shopify/Product/1",
