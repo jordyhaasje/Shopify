@@ -174,6 +174,43 @@ describe("catalog and content previews", () => {
     expect(JSON.stringify(optionChange)).not.toContain("linkedMetafield");
   });
 
+  it("keeps product update option order compact for stored option reorder execution", () => {
+    const preview = previewProductUpdate({
+      productId: "gid://shopify/Product/1",
+      optionOrder: [{
+        id: "gid://shopify/ProductOption/2",
+        values: [{ id: "gid://shopify/ProductOptionValue/2", linkedMetafieldValue: "hidden" }]
+      }, {
+        id: "gid://shopify/ProductOption/1",
+        values: [{ name: "Small" }]
+      }]
+    });
+    const optionChange = preview.proposedChanges.find((change) => change.field === "optionOrder");
+
+    expect(optionChange).toMatchObject({
+      field: "optionOrder",
+      action: "reorder",
+      after: {
+        count: 2,
+        items: [
+          expect.objectContaining({
+            fields: {
+              id: "gid://shopify/ProductOption/2",
+              values: ["gid://shopify/ProductOptionValue/2"]
+            }
+          }),
+          expect.objectContaining({
+            fields: {
+              id: "gid://shopify/ProductOption/1",
+              values: ["Small"]
+            }
+          })
+        ]
+      }
+    });
+    expect(JSON.stringify(optionChange)).not.toContain("linkedMetafieldValue");
+  });
+
   it("keeps product update option value IDs compact for stored option value rename execution", () => {
     const preview = previewProductUpdate({
       productId: "gid://shopify/Product/1",

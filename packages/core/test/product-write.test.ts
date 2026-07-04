@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addProductOptionValues, createConfig, createProduct, createProductOptions, createProductVariants, deleteProductOptions, deleteProductOptionValues, renameProductOption, renameProductOptionValue, updateProduct, updateProductVariantPrices, type FetchLike } from "../src/index.js";
+import { addProductOptionValues, createConfig, createProduct, createProductOptions, createProductVariants, deleteProductOptions, deleteProductOptionValues, renameProductOption, renameProductOptionValue, reorderProductOptions, updateProduct, updateProductVariantPrices, type FetchLike } from "../src/index.js";
 
 describe("product write helper", () => {
   it("creates a product through the productCreate mutation and returns a safe summary", async () => {
@@ -827,6 +827,131 @@ describe("product write helper", () => {
       ok: false,
       status: "user_errors",
       userErrors: [{ field: ["options", "0"], message: "Option cannot be deleted without deleting variants." }],
+      diagnostics: [{ code: "shopify_user_errors" }]
+    });
+  });
+
+  it("reorders explicit product options through only productOptionsReorder", async () => {
+    const requests: Array<{ body: string }> = [];
+    const fetcher: FetchLike = async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          productOptionsReorder: {
+            product: {
+              id: "gid://shopify/Product/1",
+              options: [
+                {
+                  id: "gid://shopify/ProductOption/2",
+                  name: "Color",
+                  position: 1,
+                  optionValues: [
+                    { id: "gid://shopify/ProductOptionValue/2", name: "Red", hasVariants: true, rawNodeOnly: "do-not-return" }
+                  ],
+                  rawNodeOnly: "do-not-return"
+                },
+                {
+                  id: "gid://shopify/ProductOption/1",
+                  name: "Size",
+                  position: 2,
+                  optionValues: [
+                    { id: "gid://shopify/ProductOptionValue/1", name: "Small", hasVariants: true }
+                  ]
+                }
+              ],
+              variants: { nodes: [{ id: "do-not-return" }] }
+            },
+            userErrors: []
+          }
+        }
+      });
+    };
+
+    const result = await reorderProductOptions(config(), {
+      productId: "gid://shopify/Product/1",
+      options: [
+        { id: "gid://shopify/ProductOption/2", values: [{ id: "gid://shopify/ProductOptionValue/2" }] },
+        { id: "gid://shopify/ProductOption/1", values: [{ name: "Small" }] }
+      ]
+    }, { fetcher });
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "ok",
+      optionReorder: {
+        productId: "gid://shopify/Product/1",
+        reorderedOptionCount: 2,
+        options: [
+          { id: "gid://shopify/ProductOption/2", name: "Color", position: 1, values: ["Red"] },
+          { id: "gid://shopify/ProductOption/1", name: "Size", position: 2, values: ["Small"] }
+        ]
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentProductOptionsReorder");
+    expect(request.query).toContain("productOptionsReorder");
+    expect(request.query).not.toContain("productUpdate");
+    expect(request.query).not.toContain("productOptionUpdate");
+    expect(request.query).not.toContain("productOptionsDelete");
+    expect(request.query).not.toContain("inventory");
+    expect(request.query).not.toContain("metafields");
+    expect(request.variables).toEqual({
+      productId: "gid://shopify/Product/1",
+      options: [
+        { id: "gid://shopify/ProductOption/2", values: [{ id: "gid://shopify/ProductOptionValue/2" }] },
+        { id: "gid://shopify/ProductOption/1", values: [{ name: "Small" }] }
+      ]
+    });
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("variants");
+    expect(output).not.toContain("shpat_product_secret");
+  });
+
+  it("blocks option reorder read-only config before calling Shopify", async () => {
+    let fetchCalled = false;
+    const result = await reorderProductOptions(createConfig({
+      storeUrl: "demo",
+      adminAccessToken: "shpat_product_secret",
+      readOnly: true
+    }), {
+      productId: "gid://shopify/Product/1",
+      options: [{ id: "gid://shopify/ProductOption/2" }, { id: "gid://shopify/ProductOption/1" }]
+    }, {
+      fetcher: async () => {
+        fetchCalled = true;
+        return jsonResponse({});
+      }
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "blocked",
+      diagnostics: [{ code: "read_only" }]
+    });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("returns option reorder user errors safely", async () => {
+    const result = await reorderProductOptions(config(), {
+      productId: "gid://shopify/Product/1",
+      options: [{ id: "gid://shopify/ProductOption/2" }, { id: "gid://shopify/ProductOption/1" }]
+    }, {
+      fetcher: async () => jsonResponse({
+        data: {
+          productOptionsReorder: {
+            product: null,
+            userErrors: [{ field: ["options", "0"], message: "Option order is invalid.", code: "INVALID" }]
+          }
+        }
+      })
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "user_errors",
+      userErrors: [{ field: ["options", "0"], message: "Option order is invalid." }],
       diagnostics: [{ code: "shopify_user_errors" }]
     });
   });

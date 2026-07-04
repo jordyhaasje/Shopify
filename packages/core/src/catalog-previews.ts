@@ -115,7 +115,7 @@ export function previewProductUpdate(input: Record<string, unknown>): CatalogPre
   const warnings: PreviewWarning[] = existing ? [] : [warning("before_unknown", "Existing product summary was not supplied, so before values are unknown.")];
   const changes = Object.entries(updateFields).map(([field, value]) => ({
     field,
-    action: "update" as const,
+    action: isOptionOrderField(field) ? "reorder" as const : "update" as const,
     before: existing && field in existing ? summarizeValue(field, existing[field]) : "unknown",
     after: summarizeUpdateValue(field, value)
   }));
@@ -376,6 +376,7 @@ function summarizeVariants(variants: unknown[]): unknown[] {
 function summarizeUpdateValue(field: string, value: unknown): unknown {
   if (field === "variants" && Array.isArray(value)) return summarizeUpdateVariants(value);
   if (field === "options" && Array.isArray(value)) return summarizeUpdateOptions(value);
+  if (isOptionOrderField(field) && Array.isArray(value)) return summarizeOptionOrder(value);
   return summarizeValue(field, value);
 }
 
@@ -429,7 +430,9 @@ function summarizeUpdateOptions(options: unknown[]): unknown {
       const values = summarizeOptionValues(object.values ?? object.optionValues);
       const deleteValueIds = summarizeOptionValueIds(object.deleteValueIds ?? object.deletedValueIds ?? object.valuesToDelete ?? object.optionValuesToDelete ?? object.deleteValues);
       const deleteOption = object.delete === true || object.remove === true || object.destroy === true || object.deleteOption === true ? true : undefined;
-      const fields = Object.fromEntries(Object.entries({ id, name, values, deleteValueIds, deleteOption }).filter(([, entryValue]) => entryValue !== undefined));
+      const position = summarizeValue("position", object.position ?? object.newPosition ?? object.order);
+      const reorder = object.reorder === true || object.reorderOption === true || position !== undefined ? true : undefined;
+      const fields = Object.fromEntries(Object.entries({ id, name, values, deleteValueIds, deleteOption, position, reorder }).filter(([, entryValue]) => entryValue !== undefined));
       return {
         fields,
         omittedFieldCount: Math.max(0, Object.keys(object).length - Object.keys(fields).length)
@@ -449,6 +452,43 @@ function summarizeOptionValues(value: unknown): unknown {
       const name = stringValue(fields.name ?? fields.value);
       if (id && name) return `${safeString(id, 180)}=${safeString(name, 120)}`;
       return name ? safeString(name, 120) : undefined;
+    })
+    .filter(Boolean);
+  return values.length > 0 ? values : undefined;
+}
+
+function summarizeOptionOrder(options: unknown[]): unknown {
+  return {
+    count: options.length,
+    items: options.slice(0, 3).map((option) => {
+      const object = objectInput(option);
+      if (!object) return summarizeValue("option", option);
+      const id = summarizeValue("id", object.id ?? object.optionId);
+      const name = summarizeValue("name", object.name ?? object.optionName);
+      const values = summarizeOptionOrderValues(object.values ?? object.optionValues ?? object.valueOrder ?? object.optionValueOrder);
+      const fields = Object.fromEntries(Object.entries({ id, name, values }).filter(([, entryValue]) => entryValue !== undefined));
+      return {
+        fields,
+        omittedFieldCount: Math.max(0, Object.keys(object).length - Object.keys(fields).length)
+      };
+    })
+  };
+}
+
+function isOptionOrderField(field: string): boolean {
+  return field === "optionOrder" || field === "optionsOrder" || field === "reorderOptions" || field === "productOptionsOrder";
+}
+
+function summarizeOptionOrderValues(value: unknown): unknown {
+  if (!Array.isArray(value)) return undefined;
+  const values = value.slice(0, 25)
+    .map((item) => {
+      if (typeof item === "string") return safeString(item, 180);
+      const fields = objectInput(item);
+      if (!fields) return undefined;
+      const id = stringValue(fields.id ?? fields.optionValueId);
+      const name = stringValue(fields.name ?? fields.value);
+      return id ? safeString(id, 180) : name ? safeString(name, 120) : undefined;
     })
     .filter(Boolean);
   return values.length > 0 ? values : undefined;
