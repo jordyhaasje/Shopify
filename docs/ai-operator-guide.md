@@ -113,6 +113,8 @@ After `pnpm run build`, run setup to generate snippets:
 pnpm --filter shopify-store-agent run setup -- --store "$SHOPIFY_STORE" --auth oauth
 ```
 
+Setup also prints "First AI prompts". Encourage users to start from those prompts instead of requiring MCP tool names, Shopify handles, or GraphQL IDs. The prompts are examples; the host must still choose the correct tool, ask for missing exact targets, and keep preview-before-execute.
+
 In the current GitHub-only route, MCP hosts should use a local node command:
 
 ```toml

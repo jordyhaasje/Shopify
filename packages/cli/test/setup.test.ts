@@ -77,6 +77,21 @@ describe("setup", () => {
     expect(nextSteps).toContain("read-only mode enabled");
   });
 
+  it("returns safe first prompts for non-technical AI-harness onboarding", async () => {
+    const result = await runSetup({ storeUrl: "demo", dryRun: true });
+    const prompts = result.firstPrompts.join("\n");
+
+    expect(result.firstPrompts.length).toBeGreaterThanOrEqual(4);
+    expect(prompts).toContain("Check my Shopify connection");
+    expect(prompts).toContain("draft page preview");
+    expect(prompts).toContain("Ask me for the product link");
+    expect(prompts).toContain("minimal status summary");
+    expect(prompts).toContain("do not execute until I explicitly approve");
+    expect(prompts).not.toContain("gid://");
+    expect(prompts).not.toContain("previewHash");
+    expect(prompts).not.toContain("confirmed: true");
+  });
+
   it("validates setup input and normalizes store URLs", async () => {
     await expect(runSetup({ storeUrl: "   ", dryRun: true })).rejects.toThrow("Store URL is required.");
 

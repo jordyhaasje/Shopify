@@ -34,6 +34,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 - Local OAuth-first setup is documented and implemented, with hidden interactive client-secret entry and manual token fallback still supported.
 - Setup generates MCP snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts.
 - Setup guidance now tells AI hosts to support ordinary store-language prompts while still asking for exact targets before tool calls when needed.
+- Setup output includes safe starter prompts that users can paste into an AI host after MCP configuration.
 - Read tools are implemented for explicit inputs.
 - Preview tools are implemented for product, page, collection, import, media, and related planning surfaces.
 - `page.create.execute` is implemented.

@@ -91,6 +91,8 @@ pnpm --filter shopify-store-agent run setup -- --store "$SHOPIFY_STORE" --auth o
 
 `setup --auth oauth` generates guidance and MCP snippets. The actual browser OAuth flow is `auth`.
 
+Setup also prints "First AI prompts". These are safe starter prompts you can paste into Codex, OpenCode, Claude Code, Cursor, or another MCP host after adding the MCP config. They are written in normal store language and still require the AI to ask for missing exact targets before tool calls.
+
 ## Step 5 -- Add MCP config to your AI host
 
 For the current GitHub install, use the local node MCP command:
@@ -111,22 +113,22 @@ The current working route is GitHub clone plus local node MCP command. npm/npx i
 
 ## Step 6 -- Check the connection
 
-Ask your AI host:
+Use one of the setup "First AI prompts", or ask your AI host:
 
 ```text
-List the available Shopify Store Agent MCP tools. Do not run writes.
+Check my Shopify connection and tell me only whether the store is ready. Do not show secrets or raw config.
 ```
 
 Then:
 
 ```text
-Run shopify.capabilities.check. Do not show secrets or raw config.
+List the available Shopify Store Agent MCP tools. Do not run writes.
 ```
 
 Read example:
 
 ```text
-Use product.get for product handle "<test-handle>" and return only a minimal summary.
+Look up the order or customer I provide and return only a minimal status summary. Do not show raw Shopify data.
 ```
 
 ## Step 7 -- Create a preview
@@ -134,12 +136,7 @@ Use product.get for product handle "<test-handle>" and return only a minimal sum
 Ask your AI host:
 
 ```text
-Create a page.create.preview for a draft test page:
-title: Store Agent Test Page
-body: <p>Temporary validation page.</p>
-handle: store-agent-test-page
-
-Do not execute yet. Show the preview and executeRequest helper.
+Create a draft page preview for our return policy. Ask me for any missing content first, and do not execute until I explicitly approve.
 ```
 
 Preview output includes `executeRequest` for:
