@@ -36,6 +36,8 @@ import {
   type ProductCreateResult,
   type ProductOptionsCreateInput,
   type ProductOptionsCreateResult,
+  type ProductOptionValueRenameInput,
+  type ProductOptionValueRenameResult,
   type ProductOptionRenameInput,
   type ProductOptionRenameResult,
   type ProductUpdateInput,
@@ -54,6 +56,7 @@ import {
   createProductOptions,
   createProductVariants,
   renameProductOption,
+  renameProductOptionValue,
   updateProduct,
   updateProductVariantPrices,
   previewCollectionCreate,
@@ -444,18 +447,21 @@ async function productUpdateExecuteResult(input: Record<string, unknown>, contex
   const variantCreateExtracted = productVariantCreateInputFromStoredPreview(lookup.record);
   const optionCreateExtracted = productOptionsCreateInputFromStoredPreview(lookup.record);
   const optionRenameExtracted = productOptionRenameInputFromStoredPreview(lookup.record);
-  const extractedShapeCount = [extracted, variantPriceExtracted, variantCreateExtracted, optionCreateExtracted, optionRenameExtracted].filter((item) => item.ok).length;
+  const optionValueRenameExtracted = productOptionValueRenameInputFromStoredPreview(lookup.record);
+  const extractedShapeCount = [extracted, variantPriceExtracted, variantCreateExtracted, optionCreateExtracted, optionRenameExtracted, optionValueRenameExtracted].filter((item) => item.ok).length;
   if (extractedShapeCount > 1) {
     return blockedImplementedExecuteResult(tool, storedTarget, [diagnostic("mixed_product_update_fields", "Stored product update preview mixes multiple product update shapes; create separate previews to avoid partial writes.")], context, binding);
   }
   if (extractedShapeCount === 0) {
     const diagnostics: ExecutePreviewBindingDiagnostic[] = [];
     if (!optionRenameExtracted.ok && hasDiagnostic(optionRenameExtracted.diagnostics, "multiple_option_renames")) diagnostics.push(...optionRenameExtracted.diagnostics);
+    if (!optionValueRenameExtracted.ok && hasDiagnostic(optionValueRenameExtracted.diagnostics, "multiple_option_value_renames")) diagnostics.push(...optionValueRenameExtracted.diagnostics);
     if (!extracted.ok) diagnostics.push(...extracted.diagnostics);
     if (!variantPriceExtracted.ok && diagnostics.length === 0) diagnostics.push(...variantPriceExtracted.diagnostics);
     if (!variantCreateExtracted.ok && diagnostics.length === 0) diagnostics.push(...variantCreateExtracted.diagnostics);
     if (!optionCreateExtracted.ok && diagnostics.length === 0) diagnostics.push(...optionCreateExtracted.diagnostics);
     if (!optionRenameExtracted.ok && diagnostics.length === 0) diagnostics.push(...optionRenameExtracted.diagnostics);
+    if (!optionValueRenameExtracted.ok && diagnostics.length === 0) diagnostics.push(...optionValueRenameExtracted.diagnostics);
     return blockedImplementedExecuteResult(tool, storedTarget, diagnostics, context, binding);
   }
 
@@ -480,6 +486,11 @@ async function productUpdateExecuteResult(input: Record<string, unknown>, contex
   if (optionRenameExtracted.ok) {
     const write = await renameProductOption(context.config, optionRenameExtracted.input, { fetcher: context.fetcher });
     return productOptionRenameWriteResult(tool, storedTarget, binding, write, context);
+  }
+
+  if (optionValueRenameExtracted.ok) {
+    const write = await renameProductOptionValue(context.config, optionValueRenameExtracted.input, { fetcher: context.fetcher });
+    return productOptionValueRenameWriteResult(tool, storedTarget, binding, write, context);
   }
 
   if (!extracted.ok) return blockedImplementedExecuteResult(tool, storedTarget, extracted.diagnostics, context, binding);
@@ -870,6 +881,39 @@ function productOptionRenameWriteResult(
   };
 }
 
+function productOptionValueRenameWriteResult(
+  tool: string,
+  target: string,
+  binding: ExecutePreviewBindingResult,
+  write: ProductOptionValueRenameResult,
+  context: ToolContext
+): Record<string, unknown> {
+  const result = productUpdateAuditResult(write);
+  const audit = context.audit.record({
+    tool,
+    target: safeExecuteString(target),
+    mode: "execute",
+    summary: write.summary,
+    result
+  });
+  return {
+    ok: write.ok,
+    mode: "execute",
+    implemented: true,
+    status: write.status,
+    summary: write.summary,
+    audit,
+    renamedOptionValue: write.optionValueRename,
+    userErrors: write.userErrors,
+    diagnostics: write.diagnostics,
+    previewBinding: {
+      previewId: binding.previewId,
+      expectedTool: binding.expectedPreviewTool,
+      target: binding.target
+    }
+  };
+}
+
 function collectionCreateWriteResult(
   tool: string,
   target: string,
@@ -909,7 +953,7 @@ function productCreateAuditResult(write: ProductCreateResult): "success" | "bloc
   return "failed";
 }
 
-function productUpdateAuditResult(write: ProductUpdateResult | ProductVariantPriceUpdateResult | ProductVariantBulkCreateResult | ProductOptionsCreateResult | ProductOptionRenameResult): "success" | "blocked" | "failed" {
+function productUpdateAuditResult(write: ProductUpdateResult | ProductVariantPriceUpdateResult | ProductVariantBulkCreateResult | ProductOptionsCreateResult | ProductOptionRenameResult | ProductOptionValueRenameResult): "success" | "blocked" | "failed" {
   if (write.status === "ok") return "success";
   if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
   return "failed";
@@ -1095,6 +1139,34 @@ function productOptionRenameInputFromStoredPreview(record: StoredPreviewRecord):
   };
 }
 
+function productOptionValueRenameInputFromStoredPreview(record: StoredPreviewRecord): { ok: true; input: ProductOptionValueRenameInput } | { ok: false; diagnostics: ExecutePreviewBindingDiagnostic[] } {
+  const productId = safeContentText(targetField(record, "id") ?? targetField(record, "productId") ?? changeAfterValue(record, "id") ?? changeAfterValue(record, "productId"), 180);
+  const optionValueRenames = optionValueRenamesFromStoredPreview(record);
+
+  if (!productId || optionValueRenames.length === 0) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_product_update_fields", "Stored product update preview did not include supported basic product fields, explicit variant fields, explicit option create fields, explicit option rename fields, or explicit option value rename fields for execution.")]
+    };
+  }
+
+  if (optionValueRenames.length > 1) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("multiple_option_value_renames", "Stored product update preview includes multiple option value renames; create separate previews to avoid partial writes.")]
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      productId,
+      optionId: optionValueRenames[0].optionId,
+      value: optionValueRenames[0].value
+    }
+  };
+}
+
 function variantPriceUpdatesFromStoredPreview(record: StoredPreviewRecord): Array<{ id: string; price: string }> {
   const result: Array<{ id: string; price: string }> = [];
   const seen = new Set<string>();
@@ -1224,6 +1296,7 @@ function optionRenamesFromStoredPreview(record: StoredPreviewRecord): Array<Prod
   const seen = new Set<string>();
   for (const item of storedChangeArray(record, "options", "after")) {
     const fields = objectFields(item);
+    if (arraySummaryItems(fields.values ?? fields.optionValues).length > 0) continue;
     const id = safeVariantText(fields.id ?? fields.optionId, 180);
     const name = safeVariantText(fields.name ?? fields.optionName, 120);
     if (!id || !name || seen.has(id)) continue;
@@ -1232,6 +1305,43 @@ function optionRenamesFromStoredPreview(record: StoredPreviewRecord): Array<Prod
     if (result.length > 1) break;
   }
   return result;
+}
+
+function optionValueRenamesFromStoredPreview(record: StoredPreviewRecord): Array<{ optionId: string; value: ProductOptionValueRenameInput["value"] }> {
+  const result: Array<{ optionId: string; value: ProductOptionValueRenameInput["value"] }> = [];
+  const seen = new Set<string>();
+  for (const item of storedChangeArray(record, "options", "after")) {
+    const fields = objectFields(item);
+    const optionId = safeVariantText(fields.id ?? fields.optionId, 180);
+    if (!optionId) continue;
+    for (const valueItem of arraySummaryItems(fields.values ?? fields.optionValues)) {
+      const pair = optionValueRenamePairFromString(valueItem);
+      if (pair) {
+        if (seen.has(pair.id)) continue;
+        seen.add(pair.id);
+        result.push({ optionId, value: pair });
+        if (result.length > 1) return result;
+        continue;
+      }
+      const valueFields = objectFields(valueItem);
+      const id = safeVariantText(valueFields.id ?? valueFields.optionValueId, 180);
+      const name = safeVariantText(valueFields.name ?? valueFields.value ?? valueItem, 120);
+      if (!id || !name || seen.has(id)) continue;
+      seen.add(id);
+      result.push({ optionId, value: { id, name } });
+      if (result.length > 1) return result;
+    }
+  }
+  return result;
+}
+
+function optionValueRenamePairFromString(value: unknown): ProductOptionValueRenameInput["value"] | undefined {
+  if (typeof value !== "string") return undefined;
+  const separatorIndex = value.indexOf("=");
+  if (separatorIndex <= 0) return undefined;
+  const id = safeVariantText(value.slice(0, separatorIndex), 180);
+  const name = safeVariantText(value.slice(separatorIndex + 1), 120);
+  return id && name ? { id, name } : undefined;
 }
 
 function optionValueNamesFromStoredValue(value: unknown): string[] {
@@ -1533,7 +1643,7 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: "product.update.execute",
-    description: "Update basic Shopify product fields, explicit variant prices, explicit variants, explicit options, or explicit option names after stored product update preview binding and explicit confirmation.",
+    description: "Update basic Shopify product fields, explicit variant prices, explicit variants, explicit options, explicit option names, or explicit option value names after stored product update preview binding and explicit confirmation.",
     inputSchema: { type: "object" },
     handler: (input, context) => productUpdateExecuteResult(input, context)
   },
