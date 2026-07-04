@@ -40,7 +40,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 - Preview tools are implemented for product, page, collection, import, media, and related planning surfaces.
 - `page.create.execute` is implemented.
 - `product.create.execute` is implemented.
-- Minimal `product.update.execute` is implemented for basic product fields, explicit variant price updates, and explicit variant creation only. Basic fields cover title, description/descriptionHtml, vendor, product type, status, and tags. Variant price updates require product ID plus explicit variant IDs and prices. Variant creation requires product ID plus explicit option values, with optional price and SKU. These update shapes cannot be mixed in one execute call.
+- Minimal `product.update.execute` is implemented for basic product fields, explicit variant price updates, explicit variant creation, and explicit option creation only. Basic fields cover title, description/descriptionHtml, vendor, product type, status, and tags. Variant price updates require product ID plus explicit variant IDs and prices. Variant creation requires product ID plus explicit option values, with optional price and SKU. Option creation requires product ID plus explicit option names and values, and uses `LEAVE_AS_IS` to avoid automatic variant expansion. These update shapes cannot be mixed in one execute call.
 - Minimal `collection.create.execute` is implemented for custom collections with title, optional handle, and explicit product IDs only.
 - A product media/update execute expansion plan exists, with media execute still intentionally not implemented.
 - Safe preview records persist locally across MCP server restarts while preserving strict stored preview binding.
@@ -59,7 +59,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 
 ## Later Roadmap
 
-- Broader product option management beyond explicit variant creation.
+- Product option update/reorder/delete beyond explicit option creation.
 - Inventory.
 - Metafields.
 - Publications.

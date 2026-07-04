@@ -46,6 +46,16 @@ export interface ProductVariantBulkCreateInput {
   variants: ProductVariantCreateInput[];
 }
 
+export interface ProductOptionCreateInput {
+  name: string;
+  values: string[];
+}
+
+export interface ProductOptionsCreateInput {
+  productId: string;
+  options: ProductOptionCreateInput[];
+}
+
 export interface ProductCreateSummary {
   id: string;
   title?: string;
@@ -77,6 +87,20 @@ export interface ProductVariantBulkCreateSummary {
   variants: ProductVariantCreateSummary[];
 }
 
+export interface ProductOptionSummary {
+  id?: string;
+  name: string;
+  position?: number;
+  values: string[];
+}
+
+export interface ProductOptionsCreateSummary {
+  productId: string;
+  createdOptionCount: number;
+  options: ProductOptionSummary[];
+  variantStrategy: "LEAVE_AS_IS";
+}
+
 export interface ProductWriteDiagnostic {
   severity: "warning" | "error";
   code: string;
@@ -104,6 +128,10 @@ export interface ProductVariantPriceUpdateResult extends ProductWriteResultBase 
 
 export interface ProductVariantBulkCreateResult extends ProductWriteResultBase {
   variantCreate?: ProductVariantBulkCreateSummary;
+}
+
+export interface ProductOptionsCreateResult extends ProductWriteResultBase {
+  optionCreate?: ProductOptionsCreateSummary;
 }
 
 export interface ProductWriteOptions {
@@ -152,6 +180,25 @@ interface ProductVariantsBulkCreateData {
       price?: unknown;
       sku?: unknown;
     } | null> | null;
+    userErrors?: GraphqlUserError[];
+  } | null;
+}
+
+interface ProductOptionsCreateData {
+  productOptionsCreate?: {
+    product?: {
+      id?: unknown;
+      options?: Array<{
+        id?: unknown;
+        name?: unknown;
+        position?: unknown;
+        optionValues?: Array<{
+          id?: unknown;
+          name?: unknown;
+          hasVariants?: unknown;
+        } | null> | null;
+      } | null> | null;
+    } | null;
     userErrors?: GraphqlUserError[];
   } | null;
 }
@@ -451,6 +498,102 @@ export async function createProductVariants(
   };
 }
 
+export async function createProductOptions(
+  config: StoreAgentConfig,
+  input: ProductOptionsCreateInput,
+  options: ProductWriteOptions = {}
+): Promise<ProductOptionsCreateResult> {
+  if (config.readOnly) return blocked("Product option create is blocked because read-only mode is enabled.");
+
+  const productId = safeText(input.productId, 180);
+  if (!productId) return missingInput("Provide a product ID.");
+
+  const productOptions = safeOptionCreateInputs(input.options);
+  if (productOptions.length === 0) return missingInput("Provide at least one option name with explicit values.");
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  let result: ShopifyGraphqlResult<ProductOptionsCreateData>;
+  try {
+    result = await client.request<ProductOptionsCreateData>({
+      query: productOptionsCreateMutation,
+      variables: {
+        productId,
+        options: productOptions.map((option) => ({
+          name: option.name,
+          values: option.values.map((name) => ({ name }))
+        })),
+        variantStrategy: "LEAVE_AS_IS"
+      }
+    });
+  } catch {
+    return shopifyFailure("Shopify product option create request failed before a safe response was available.");
+  }
+
+  if (!result.ok) return mapGraphqlFailure(result);
+
+  const userErrors = result.data.productOptionsCreate?.userErrors ?? result.userErrors;
+  if (userErrors.length > 0) {
+    return {
+      ok: false,
+      status: "user_errors",
+      summary: "Shopify rejected the product option create request.",
+      userErrors: sanitizeUserErrors(userErrors),
+      diagnostics: [{ severity: "warning", code: "shopify_user_errors", message: "Shopify returned product option create user errors." }]
+    };
+  }
+
+  const productNode = result.data.productOptionsCreate?.product;
+  const updatedProductId = safeText(productNode?.id, 180);
+  if (!updatedProductId) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product option create response did not include a product ID.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product option create response did not include a product ID." }]
+    };
+  }
+
+  const requestedNames = new Set(productOptions.map((option) => option.name));
+  const createdOptions: ProductOptionSummary[] = [];
+  for (const option of productNode?.options ?? []) {
+    const name = safeNonSecretText(option?.name, 120);
+    if (!name || !requestedNames.has(name)) continue;
+    const values = safeOptionValueNames((option?.optionValues ?? []).map((value) => value?.name));
+    createdOptions.push({
+      id: safeText(option?.id, 180),
+      name,
+      position: safePosition(option?.position),
+      values
+    });
+    if (createdOptions.length >= productOptions.length) break;
+  }
+
+  if (createdOptions.length === 0) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product option create response did not include created option summaries.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product option create response did not include created option summaries." }]
+    };
+  }
+
+  return {
+    ok: true,
+    status: "ok",
+    summary: `Created ${createdOptions.length} Shopify product option${createdOptions.length === 1 ? "" : "s"}.`,
+    optionCreate: {
+      productId: updatedProductId,
+      createdOptionCount: createdOptions.length,
+      options: createdOptions,
+      variantStrategy: "LEAVE_AS_IS"
+    },
+    userErrors: [],
+    diagnostics: []
+  };
+}
+
 const productCreateMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentProductCreate($product: ProductCreateInput!) {
     productCreate(product: $product) {
@@ -517,7 +660,32 @@ const productVariantsBulkCreateMutation = /* GraphQL */ `
   }
 `;
 
-function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<ProductCreateData | ProductUpdateData | ProductVariantsBulkUpdateData | ProductVariantsBulkCreateData>, { ok: false }>): ProductWriteResultBase {
+const productOptionsCreateMutation = /* GraphQL */ `
+  mutation ShopifyStoreAgentProductOptionsCreate($productId: ID!, $options: [OptionCreateInput!]!, $variantStrategy: ProductOptionCreateVariantStrategy) {
+    productOptionsCreate(productId: $productId, options: $options, variantStrategy: $variantStrategy) {
+      product {
+        id
+        options {
+          id
+          name
+          position
+          optionValues {
+            id
+            name
+            hasVariants
+          }
+        }
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
+function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<ProductCreateData | ProductUpdateData | ProductVariantsBulkUpdateData | ProductVariantsBulkCreateData | ProductOptionsCreateData>, { ok: false }>): ProductWriteResultBase {
   return {
     ok: false,
     status: "shopify_error",
@@ -617,6 +785,39 @@ function safeVariantOptionValues(value: ProductVariantOptionValueInput[] | undef
     if (results.length >= 3) break;
   }
   return results;
+}
+
+function safeOptionCreateInputs(value: ProductOptionCreateInput[] | undefined): ProductOptionCreateInput[] {
+  if (!Array.isArray(value)) return [];
+  const results: ProductOptionCreateInput[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const name = safeNonSecretText(item?.name, 120);
+    const values = safeOptionValueNames(item?.values);
+    if (!name || values.length === 0 || seen.has(name)) continue;
+    seen.add(name);
+    results.push({ name, values });
+    if (results.length >= 3) break;
+  }
+  return results;
+}
+
+function safeOptionValueNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const results: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const name = safeNonSecretText(item, 120);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    results.push(name);
+    if (results.length >= 25) break;
+  }
+  return results;
+}
+
+function safePosition(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
 function safePrice(value: unknown): string | undefined {

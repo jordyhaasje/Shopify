@@ -375,6 +375,7 @@ function summarizeVariants(variants: unknown[]): unknown[] {
 
 function summarizeUpdateValue(field: string, value: unknown): unknown {
   if (field === "variants" && Array.isArray(value)) return summarizeUpdateVariants(value);
+  if (field === "options" && Array.isArray(value)) return summarizeUpdateOptions(value);
   return summarizeValue(field, value);
 }
 
@@ -415,6 +416,35 @@ function summarizeVariantOptionValues(value: unknown): unknown {
     entries.push(`${safeString(optionName, 120)}=${safeString(name, 180)}`);
   }
   return entries.length > 0 ? entries : undefined;
+}
+
+function summarizeUpdateOptions(options: unknown[]): unknown {
+  return {
+    count: options.length,
+    items: options.slice(0, 3).map((option) => {
+      const object = objectInput(option);
+      if (!object) return summarizeValue("option", option);
+      const name = summarizeValue("name", object.name ?? object.optionName);
+      const values = summarizeOptionValues(object.values ?? object.optionValues);
+      const fields = Object.fromEntries(Object.entries({ name, values }).filter(([, entryValue]) => entryValue !== undefined));
+      return {
+        fields,
+        omittedFieldCount: Math.max(0, Object.keys(object).length - Object.keys(fields).length)
+      };
+    })
+  };
+}
+
+function summarizeOptionValues(value: unknown): unknown {
+  if (!Array.isArray(value)) return undefined;
+  const values = value.slice(0, 25)
+    .map((item) => {
+      if (typeof item === "string") return safeString(item, 120);
+      const fields = objectInput(item);
+      return fields ? summarizeValue("name", fields.name ?? fields.value) : undefined;
+    })
+    .filter(Boolean);
+  return values.length > 0 ? values : undefined;
 }
 
 function summarizeMedia(media: unknown[]): unknown[] {
