@@ -93,6 +93,8 @@ The CLI opens or prints an install URL, validates the callback state/HMAC, excha
 
 `setup --auth oauth` is only guidance for local config and MCP snippets. It does not run the browser flow, does not exchange a token, and does not overwrite a working token-bearing OAuth config with incomplete tokenless config.
 
+If `auth` prompts for the OAuth client secret interactively, the secret input is hidden. Prefer local environment variables or the hidden prompt; do not paste secrets into docs, chat, PRs, screenshots, or logs.
+
 V1 defaults to read-only mode unless writes are explicitly enabled. The default OAuth install URL uses read-only scopes only. Do not request write scopes for setup, smoke, reads, or previews; request `write_content` or `write_online_store_pages` only when intentionally testing the reviewed `page.create.execute` path in a development store, and request `write_products` only when intentionally testing the reviewed minimal `product.create.execute`, basic-field `product.update.execute`, or custom explicit-product `collection.create.execute` path.
 
 For deliberate development-store write testing, read-only mode must be explicitly disabled and local granted scopes must include the write scope required by the execute path. Missing or unknown write scopes fail closed before fetch. The only real execute tools in this phase are `page.create.execute`, `product.create.execute`, `product.update.execute`, and `collection.create.execute`; all other execute tools remain placeholders.

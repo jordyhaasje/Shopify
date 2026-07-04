@@ -54,6 +54,7 @@ export interface AuthOptions {
   storeUrl?: string;
   clientId?: string;
   clientSecret?: string;
+  clientSecretPrompt?: (prompt: string) => Promise<string>;
   scopes?: string;
   redirectPort?: number;
   readOnly?: boolean;
@@ -331,11 +332,16 @@ export async function runOAuthInstall(options: AuthOptions): Promise<{
   grantedScopes: string[];
 }> {
   const interactive = !options.storeUrl || !options.clientId || !options.clientSecret;
-  const rl = interactive ? createInterface({ input, output }) : undefined;
+  let rl = interactive ? createInterface({ input, output }) : undefined;
   try {
     const storeUrl = options.storeUrl ?? await rl!.question("Shopify store URL: ");
     const clientId = options.clientId ?? await rl!.question("Shopify app client ID: ");
-    const clientSecret = options.clientSecret ?? await rl!.question("Shopify app client secret: ");
+    let clientSecret = options.clientSecret;
+    if (!clientSecret) {
+      rl?.close();
+      rl = undefined;
+      clientSecret = await (options.clientSecretPrompt ?? questionHidden)("Shopify app client secret: ");
+    }
     const readOnly = options.readOnly ?? true;
     const scopes = resolveSetupScopes(options.scopes, readOnly);
     const port = options.redirectPort ?? 3456;
@@ -643,6 +649,47 @@ function setupNextSteps(authMethod: "manual" | "oauth", configPath: string): str
     "Create or use a Shopify custom app token with only the scopes needed for read and preview workflows.",
     ...common
   ];
+}
+
+async function questionHidden(prompt: string): Promise<string> {
+  output.write(prompt);
+  if (!input.isTTY || typeof input.setRawMode !== "function") {
+    const rl = createInterface({ input, output });
+    try {
+      return await rl.question("");
+    } finally {
+      rl.close();
+    }
+  }
+
+  return new Promise((resolve, reject) => {
+    let value = "";
+    const wasRaw = input.isRaw;
+
+    const done = (error?: Error) => {
+      input.off("data", onData);
+      input.setRawMode(Boolean(wasRaw));
+      output.write("\n");
+      if (error) reject(error);
+      else resolve(value);
+    };
+
+    const onData = (chunk: Buffer) => {
+      for (const char of chunk.toString("utf8")) {
+        if (char === "\u0003") return done(new Error("secret_prompt_cancelled"));
+        if (char === "\r" || char === "\n") return done();
+        if (char === "\u007f" || char === "\b") {
+          value = value.slice(0, -1);
+          continue;
+        }
+        if (char >= " ") value += char;
+      }
+    };
+
+    input.setRawMode(true);
+    input.resume();
+    input.on("data", onData);
+  });
 }
 
 function waitForOAuthCallback(port: number): Promise<Record<string, string>> {
