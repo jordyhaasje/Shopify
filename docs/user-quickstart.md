@@ -173,7 +173,7 @@ Use only a development or disposable store. `write_products` is required for `pr
 
 ## Troubleshooting
 
-- OAuth callback fails: confirm the Shopify app allows `http://127.0.0.1:3456/auth/callback`.
+- OAuth callback fails: confirm the Shopify app allows `http://127.0.0.1:3456/auth/callback`; if OAuth reports a different canonical `.myshopify.com` domain than `--store`, use the stored canonical config domain for Admin API validation.
 - MCP host cannot start: run `pnpm run build` and confirm the config path points to `packages/mcp/dist/server.js`.
 - Missing token diagnostics: rerun `auth`; do not paste the generated token anywhere.
 - Read tool returns missing input: provide a handle, Shopify ID, order number, email, or tracking reference.

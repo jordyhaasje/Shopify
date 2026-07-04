@@ -89,7 +89,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --client-secret "$SHOPIFY_CLIENT_SECRET"
 ```
 
-The CLI opens or prints an install URL, validates the callback state/HMAC, exchanges the OAuth code, and stores the resulting Admin API token locally. The token, OAuth client secret, and local config contents must never be pasted into docs, PRs, screenshots, logs, or chat.
+The CLI opens or prints an install URL, validates the callback state/HMAC, exchanges the OAuth code, and stores the resulting Admin API token locally. If the store has multiple connected domains, Shopify can return the original canonical `.myshopify.com` domain in the OAuth callback even when `--store` used the primary storefront domain; `auth` stores that canonical shop domain for Admin API calls and reports it in the terminal. The token, OAuth client secret, and local config contents must never be pasted into docs, PRs, screenshots, logs, or chat.
 
 `setup --auth oauth` is only guidance for local config and MCP snippets. It does not run the browser flow, does not exchange a token, and does not overwrite a working token-bearing OAuth config with incomplete tokenless config.
 

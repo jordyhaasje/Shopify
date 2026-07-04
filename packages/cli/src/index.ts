@@ -20,6 +20,7 @@ import {
   MemoryAuditLog,
   MemoryPreviewStore,
   loadStoredConfig,
+  normalizeStoreUrl,
   normalizeScopes,
   previewRecordBindingTarget,
   reviewedPayloadForPreviewRecord,
@@ -375,8 +376,8 @@ export async function runDevStoreE2ePreflight(options: DevStoreE2ePreflightOptio
   checks.push(check("admin_token_configured", Boolean(stored.adminAccessToken), "Admin API token is configured locally."));
 
   const grantedScopes = new Set(normalizeScopes(stored.grantedScopes ?? []));
-  const missingScopes = requiredScopes.filter((scope) => !grantedScopes.has(scope));
-  checks.push(check("required_scopes_configured", missingScopes.length === 0, missingScopes.length === 0 ? "Required scopes are present in local grantedScopes." : `Missing required scopes: ${missingScopes.join(", ")}.`));
+  const missingScopes = requiredScopes.filter((scope) => !hasEffectiveScope(grantedScopes, scope));
+  checks.push(check("required_scopes_configured", missingScopes.length === 0, missingScopes.length === 0 ? "Required scopes are present or implied by granted write scopes in local grantedScopes." : `Missing required scopes: ${missingScopes.join(", ")}.`));
 
   const writeRequired = options.requireWriteEnabled === true || requiredScopes.some((scope) => scope.startsWith("write_"));
   if (writeRequired) {
@@ -434,14 +435,19 @@ export async function runOAuthInstall(options: AuthOptions): Promise<{
 
     const callback = await waitForOAuthCallback(port);
     validateOAuthCallback(callback, state, clientSecret);
+    const expectedShop = normalizeStoreUrl(storeUrl);
+    const callbackShop = normalizeStoreUrl(callback.shop);
+    if (callbackShop !== expectedShop) {
+      console.log(`OAuth callback returned canonical shop ${callbackShop}; requested ${expectedShop}. Storing the canonical Shopify shop domain.`);
+    }
     const token = await exchangeCodeForOfflineToken({
-      shop: callback.shop ?? storeUrl,
+      shop: callbackShop,
       clientId,
       clientSecret,
       code: callback.code!
     }, options.tokenFetcher);
     const config = createConfig({
-      storeUrl: callback.shop ?? storeUrl,
+      storeUrl: callbackShop,
       adminAccessToken: token.access_token,
       readOnly
     });
@@ -693,6 +699,12 @@ function auditResult(value: Record<string, unknown>): string | undefined {
 
 function redactSmokeResult(result: SmokeValidationResult): SmokeValidationResult {
   return JSON.parse(JSON.stringify(result).replace(/shpat_[A-Za-z0-9_]+|shpua_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|Bearer\s+[A-Za-z0-9._-]+/gi, "[redacted]")) as SmokeValidationResult;
+}
+
+function hasEffectiveScope(grantedScopes: Set<string>, requiredScope: string): boolean {
+  if (grantedScopes.has(requiredScope)) return true;
+  if (!requiredScope.startsWith("read_")) return false;
+  return grantedScopes.has(`write_${requiredScope.slice("read_".length)}`);
 }
 
 function resolveSetupScopes(input: string | readonly string[] | undefined, readOnly: boolean): string[] {
