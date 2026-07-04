@@ -71,10 +71,20 @@ export interface ProductOptionValueUpdateInput {
   name: string;
 }
 
+export interface ProductOptionValueCreateInput {
+  name: string;
+}
+
 export interface ProductOptionValueRenameInput {
   productId: string;
   optionId: string;
   value: ProductOptionValueUpdateInput;
+}
+
+export interface ProductOptionValueAddInput {
+  productId: string;
+  optionId: string;
+  values: ProductOptionValueCreateInput[];
 }
 
 export interface ProductCreateSummary {
@@ -140,6 +150,14 @@ export interface ProductOptionValueRenameSummary {
   variantStrategy: "LEAVE_AS_IS";
 }
 
+export interface ProductOptionValueAddSummary {
+  productId: string;
+  optionId: string;
+  addedValueCount: number;
+  values: ProductOptionValueSummary[];
+  variantStrategy: "LEAVE_AS_IS";
+}
+
 export interface ProductWriteDiagnostic {
   severity: "warning" | "error";
   code: string;
@@ -179,6 +197,10 @@ export interface ProductOptionRenameResult extends ProductWriteResultBase {
 
 export interface ProductOptionValueRenameResult extends ProductWriteResultBase {
   optionValueRename?: ProductOptionValueRenameSummary;
+}
+
+export interface ProductOptionValueAddResult extends ProductWriteResultBase {
+  optionValueAdd?: ProductOptionValueAddSummary;
 }
 
 export interface ProductWriteOptions {
@@ -815,6 +837,93 @@ export async function renameProductOptionValue(
   };
 }
 
+export async function addProductOptionValues(
+  config: StoreAgentConfig,
+  input: ProductOptionValueAddInput,
+  options: ProductWriteOptions = {}
+): Promise<ProductOptionValueAddResult> {
+  if (config.readOnly) return blocked("Product option value add is blocked because read-only mode is enabled.");
+
+  const productId = safeText(input.productId, 180);
+  if (!productId) return missingInput("Provide a product ID.");
+
+  const optionId = safeText(input.optionId, 180);
+  const values = safeOptionValueCreateInputs(input.values);
+  if (!optionId || values.length === 0) return missingInput("Provide an option ID and at least one new option value name.");
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  let result: ShopifyGraphqlResult<ProductOptionUpdateData>;
+  try {
+    result = await client.request<ProductOptionUpdateData>({
+      query: productOptionUpdateMutation,
+      variables: {
+        productId,
+        option: { id: optionId },
+        optionValuesToAdd: values,
+        variantStrategy: "LEAVE_AS_IS"
+      }
+    });
+  } catch {
+    return shopifyFailure("Shopify product option value add request failed before a safe response was available.");
+  }
+
+  if (!result.ok) return mapGraphqlFailure(result);
+
+  const userErrors = result.data.productOptionUpdate?.userErrors ?? result.userErrors;
+  if (userErrors.length > 0) {
+    return {
+      ok: false,
+      status: "user_errors",
+      summary: "Shopify rejected the product option value add request.",
+      userErrors: sanitizeUserErrors(userErrors),
+      diagnostics: [{ severity: "warning", code: "shopify_user_errors", message: "Shopify returned product option value add user errors." }]
+    };
+  }
+
+  const productNode = result.data.productOptionUpdate?.product;
+  const updatedProductId = safeText(productNode?.id, 180);
+  if (!updatedProductId) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product option value add response did not include a product ID.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product option value add response did not include a product ID." }]
+    };
+  }
+
+  const optionNode = productNode?.options?.find((candidate) => safeText(candidate?.id, 180) === optionId);
+  const expectedNames = new Set(values.map((value) => value.name));
+  const valueSummaries = (optionNode?.optionValues ?? [])
+    .map((candidate) => optionValueSummaryFromNode(candidate))
+    .filter((value): value is ProductOptionValueSummary => Boolean(value && expectedNames.has(value.name)))
+    .slice(0, values.length);
+  if (valueSummaries.length !== values.length) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product option value add response did not include all added option value summaries.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product option value add response did not include all added option value summaries." }]
+    };
+  }
+
+  return {
+    ok: true,
+    status: "ok",
+    summary: `Added ${valueSummaries.length} Shopify product option value${valueSummaries.length === 1 ? "" : "s"}.`,
+    optionValueAdd: {
+      productId: updatedProductId,
+      optionId,
+      addedValueCount: valueSummaries.length,
+      values: valueSummaries,
+      variantStrategy: "LEAVE_AS_IS"
+    },
+    userErrors: [],
+    diagnostics: []
+  };
+}
+
 const productCreateMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentProductCreate($product: ProductCreateInput!) {
     productCreate(product: $product) {
@@ -907,8 +1016,8 @@ const productOptionsCreateMutation = /* GraphQL */ `
 `;
 
 const productOptionUpdateMutation = /* GraphQL */ `
-  mutation ShopifyStoreAgentProductOptionUpdate($productId: ID!, $option: OptionUpdateInput!, $optionValuesToUpdate: [OptionValueUpdateInput!], $variantStrategy: ProductOptionUpdateVariantStrategy) {
-    productOptionUpdate(productId: $productId, option: $option, optionValuesToUpdate: $optionValuesToUpdate, variantStrategy: $variantStrategy) {
+  mutation ShopifyStoreAgentProductOptionUpdate($productId: ID!, $option: OptionUpdateInput!, $optionValuesToAdd: [OptionValueCreateInput!], $optionValuesToUpdate: [OptionValueUpdateInput!], $variantStrategy: ProductOptionUpdateVariantStrategy) {
+    productOptionUpdate(productId: $productId, option: $option, optionValuesToAdd: $optionValuesToAdd, optionValuesToUpdate: $optionValuesToUpdate, variantStrategy: $variantStrategy) {
       product {
         id
         options {
@@ -1058,6 +1167,20 @@ function safeOptionValueUpdateInput(value: ProductOptionValueUpdateInput | undef
   const id = safeText(value?.id, 180);
   const name = safeNonSecretText(value?.name, 120);
   return id && name ? { id, name } : undefined;
+}
+
+function safeOptionValueCreateInputs(value: ProductOptionValueCreateInput[] | undefined): ProductOptionValueCreateInput[] {
+  if (!Array.isArray(value)) return [];
+  const results: ProductOptionValueCreateInput[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const name = safeNonSecretText(item?.name, 120);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    results.push({ name });
+    if (results.length >= 25) break;
+  }
+  return results;
 }
 
 function optionSummaryFromNode(option: ProductOptionSummaryNode | null | undefined): ProductOptionSummary | undefined {
