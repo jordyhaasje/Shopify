@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createConfig, createProduct, createProductVariants, updateProduct, updateProductVariantPrices, type FetchLike } from "../src/index.js";
+import { createConfig, createProduct, createProductOptions, createProductVariants, updateProduct, updateProductVariantPrices, type FetchLike } from "../src/index.js";
 
 describe("product write helper", () => {
   it("creates a product through the productCreate mutation and returns a safe summary", async () => {
@@ -578,6 +578,136 @@ describe("product write helper", () => {
       ok: false,
       status: "user_errors",
       userErrors: [{ field: ["variants", "0", "optionValues"], message: "Option value is invalid." }],
+      diagnostics: [{ code: "shopify_user_errors" }]
+    });
+  });
+
+  it("creates explicit product options through only productOptionsCreate with LEAVE_AS_IS", async () => {
+    const requests: Array<{ body: string }> = [];
+    const fetcher: FetchLike = async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          productOptionsCreate: {
+            product: {
+              id: "gid://shopify/Product/1",
+              options: [
+                {
+                  id: "gid://shopify/ProductOption/1",
+                  name: "Material",
+                  position: 2,
+                  optionValues: [
+                    { id: "gid://shopify/ProductOptionValue/1", name: "Cotton", hasVariants: true, rawNodeOnly: "do-not-return" },
+                    { id: "gid://shopify/ProductOptionValue/2", name: "Linen", hasVariants: false }
+                  ],
+                  rawNodeOnly: "do-not-return"
+                }
+              ],
+              variants: { nodes: [{ id: "do-not-return" }] }
+            },
+            userErrors: []
+          }
+        }
+      });
+    };
+
+    const result = await createProductOptions(config(), {
+      productId: "gid://shopify/Product/1",
+      options: [{ name: "Material", values: ["Cotton", "Linen"] }]
+    }, { fetcher });
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "ok",
+      optionCreate: {
+        productId: "gid://shopify/Product/1",
+        createdOptionCount: 1,
+        variantStrategy: "LEAVE_AS_IS",
+        options: [{ id: "gid://shopify/ProductOption/1", name: "Material", position: 2, values: ["Cotton", "Linen"] }]
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentProductOptionsCreate");
+    expect(request.query).toContain("productOptionsCreate");
+    expect(request.query).not.toContain("productUpdate");
+    expect(request.query).not.toContain("productVariantsBulkCreate");
+    expect(request.query).not.toContain("inventory");
+    expect(request.query).not.toContain("metafields");
+    expect(request.variables).toEqual({
+      productId: "gid://shopify/Product/1",
+      options: [{ name: "Material", values: [{ name: "Cotton" }, { name: "Linen" }] }],
+      variantStrategy: "LEAVE_AS_IS"
+    });
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("variants");
+    expect(output).not.toContain("shpat_product_secret");
+  });
+
+  it("blocks option create without explicit values before calling Shopify", async () => {
+    let fetchCalled = false;
+    const result = await createProductOptions(config(), {
+      productId: "gid://shopify/Product/1",
+      options: [{ name: "Material", values: [] }]
+    }, {
+      fetcher: async () => {
+        fetchCalled = true;
+        return jsonResponse({});
+      }
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "missing_input",
+      diagnostics: [{ code: "missing_input" }]
+    });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("blocks option create read-only config before calling Shopify", async () => {
+    let fetchCalled = false;
+    const result = await createProductOptions(createConfig({
+      storeUrl: "demo",
+      adminAccessToken: "shpat_product_secret",
+      readOnly: true
+    }), {
+      productId: "gid://shopify/Product/1",
+      options: [{ name: "Material", values: ["Cotton"] }]
+    }, {
+      fetcher: async () => {
+        fetchCalled = true;
+        return jsonResponse({});
+      }
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "blocked",
+      diagnostics: [{ code: "read_only" }]
+    });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("returns option create user errors safely", async () => {
+    const result = await createProductOptions(config(), {
+      productId: "gid://shopify/Product/1",
+      options: [{ name: "Material", values: ["Cotton"] }]
+    }, {
+      fetcher: async () => jsonResponse({
+        data: {
+          productOptionsCreate: {
+            product: null,
+            userErrors: [{ field: ["options", "0", "name"], message: "Option name is invalid.", code: "INVALID" }]
+          }
+        }
+      })
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "user_errors",
+      userErrors: [{ field: ["options", "0", "name"], message: "Option name is invalid." }],
       diagnostics: [{ code: "shopify_user_errors" }]
     });
   });

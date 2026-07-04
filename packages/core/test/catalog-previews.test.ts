@@ -96,6 +96,32 @@ describe("catalog and content previews", () => {
     expect(JSON.stringify(variantChange)).not.toContain("inventoryQuantity");
   });
 
+  it("keeps product update option create values compact for stored preview execution", () => {
+    const preview = previewProductUpdate({
+      productId: "gid://shopify/Product/1",
+      options: [{
+        name: "Material",
+        values: ["Cotton", "Linen"],
+        linkedMetafield: { namespace: "custom", key: "hidden" }
+      }]
+    });
+    const optionChange = preview.proposedChanges.find((change) => change.field === "options");
+
+    expect(optionChange).toMatchObject({
+      field: "options",
+      after: {
+        count: 1,
+        items: [expect.objectContaining({
+          fields: {
+            name: "Material",
+            values: ["Cotton", "Linen"]
+          }
+        })]
+      }
+    });
+    expect(JSON.stringify(optionChange)).not.toContain("linkedMetafield");
+  });
+
   it("requires an explicit product target for update previews", () => {
     const preview = previewProductUpdate({ changes: { title: "New Shirt" } });
 

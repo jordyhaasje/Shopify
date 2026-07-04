@@ -34,6 +34,8 @@ import {
   type CollectionCreateResult,
   type ProductCreateInput,
   type ProductCreateResult,
+  type ProductOptionsCreateInput,
+  type ProductOptionsCreateResult,
   type ProductUpdateInput,
   type ProductUpdateResult,
   type ProductVariantBulkCreateInput,
@@ -47,6 +49,7 @@ import {
   validateExecutePreviewBinding,
   verifyStoredPreviewBinding,
   createProduct,
+  createProductOptions,
   createProductVariants,
   updateProduct,
   updateProductVariantPrices,
@@ -436,7 +439,8 @@ async function productUpdateExecuteResult(input: Record<string, unknown>, contex
   const extracted = productUpdateInputFromStoredPreview(lookup.record);
   const variantPriceExtracted = productVariantPriceUpdateInputFromStoredPreview(lookup.record);
   const variantCreateExtracted = productVariantCreateInputFromStoredPreview(lookup.record);
-  const extractedShapeCount = [extracted, variantPriceExtracted, variantCreateExtracted].filter((item) => item.ok).length;
+  const optionCreateExtracted = productOptionsCreateInputFromStoredPreview(lookup.record);
+  const extractedShapeCount = [extracted, variantPriceExtracted, variantCreateExtracted, optionCreateExtracted].filter((item) => item.ok).length;
   if (extractedShapeCount > 1) {
     return blockedImplementedExecuteResult(tool, storedTarget, [diagnostic("mixed_product_update_fields", "Stored product update preview mixes multiple product update shapes; create separate previews to avoid partial writes.")], context, binding);
   }
@@ -445,6 +449,7 @@ async function productUpdateExecuteResult(input: Record<string, unknown>, contex
     if (!extracted.ok) diagnostics.push(...extracted.diagnostics);
     if (!variantPriceExtracted.ok && diagnostics.length === 0) diagnostics.push(...variantPriceExtracted.diagnostics);
     if (!variantCreateExtracted.ok && diagnostics.length === 0) diagnostics.push(...variantCreateExtracted.diagnostics);
+    if (!optionCreateExtracted.ok && diagnostics.length === 0) diagnostics.push(...optionCreateExtracted.diagnostics);
     return blockedImplementedExecuteResult(tool, storedTarget, diagnostics, context, binding);
   }
 
@@ -459,6 +464,11 @@ async function productUpdateExecuteResult(input: Record<string, unknown>, contex
   if (variantCreateExtracted.ok) {
     const write = await createProductVariants(context.config, variantCreateExtracted.input, { fetcher: context.fetcher });
     return productVariantCreateWriteResult(tool, storedTarget, binding, write, context);
+  }
+
+  if (optionCreateExtracted.ok) {
+    const write = await createProductOptions(context.config, optionCreateExtracted.input, { fetcher: context.fetcher });
+    return productOptionCreateWriteResult(tool, storedTarget, binding, write, context);
   }
 
   if (!extracted.ok) return blockedImplementedExecuteResult(tool, storedTarget, extracted.diagnostics, context, binding);
@@ -783,6 +793,39 @@ function productVariantCreateWriteResult(
   };
 }
 
+function productOptionCreateWriteResult(
+  tool: string,
+  target: string,
+  binding: ExecutePreviewBindingResult,
+  write: ProductOptionsCreateResult,
+  context: ToolContext
+): Record<string, unknown> {
+  const result = productUpdateAuditResult(write);
+  const audit = context.audit.record({
+    tool,
+    target: safeExecuteString(target),
+    mode: "execute",
+    summary: write.summary,
+    result
+  });
+  return {
+    ok: write.ok,
+    mode: "execute",
+    implemented: true,
+    status: write.status,
+    summary: write.summary,
+    audit,
+    createdOptions: write.optionCreate,
+    userErrors: write.userErrors,
+    diagnostics: write.diagnostics,
+    previewBinding: {
+      previewId: binding.previewId,
+      expectedTool: binding.expectedPreviewTool,
+      target: binding.target
+    }
+  };
+}
+
 function collectionCreateWriteResult(
   tool: string,
   target: string,
@@ -822,7 +865,7 @@ function productCreateAuditResult(write: ProductCreateResult): "success" | "bloc
   return "failed";
 }
 
-function productUpdateAuditResult(write: ProductUpdateResult | ProductVariantPriceUpdateResult | ProductVariantBulkCreateResult): "success" | "blocked" | "failed" {
+function productUpdateAuditResult(write: ProductUpdateResult | ProductVariantPriceUpdateResult | ProductVariantBulkCreateResult | ProductOptionsCreateResult): "success" | "blocked" | "failed" {
   if (write.status === "ok") return "success";
   if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
   return "failed";
@@ -961,6 +1004,26 @@ function productVariantCreateInputFromStoredPreview(record: StoredPreviewRecord)
   };
 }
 
+function productOptionsCreateInputFromStoredPreview(record: StoredPreviewRecord): { ok: true; input: ProductOptionsCreateInput } | { ok: false; diagnostics: ExecutePreviewBindingDiagnostic[] } {
+  const productId = safeContentText(targetField(record, "id") ?? targetField(record, "productId") ?? changeAfterValue(record, "id") ?? changeAfterValue(record, "productId"), 180);
+  const options = optionCreatesFromStoredPreview(record);
+
+  if (!productId || options.length === 0) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_product_update_fields", "Stored product update preview did not include supported basic product fields, explicit variant fields, or explicit option create fields for execution.")]
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      productId,
+      options
+    }
+  };
+}
+
 function variantPriceUpdatesFromStoredPreview(record: StoredPreviewRecord): Array<{ id: string; price: string }> {
   const result: Array<{ id: string; price: string }> = [];
   const seen = new Set<string>();
@@ -1068,6 +1131,35 @@ function variantOptionValuePairFromString(value: unknown): ProductVariantBulkCre
 function safeVariantText(value: unknown, maxLength: number): string | undefined {
   const text = safeContentText(value, maxLength);
   return text && text !== "[redacted]" ? text : undefined;
+}
+
+function optionCreatesFromStoredPreview(record: StoredPreviewRecord): ProductOptionsCreateInput["options"] {
+  const result: ProductOptionsCreateInput["options"] = [];
+  const seen = new Set<string>();
+  for (const item of storedChangeArray(record, "options", "after")) {
+    const fields = objectFields(item);
+    const name = safeVariantText(fields.name ?? fields.optionName, 120);
+    const values = optionValueNamesFromStoredValue(fields.values ?? fields.optionValues);
+    if (!name || values.length === 0 || seen.has(name)) continue;
+    seen.add(name);
+    result.push({ name, values });
+    if (result.length >= 3) break;
+  }
+  return result;
+}
+
+function optionValueNamesFromStoredValue(value: unknown): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const item of arraySummaryItems(value)) {
+    const fields = objectFields(item);
+    const name = safeVariantText(fields.name ?? fields.value ?? item, 120);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    result.push(name);
+    if (result.length >= 25) break;
+  }
+  return result;
 }
 
 function collectionCreateInputFromStoredPreview(record: StoredPreviewRecord): { ok: true; input: CollectionCreateInput } | { ok: false; diagnostics: ExecutePreviewBindingDiagnostic[] } {
@@ -1351,7 +1443,7 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: "product.update.execute",
-    description: "Update basic Shopify product fields, explicit variant prices, or explicit variants after stored product update preview binding and explicit confirmation.",
+    description: "Update basic Shopify product fields, explicit variant prices, explicit variants, or explicit options after stored product update preview binding and explicit confirmation.",
     inputSchema: { type: "object" },
     handler: (input, context) => productUpdateExecuteResult(input, context)
   },
