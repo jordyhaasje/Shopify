@@ -28,13 +28,14 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 7. The AI host executes only through the matching execute tool with strict stored preview binding and `confirmed: true`.
 8. Output and audit entries stay safe, compact, and free of secrets, raw Shopify nodes, raw reviewed payloads, and large dumps.
 
-## Current MVP Status After PR #31
+## Current MVP Status
 
 - GitHub-local install is the primary working route.
 - Local OAuth-first setup is documented and implemented, with hidden interactive client-secret entry and manual token fallback still supported.
 - Setup generates MCP snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts.
 - Setup guidance now tells AI hosts to support ordinary store-language prompts while still asking for exact targets before tool calls when needed.
 - Setup output includes safe starter prompts that users can paste into an AI host after MCP configuration.
+- A local `setup-check` command verifies config presence, local token presence, read-only onboarding mode, safe MCP snippets, local build path, starter prompts, and `fetchCalls: 0` before users troubleshoot an AI host connection.
 - Read tools are implemented for explicit inputs.
 - Preview tools are implemented for product, page, collection, import, media, and related planning surfaces.
 - `page.create.execute` is implemented.

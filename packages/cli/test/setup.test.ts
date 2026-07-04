@@ -5,7 +5,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createConfig } from "@shopify-store-agent/core";
-import { generateMcpConfigSnippets, runDevStoreE2ePreflight, runOAuthInstall, runSetup, runSmokeValidation } from "../src/index.js";
+import { generateMcpConfigSnippets, runDevStoreE2ePreflight, runOAuthInstall, runSetup, runSetupCheck, runSmokeValidation } from "../src/index.js";
 
 describe("setup", () => {
   it("generates snippets without leaking tokens", () => {
@@ -392,6 +392,77 @@ describe("setup", () => {
     expect(output).not.toContain("mutation");
     expect(output).not.toContain("Admin API write");
     expect(output).not.toContain("productCreate");
+  });
+
+  it("setup-check reports missing config locally without fetch calls", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "shopify-store-agent-setup-check-missing-"));
+    const configPath = join(directory, "missing-config.json");
+
+    const result = await runSetupCheck({
+      storeUrl: "demo",
+      configPath
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "local",
+      expectedStoreUrl: "demo.myshopify.com",
+      adminApiTokenConfigured: false,
+      fetchCalls: 0,
+      snippetHosts: []
+    });
+    expect(result.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "config_exists", ok: false }),
+      expect.objectContaining({ name: "no_fetch", ok: true })
+    ]));
+    expect(JSON.stringify(result)).not.toContain(configPath);
+  });
+
+  it("setup-check validates a safe local MCP onboarding state without leaking tokens", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "shopify-store-agent-setup-check-"));
+    const configPath = join(directory, "config.json");
+    const localMcpServerPath = join(directory, "server.js");
+    await writeFile(localMcpServerPath, "console.log('mcp');\n");
+    await writeFile(configPath, JSON.stringify({
+      storeUrl: "demo.myshopify.com",
+      apiVersion: "2026-07",
+      adminAccessToken: "shpat_setup_check_secret",
+      themeAccessToken: "theme_setup_check_secret",
+      readOnly: true,
+      grantedScopes: ["read_products", "read_orders"]
+    }, null, 2));
+
+    const result = await runSetupCheck({
+      storeUrl: "demo.myshopify.com",
+      configPath,
+      localMcpServerPath
+    });
+    const output = JSON.stringify(result);
+
+    expect(result.ok).toBe(true);
+    expect(result.fetchCalls).toBe(0);
+    expect(result.configuredStoreUrl).toBe("demo.myshopify.com");
+    expect(result.readOnly).toBe(true);
+    expect(result.adminApiTokenConfigured).toBe(true);
+    expect(result.themeAccessTokenConfigured).toBe(true);
+    expect(result.snippetHosts).toEqual(["codex", "claude", "cursor", "generic"]);
+    expect(result.firstPrompts.join("\n")).toContain("Check my Shopify connection");
+    expect(result.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "store_matches", ok: true }),
+      expect.objectContaining({ name: "admin_token_configured", ok: true }),
+      expect.objectContaining({ name: "read_only_mode", ok: true }),
+      expect.objectContaining({ name: "mcp_snippets_safe", ok: true }),
+      expect.objectContaining({ name: "mcp_server_built", ok: true }),
+      expect.objectContaining({ name: "first_prompts_available", ok: true }),
+      expect.objectContaining({ name: "no_fetch", ok: true })
+    ]));
+    expect(output).not.toContain("shpat_setup_check_secret");
+    expect(output).not.toContain("theme_setup_check_secret");
+    expect(output).not.toContain(configPath);
+    expect(output).not.toContain(localMcpServerPath);
+    expect(output).not.toContain("SHOPIFY_STORE_AGENT_CONFIG");
+    expect(output).not.toContain("mutation");
+    expect(output).not.toContain("Admin API write");
   });
 
   it("runs smoke validation local-only by default without fetch calls or secret leaks", async () => {

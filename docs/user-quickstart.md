@@ -111,7 +111,26 @@ SHOPIFY_STORE_AGENT_READ_ONLY = "true"
 
 The current working route is GitHub clone plus local node MCP command. npm/npx is a future path after package publishing.
 
-## Step 6 -- Check the connection
+## Step 6 -- Check local setup
+
+Before asking the AI host to use Shopify Store Agent, run the local setup check:
+
+```bash
+pnpm --filter shopify-store-agent run setup-check -- --store "$SHOPIFY_STORE"
+```
+
+This verifies the local config exists, an Admin API token is configured locally, read-only mode is still enabled for safe onboarding, the local MCP server build exists, host snippets are safe, starter prompts are available, and no Shopify fetches were made. It should report:
+
+```json
+{
+  "mode": "local",
+  "fetchCalls": 0
+}
+```
+
+If this fails, fix setup/auth/build before troubleshooting the AI host.
+
+## Step 7 -- Check the connection
 
 Use one of the setup "First AI prompts", or ask your AI host:
 
@@ -131,7 +150,7 @@ Read example:
 Look up the order or customer I provide and return only a minimal status summary. Do not show raw Shopify data.
 ```
 
-## Step 7 -- Create a preview
+## Step 8 -- Create a preview
 
 Ask your AI host:
 
@@ -147,7 +166,7 @@ product.create.preview -> product.create.execute
 collection.create.preview -> collection.create.execute
 ```
 
-## Step 8 -- Approve and execute
+## Step 9 -- Approve and execute
 
 Safe flow:
 
@@ -191,6 +210,7 @@ Use only a development or disposable store. `write_products` is required for `pr
 
 - OAuth callback fails: confirm the Shopify app allows `http://127.0.0.1:3456/auth/callback`; if OAuth reports a different canonical `.myshopify.com` domain than `--store`, use the stored canonical config domain for Admin API validation.
 - MCP host cannot start: run `pnpm run build` and confirm the config path points to `packages/mcp/dist/server.js`.
+- Setup check fails: rerun `setup`, `auth`, or `pnpm run build` based on the failed check. `setup-check` is local-only and should keep `fetchCalls: 0`.
 - Missing token diagnostics: rerun `auth`; do not paste the generated token anywhere.
 - Read tool returns missing input: provide a handle, Shopify ID, order number, email, or tracking reference.
 - Execute is blocked: confirm read-only mode is disabled only for a development-store test, required write scopes are granted, the stored preview record is available, `confirmed: true` is present, and the `executeRequest` values were not changed.
