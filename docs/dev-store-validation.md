@@ -1,6 +1,6 @@
 # Dev Store Validation
 
-Use this checklist before testing Shopify Store Agent against a development store. Do not use a customer production store for first validation.
+Use this checklist before testing Shopify Store Agent against a development store. Do not use a customer production store for first validation. For the full manual MVP flow, including setup, MCP host connection, previews, `page.create.execute`, `product.create.execute`, negative tests, and audit checks, see [dev-store-e2e-runbook.md](dev-store-e2e-runbook.md).
 
 ## Local Smoke
 
@@ -11,6 +11,12 @@ pnpm run smoke:local
 ```
 
 The default smoke path is local/mocked only. It should not make Shopify network calls, should not perform writes, and should not run GraphQL mutations.
+
+Expected local smoke output includes:
+
+```text
+fetchCalls: 0
+```
 
 Optional live mode is limited to the minimal capability check:
 
@@ -50,3 +56,4 @@ pnpm --filter shopify-store-agent run smoke -- --live --admin-token "$SHOPIFY_AD
 - Confirm any deliberate write test is limited to `page.create.execute` or `product.create.execute` in a development store.
 - Confirm no raw Admin API tokens, OAuth client secrets, Theme Access tokens, customer data, order data, or product dumps appear in logs.
 - Keep read-only mode enabled except for explicit reviewed `page.create.execute` or `product.create.execute` development-store tests.
+- Remember that the preview store is in-memory and process-local. If the MCP server restarts, create a new preview before execute.
