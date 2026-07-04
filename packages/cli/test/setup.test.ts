@@ -5,7 +5,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createConfig } from "@shopify-store-agent/core";
-import { generateMcpConfigSnippets, runOAuthInstall, runSetup, runSmokeValidation } from "../src/index.js";
+import { generateMcpConfigSnippets, runDevStoreE2ePreflight, runOAuthInstall, runSetup, runSmokeValidation } from "../src/index.js";
 
 describe("setup", () => {
   it("generates snippets without leaking tokens", () => {
@@ -393,6 +393,65 @@ describe("setup", () => {
     expect(result.mode).toBe("live");
     expect(result.capabilityCheck.live).toMatchObject({ attempted: true, ok: true });
     expect(JSON.stringify(result)).not.toContain("shpat_smoke_live_secret");
+  });
+
+  it("preflights dev-store E2E config locally without leaking tokens", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "shopify-store-agent-e2e-preflight-"));
+    const configPath = join(directory, "hazify-config.json");
+    await writeFile(configPath, JSON.stringify({
+      storeUrl: "hazify-apps.myshopify.com",
+      apiVersion: "2026-07",
+      adminAccessToken: "shpat_e2e_preflight_secret",
+      readOnly: false,
+      grantedScopes: ["read_products", "read_content", "read_online_store_pages", "write_products", "write_content"]
+    }, null, 2));
+
+    const result = await runDevStoreE2ePreflight({
+      storeUrl: "hazify-apps.myshopify.com",
+      configPath,
+      requiredScopes: "read_products,read_content,read_online_store_pages,write_products,write_content",
+      requireWriteEnabled: true
+    });
+    const output = JSON.stringify(result);
+
+    expect(result.ok).toBe(true);
+    expect(result.mode).toBe("local");
+    expect(result.configuredStoreUrl).toBe("hazify-apps.myshopify.com");
+    expect(result.adminApiTokenConfigured).toBe(true);
+    expect(result.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "store_matches", ok: true }),
+      expect.objectContaining({ name: "required_scopes_configured", ok: true }),
+      expect.objectContaining({ name: "write_mode_enabled", ok: true }),
+      expect.objectContaining({ name: "no_fetch", ok: true })
+    ]));
+    expect(output).not.toContain("shpat_e2e_preflight_secret");
+  });
+
+  it("blocks dev-store E2E preflight when config points at a different store", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "shopify-store-agent-e2e-preflight-mismatch-"));
+    const configPath = join(directory, "config.json");
+    await writeFile(configPath, JSON.stringify({
+      storeUrl: "other-dev-store.myshopify.com",
+      apiVersion: "2026-07",
+      adminAccessToken: "shpat_e2e_mismatch_secret",
+      readOnly: false,
+      grantedScopes: ["write_products", "write_content"]
+    }, null, 2));
+
+    const result = await runDevStoreE2ePreflight({
+      storeUrl: "hazify-apps.myshopify.com",
+      configPath,
+      requiredScopes: "write_products,write_content",
+      requireWriteEnabled: true
+    });
+    const output = JSON.stringify(result);
+
+    expect(result.ok).toBe(false);
+    expect(result.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "store_matches", ok: false }),
+      expect.objectContaining({ name: "no_fetch", ok: true })
+    ]));
+    expect(output).not.toContain("shpat_e2e_mismatch_secret");
   });
 
   it("keeps dev-store validation checklist documented", async () => {
