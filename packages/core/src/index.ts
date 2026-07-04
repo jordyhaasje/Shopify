@@ -7,6 +7,7 @@ export * from "./config-store.js";
 export * from "./config.js";
 export * from "./execute-binding.js";
 export * from "./file-audit.js";
+export * from "./inventory-write.js";
 export * from "./oauth.js";
 export * from "./page-write.js";
 export * from "./preview-store.js";

@@ -24,6 +24,8 @@ Use for product creation, updates, variants, collections, and product-level meta
 
 Use only when inventory quantities, locations, or inventory item data are part of the enabled workflow.
 
+`inventory.setQuantity.execute` requires `write_inventory` in local granted-scope preflight. The first inventory execute path is limited to one stored `inventory.setQuantity.preview` at a time with an explicit inventory item ID, explicit location ID, quantity name `available`, a non-negative integer quantity, an explicit reason, and compare-and-set via `compareQuantity` unless `ignoreCompareQuantity: true` was explicitly reviewed. It does not discover inventory items or locations from products, SKUs, handles, or names, and it does not implement bulk inventory, inventory moves, generic adjustments, or location management.
+
 ## Orders
 
 - Read: `read_orders`
