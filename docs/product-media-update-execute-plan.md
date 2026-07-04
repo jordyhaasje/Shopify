@@ -28,7 +28,7 @@ Key planning notes from the current Shopify docs:
 - status
 - tags
 
-It also supports explicit variant price updates when the stored preview contains a product ID plus explicit variant IDs and non-negative prices, explicit variant creation when the stored preview contains a product ID plus explicit option values with optional price/SKU, and explicit option creation when the stored preview contains a product ID plus option names and values. These use `productVariantsBulkUpdate`, `productVariantsBulkCreate`, and `productOptionsCreate` with `LEAVE_AS_IS` respectively, and must not be mixed with basic product field updates or each other in the same execute call.
+It also supports explicit variant price updates when the stored preview contains a product ID plus explicit variant IDs and non-negative prices, explicit variant creation when the stored preview contains a product ID plus explicit option values with optional price/SKU, explicit option creation when the stored preview contains a product ID plus option names and values, and explicit option rename when the stored preview contains a product ID plus option ID and new option name. These use `productVariantsBulkUpdate`, `productVariantsBulkCreate`, `productOptionsCreate` with `LEAVE_AS_IS`, and `productOptionUpdate` with `LEAVE_AS_IS` respectively, and must not be mixed with basic product field updates or each other in the same execute call.
 
 It must continue to ignore loose execute-only input, require a safe product ID, require stored preview binding and explicit confirmation, locally preflight `write_products`, and return only safe summaries.
 
@@ -38,9 +38,9 @@ It must continue to ignore loose execute-only input, require a safe product ID, 
 
 ### 1. Keep Basic Product Update Separate
 
-Do not silently add media, option update/reorder/delete, SEO, inventory, metafields, publications, translations, or collection changes to the existing product update path.
+Do not silently add media, option value add/update/delete, option reorder/delete, SEO, inventory, metafields, publications, translations, or collection changes to the existing product update path.
 
-Any future expansion of `product.update.execute` must be a separate roadmap item with focused tests and docs. The existing basic-field, explicit-variant-price, explicit-variant-create, and explicit-option-create mutations should remain easy to review and reason about.
+Any future expansion of `product.update.execute` must be a separate roadmap item with focused tests and docs. The existing basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, and explicit-option-rename mutations should remain easy to review and reason about.
 
 ### 2. First Media Execute Candidate: Add New Product Media
 

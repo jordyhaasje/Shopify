@@ -122,6 +122,32 @@ describe("catalog and content previews", () => {
     expect(JSON.stringify(optionChange)).not.toContain("linkedMetafield");
   });
 
+  it("keeps product update option IDs compact for stored option rename execution", () => {
+    const preview = previewProductUpdate({
+      productId: "gid://shopify/Product/1",
+      options: [{
+        id: "gid://shopify/ProductOption/1",
+        name: "Fabric",
+        linkedMetafield: { namespace: "custom", key: "hidden" }
+      }]
+    });
+    const optionChange = preview.proposedChanges.find((change) => change.field === "options");
+
+    expect(optionChange).toMatchObject({
+      field: "options",
+      after: {
+        count: 1,
+        items: [expect.objectContaining({
+          fields: {
+            id: "gid://shopify/ProductOption/1",
+            name: "Fabric"
+          }
+        })]
+      }
+    });
+    expect(JSON.stringify(optionChange)).not.toContain("linkedMetafield");
+  });
+
   it("requires an explicit product target for update previews", () => {
     const preview = previewProductUpdate({ changes: { title: "New Shirt" } });
 
