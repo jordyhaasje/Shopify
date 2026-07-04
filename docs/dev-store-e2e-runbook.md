@@ -2,6 +2,8 @@
 
 This runbook is for manual validation of the current Shopify Store Agent MVP against a development store or disposable test store. Do not use a production customer store for first validation.
 
+For a compact user-facing first run, start with [user-quickstart.md](user-quickstart.md). Use this runbook for fuller manual development-store validation.
+
 The goal is to test the current local-first flow end to end:
 
 - Setup and local config.

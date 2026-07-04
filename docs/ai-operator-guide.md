@@ -2,6 +2,8 @@
 
 This guide is for users running Shopify Store Agent with Codex, OpenCode, Claude Code, Cursor, or another coding harness that can edit a local repo and connect to MCP servers.
 
+For the shortest first-run path, start with [user-quickstart.md](user-quickstart.md). This guide expands the operator responsibilities and safety boundaries.
+
 ## What AI Can Do
 
 - Clone the GitHub repo and inspect the project.

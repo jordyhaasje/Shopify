@@ -17,6 +17,7 @@ pnpm run smoke:local
 ```
 
 - Review changed docs for product-boundary drift.
+- For user-facing install/use docs, confirm [user-quickstart.md](user-quickstart.md) remains the compact first-run entry point and deeper docs link to it instead of duplicating the full flow.
 - Review read-tool audit behavior: successful read, not found, and multiple matches use `success`; missing input uses `blocked`; Shopify/API/invalid response uses `failed`.
 - Review preview-tool audit behavior: successful previews use `success`; missing input and validation errors use `blocked`.
 - Confirm preview output summarizes large payloads, redacts secret-looking values, and does not autonomously fetch products or call Shopify write APIs.
