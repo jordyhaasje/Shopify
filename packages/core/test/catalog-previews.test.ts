@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   previewCollectionCreate,
+  previewInventorySetQuantity,
   previewPageCreate,
   previewProductCreate,
   previewProductImportFromUserUrl,
@@ -209,6 +210,50 @@ describe("catalog and content previews", () => {
       }
     });
     expect(JSON.stringify(optionChange)).not.toContain("linkedMetafieldValue");
+  });
+
+  it("previews an explicit inventory quantity set with compare quantity", () => {
+    const preview = previewInventorySetQuantity({
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      quantity: 8,
+      compareQuantity: 5,
+      reason: "correction",
+      referenceDocumentUri: "gid://store-agent/TestRun/1"
+    });
+
+    expect(preview).toMatchObject({
+      ok: true,
+      status: "ok",
+      target: { type: "inventory", id: "gid://shopify/InventoryItem/1" },
+      auditContext: {
+        tool: "inventory.setQuantity.preview",
+        mode: "preview",
+        performsShopifyMutation: false,
+        usesShopifyWriteOperation: false
+      },
+      proposedChanges: expect.arrayContaining([
+        expect.objectContaining({ field: "inventoryItemId", value: "gid://shopify/InventoryItem/1" }),
+        expect.objectContaining({ field: "locationId", value: "gid://shopify/Location/1" }),
+        expect.objectContaining({ field: "quantity", action: "update", before: 5, after: 8 }),
+        expect.objectContaining({ field: "reason", value: "correction" })
+      ])
+    });
+  });
+
+  it("requires inventory compare quantity unless explicitly ignored", () => {
+    const preview = previewInventorySetQuantity({
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      quantity: 8,
+      reason: "correction"
+    });
+
+    expect(preview).toMatchObject({
+      ok: false,
+      status: "missing_input",
+      warnings: [{ code: "missing_input", message: "Provide compareQuantity, or explicitly set ignoreCompareQuantity to true." }]
+    });
   });
 
   it("keeps product update option value IDs compact for stored option value rename execution", () => {

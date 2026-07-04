@@ -19,6 +19,8 @@ import {
   getOrder,
   getProduct,
   getTracking,
+  type InventorySetQuantityInput,
+  type InventorySetQuantityResult,
   loadStoredConfig,
   defaultAuditLogPath,
   defaultPreviewStorePath,
@@ -69,9 +71,11 @@ import {
   renameProductOption,
   renameProductOptionValue,
   reorderProductOptions,
+  setInventoryQuantity,
   updateProduct,
   updateProductVariantPrices,
   previewCollectionCreate,
+  previewInventorySetQuantity,
   previewPageCreate,
   previewProductCreate,
   previewProductImportFromUserUrl,
@@ -187,6 +191,7 @@ function implementedExecuteToolForPreview(previewTool: string): string | undefin
   if (previewTool === "product.create.preview") return "product.create.execute";
   if (previewTool === "page.create.preview") return "page.create.execute";
   if (previewTool === "collection.create.preview") return "collection.create.execute";
+  if (previewTool === "inventory.setQuantity.preview") return "inventory.setQuantity.execute";
   return undefined;
 }
 
@@ -582,6 +587,50 @@ async function collectionCreateExecuteResult(input: Record<string, unknown>, con
 
   const write = await createCollection(context.config, extracted.input, { fetcher: context.fetcher });
   return collectionCreateWriteResult(tool, storedTarget, binding, write, context);
+}
+
+async function inventorySetQuantityExecuteResult(input: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>> {
+  const tool = "inventory.setQuantity.execute";
+  const target = inventoryExecuteTarget(input, context);
+
+  if (context.config.readOnly) {
+    return blockedImplementedExecuteResult(tool, target, [diagnostic("read_only", "Execute is blocked because read-only mode is enabled.")], context, "inventory.setQuantity.preview");
+  }
+
+  if (!context.previewStore) {
+    return blockedImplementedExecuteResult(tool, target, [diagnostic("stored_preview_missing", "Stored preview was not found; execute binding fails closed.")], context, "inventory.setQuantity.preview");
+  }
+
+  const lookup = context.previewStore.getPreview(stringInput(input, "previewId"));
+  const storedTarget = lookup.record ? previewRecordBindingTarget(lookup.record) : target;
+  const binding = verifyStoredPreviewBinding(context.previewStore, input, {
+    executeTool: tool,
+    expectedPreviewTool: "inventory.setQuantity.preview",
+    target: storedTarget
+  });
+  if (!stringInput(input, "target")) {
+    binding.ok = false;
+    binding.diagnostics = [
+      diagnostic("missing_target", "Execute requires the reviewed preview target."),
+      ...binding.diagnostics.filter((item) => item.code !== "missing_target")
+    ];
+  }
+  if (!binding.ok) return blockedImplementedExecuteResult(tool, storedTarget, binding.diagnostics, context, binding);
+  if (!lookup.ok || !lookup.record) {
+    return blockedImplementedExecuteResult(tool, storedTarget, [lookup.diagnostic ?? diagnostic("stored_preview_missing", "Stored preview was not found; execute binding fails closed.")], context, binding);
+  }
+  if (lookup.record.tool !== "inventory.setQuantity.preview") {
+    return blockedImplementedExecuteResult(tool, storedTarget, [diagnostic("stored_preview_tool_mismatch", "Stored preview is not an inventory quantity preview.")], context, binding);
+  }
+
+  const extracted = inventorySetQuantityInputFromStoredPreview(lookup.record);
+  if (!extracted.ok) return blockedImplementedExecuteResult(tool, storedTarget, extracted.diagnostics, context, binding);
+
+  const preflight = checkWriteScopePreflight(context.config, tool);
+  if (!preflight.ok) return blockedImplementedExecuteResult(tool, storedTarget, preflight.diagnostics, context, binding);
+
+  const write = await setInventoryQuantity(context.config, extracted.input, { fetcher: context.fetcher });
+  return inventorySetQuantityWriteResult(tool, storedTarget, binding, write, context);
 }
 
 function savePreviewRecord(context: ToolContext, record: Parameters<MemoryPreviewStore["savePreview"]>[0]): StoredPreviewRecord {
@@ -1121,6 +1170,39 @@ function collectionCreateWriteResult(
   };
 }
 
+function inventorySetQuantityWriteResult(
+  tool: string,
+  target: string,
+  binding: ExecutePreviewBindingResult,
+  write: InventorySetQuantityResult,
+  context: ToolContext
+): Record<string, unknown> {
+  const result = inventoryWriteAuditResult(write);
+  const audit = context.audit.record({
+    tool,
+    target: safeExecuteString(target),
+    mode: "execute",
+    summary: write.summary,
+    result
+  });
+  return {
+    ok: write.ok,
+    mode: "execute",
+    implemented: true,
+    status: write.status,
+    summary: write.summary,
+    audit,
+    inventorySet: write.inventorySet,
+    userErrors: write.userErrors,
+    diagnostics: write.diagnostics,
+    previewBinding: {
+      previewId: binding.previewId,
+      expectedTool: binding.expectedPreviewTool,
+      target: binding.target
+    }
+  };
+}
+
 function productCreateAuditResult(write: ProductCreateResult): "success" | "blocked" | "failed" {
   if (write.status === "ok") return "success";
   if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
@@ -1134,6 +1216,12 @@ function productUpdateAuditResult(write: ProductUpdateResult | ProductVariantPri
 }
 
 function collectionCreateAuditResult(write: CollectionCreateResult): "success" | "blocked" | "failed" {
+  if (write.status === "ok") return "success";
+  if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
+  return "failed";
+}
+
+function inventoryWriteAuditResult(write: InventorySetQuantityResult): "success" | "blocked" | "failed" {
   if (write.status === "ok") return "success";
   if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
   return "failed";
@@ -1814,6 +1902,62 @@ function collectionCreateInputFromStoredPreview(record: StoredPreviewRecord): { 
   };
 }
 
+function inventorySetQuantityInputFromStoredPreview(record: StoredPreviewRecord): { ok: true; input: InventorySetQuantityInput } | { ok: false; diagnostics: ExecutePreviewBindingDiagnostic[] } {
+  const inventoryItemId = safeContentText(targetField(record, "id") ?? changeValue(record, "inventoryItemId"), 180);
+  const locationId = safeContentText(changeValue(record, "locationId"), 180);
+  const quantity = safeInteger(changeAfterValue(record, "quantity"));
+  const compareQuantityValue = changeValue(record, "compareQuantity");
+  const compareQuantity = compareQuantityValue === null ? null : safeInteger(compareQuantityValue);
+  const ignoreCompareQuantity = changeValue(record, "ignoreCompareQuantity") === true;
+  const reason = safeContentText(changeValue(record, "reason"), 120);
+  const referenceDocumentUri = safeContentText(changeValue(record, "referenceDocumentUri"), 255);
+
+  if (!inventoryItemId) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_inventory_item_id", "Stored inventory preview did not include a safe inventory item ID.")]
+    };
+  }
+  if (!locationId) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_inventory_location_id", "Stored inventory preview did not include a safe location ID.")]
+    };
+  }
+  if (quantity === undefined || quantity < 0) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_inventory_quantity", "Stored inventory preview did not include a safe non-negative quantity.")]
+    };
+  }
+  if (!reason) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_inventory_reason", "Stored inventory preview did not include a safe inventory adjustment reason.")]
+    };
+  }
+  if (!ignoreCompareQuantity && compareQuantity === undefined) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_inventory_compare_quantity", "Stored inventory preview did not include compareQuantity or explicit ignoreCompareQuantity.")]
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      inventoryItemId,
+      locationId,
+      quantity,
+      compareQuantity,
+      ignoreCompareQuantity,
+      reason,
+      referenceDocumentUri,
+      idempotencyKey: `store-agent:${record.previewId}`
+    }
+  };
+}
+
 function changeValue(record: StoredPreviewRecord, field: string): unknown {
   for (const item of arrayItems(record.proposedChanges)) {
     const change = objectFields(item);
@@ -1909,6 +2053,11 @@ function safePriceText(value: unknown): string | undefined {
   return /^\d+(\.\d{1,2})?$/.test(text) ? text : undefined;
 }
 
+function safeInteger(value: unknown): number | undefined {
+  const unwrapped = unwrapStoredValue(value);
+  return typeof unwrapped === "number" && Number.isInteger(unwrapped) ? unwrapped : undefined;
+}
+
 function pageExecuteTarget(input: Record<string, unknown>, context: ToolContext): string {
   const previewId = stringInput(input, "previewId");
   const lookup = previewId && context.previewStore ? context.previewStore.getPreview(previewId) : undefined;
@@ -1928,6 +2077,13 @@ function collectionExecuteTarget(input: Record<string, unknown>, context: ToolCo
   const lookup = previewId && context.previewStore ? context.previewStore.getPreview(previewId) : undefined;
   if (lookup?.record) return previewRecordBindingTarget(lookup.record);
   return safeExecuteString(stringInput(input, "target") || stringInput(input, "title", "collection"));
+}
+
+function inventoryExecuteTarget(input: Record<string, unknown>, context: ToolContext): string {
+  const previewId = stringInput(input, "previewId");
+  const lookup = previewId && context.previewStore ? context.previewStore.getPreview(previewId) : undefined;
+  if (lookup?.record) return previewRecordBindingTarget(lookup.record);
+  return safeExecuteString(stringInput(input, "target") || stringInput(input, "inventoryItemId", "inventory"));
 }
 
 function stringFromUnknown(value: unknown): string | undefined {
@@ -2105,6 +2261,18 @@ export const tools: ToolDefinition[] = [
         handle: stringInput(input, "handle") || undefined
       }, { fetcher: context.fetcher })
     )
+  },
+  {
+    name: "inventory.setQuantity.preview",
+    description: "Preview setting an explicit inventory item quantity at an explicit location.",
+    inputSchema: { type: "object" },
+    handler: (input, context) => catalogPreviewResult(previewInventorySetQuantity(input), context)
+  },
+  {
+    name: "inventory.setQuantity.execute",
+    description: "Set one Shopify inventory item quantity only after stored preview binding and explicit confirmation.",
+    inputSchema: { type: "object" },
+    handler: (input, context) => inventorySetQuantityExecuteResult(input, context)
   },
   {
     name: "order.find",

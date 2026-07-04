@@ -15,7 +15,7 @@ export interface PreviewChange {
 }
 
 export interface PreviewTarget {
-  type: "product" | "product_media" | "product_url_import" | "page" | "collection";
+  type: "product" | "product_media" | "product_url_import" | "inventory" | "page" | "collection";
   id?: string;
   handle?: string;
   title?: string;
@@ -48,6 +48,7 @@ type PreviewTool =
   | "product.update.preview"
   | "product.media.update.preview"
   | "product.importFromUserUrl.preview"
+  | "inventory.setQuantity.preview"
   | "page.create.preview"
   | "collection.create.preview";
 
@@ -179,6 +180,49 @@ export function previewProductImportFromUserUrl(input: Record<string, unknown>):
   ];
   const warnings = [warning("no_fetch_performed", "This preview does not fetch, scrape, or verify the URL; it only creates a safe import/rewrite plan.")];
   return okResult("product.importFromUserUrl.preview", target, "Preview product import/rewrite plan from user-provided URL.", changes, warnings);
+}
+
+export function previewInventorySetQuantity(input: Record<string, unknown>): CatalogPreviewResult {
+  const inventoryItemId = firstString(input.inventoryItemId, input.inventoryItemID);
+  const locationId = firstString(input.locationId, input.locationID);
+  const target: PreviewTarget = { type: "inventory", id: inventoryItemId || undefined };
+  if (!inventoryItemId) return missingInput("inventory.setQuantity.preview", target, "Provide an inventory item ID.");
+  if (!locationId) return missingInput("inventory.setQuantity.preview", target, "Provide a location ID.");
+
+  const quantity = integerValue(input.quantity);
+  if (quantity === undefined || quantity < 0) return validationError("inventory.setQuantity.preview", target, "Inventory quantity must be a non-negative integer.");
+
+  const reason = firstString(input.reason);
+  if (!reason) return missingInput("inventory.setQuantity.preview", target, "Provide an inventory adjustment reason.");
+
+  const ignoreCompareQuantity = input.ignoreCompareQuantity === true;
+  const compareQuantity = input.compareQuantity === null ? null : integerValue(input.compareQuantity);
+  if (!ignoreCompareQuantity && compareQuantity === undefined) {
+    return missingInput("inventory.setQuantity.preview", target, "Provide compareQuantity, or explicitly set ignoreCompareQuantity to true.");
+  }
+  if (compareQuantity !== null && compareQuantity !== undefined && compareQuantity < 0) {
+    return validationError("inventory.setQuantity.preview", target, "compareQuantity must be a non-negative integer or null.");
+  }
+
+  const referenceDocumentUri = firstString(input.referenceDocumentUri);
+  if (referenceDocumentUri && !isValidReferenceUri(referenceDocumentUri)) {
+    return validationError("inventory.setQuantity.preview", target, "referenceDocumentUri must be a valid URI with a scheme.");
+  }
+
+  const warnings = ignoreCompareQuantity
+    ? [warning("compare_quantity_ignored", "compareQuantity checks are explicitly disabled; use only when the user accepts stale inventory risk.")]
+    : [];
+  const changes = compactChanges([
+    { field: "inventoryItemId", action: "plan" as const, value: summarizeValue("inventoryItemId", inventoryItemId) },
+    { field: "locationId", action: "plan" as const, value: summarizeValue("locationId", locationId) },
+    { field: "quantity", action: "update" as const, before: ignoreCompareQuantity ? "ignored" : compareQuantity, after: quantity },
+    { field: "compareQuantity", action: "plan" as const, value: ignoreCompareQuantity ? null : compareQuantity },
+    { field: "ignoreCompareQuantity", action: "plan" as const, value: ignoreCompareQuantity },
+    { field: "reason", action: "plan" as const, value: summarizeValue("reason", reason) },
+    referenceDocumentUri ? { field: "referenceDocumentUri", action: "plan" as const, value: summarizeValue("referenceDocumentUri", referenceDocumentUri) } : undefined
+  ]);
+
+  return okResult("inventory.setQuantity.preview", target, `Preview inventory quantity set for ${inventoryItemId}.`, changes, warnings);
 }
 
 export function previewPageCreate(input: Record<string, unknown>): CatalogPreviewResult {
@@ -348,6 +392,10 @@ function firstString(...values: unknown[]): string {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function integerValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) ? value : undefined;
 }
 
 function arrayInput(value: unknown): unknown[] | undefined {
@@ -600,6 +648,15 @@ function isHttpUrl(value: string): boolean {
   try {
     const url = new URL(value);
     return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isValidReferenceUri(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return Boolean(url.protocol && url.pathname);
   } catch {
     return false;
   }

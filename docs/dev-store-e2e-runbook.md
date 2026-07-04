@@ -14,6 +14,7 @@ The goal is to test the current local-first flow end to end:
 - `product.create.execute`.
 - `product.update.execute` for basic fields, explicit variant price updates, explicit variant creation, explicit option creation, explicit option delete, explicit option reorder, explicit option rename, explicit option value rename, explicit option value add, or explicit option value delete only.
 - `collection.create.execute` for custom collections with explicit product IDs only.
+- `inventory.setQuantity.execute` for one explicit inventory item ID and one explicit location ID only.
 - Audit and output safety.
 
 ## Requirements
@@ -49,6 +50,7 @@ Manual development-store E2E validation:
 - product.create.execute: passed/failed/skipped
 - product.update.execute: passed/failed/skipped
 - collection.create.execute: passed/failed/skipped
+- inventory.setQuantity.execute: passed/failed/skipped
 - Negative execute checks: passed/failed/skipped
 - Audit/output safety review: passed/failed/skipped
 - Cleanup completed:
@@ -98,6 +100,12 @@ For `product.create.execute`, basic-field, explicit-variant-price, explicit-vari
 
 ```text
 write_products
+```
+
+For `inventory.setQuantity.execute`, add:
+
+```text
+write_inventory
 ```
 
 Setup and OAuth default to read-only scopes. Add write scopes only for development-store write tests, and only with read-only mode explicitly disabled. Local write-scope preflight blocks before fetch when required write scopes are missing or unknown. Shopify remains the ultimate scope enforcement layer.
@@ -171,10 +179,10 @@ pnpm --filter shopify-store-agent run setup -- \
   --auth manual \
   --admin-token "$SHOPIFY_ADMIN_TOKEN" \
   --write-enabled \
-  --scopes "read_products,read_content,read_online_store_pages,write_products,write_content"
+  --scopes "read_products,read_content,read_online_store_pages,write_products,write_content,write_inventory"
 ```
 
-Use only the write scope needed for the specific test. For page-only validation, `write_content` or `write_online_store_pages` is enough. For product create, basic-field product update, explicit variant price update, explicit variant creation, explicit option creation, explicit option delete, explicit option reorder, explicit option rename, explicit option value rename, explicit option value add, explicit option value delete, or custom explicit-product collection create validation, `write_products` is required.
+Use only the write scope needed for the specific test. For page-only validation, `write_content` or `write_online_store_pages` is enough. For product create, basic-field product update, explicit variant price update, explicit variant creation, explicit option creation, explicit option delete, explicit option reorder, explicit option rename, explicit option value rename, explicit option value add, explicit option value delete, or custom explicit-product collection create validation, `write_products` is required. For explicit single-item inventory quantity validation, `write_inventory` is required.
 
 For deliberate OAuth write testing on a development store, run `auth` with write mode and the minimal reviewed scope set:
 
@@ -184,10 +192,10 @@ pnpm --filter shopify-store-agent run auth -- \
   --client-id "$SHOPIFY_CLIENT_ID" \
   --client-secret "$SHOPIFY_CLIENT_SECRET" \
   --write-enabled \
-  --scopes "read_products,read_content,read_online_store_pages,write_products,write_content"
+  --scopes "read_products,read_content,read_online_store_pages,write_products,write_content,write_inventory"
 ```
 
-Write mode is only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-delete, explicit-option-reorder, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, or explicit-option-value-delete `product.update.execute`, or custom explicit-product `collection.create.execute`. All other execute tools remain fail-closed placeholders.
+Write mode is only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-delete, explicit-option-reorder, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, or explicit-option-value-delete `product.update.execute`, custom explicit-product `collection.create.execute`, or explicit single-item `inventory.setQuantity.execute`. All other execute tools remain fail-closed placeholders.
 
 ## Local E2E Config Preflight
 
@@ -197,7 +205,7 @@ Before any live development-store write step, run a local preflight against the 
 pnpm --filter shopify-store-agent run e2e-preflight -- \
   --store your-store.myshopify.com \
   --config /absolute/path/to/config.json \
-  --required-scopes "read_products,read_content,read_online_store_pages,write_products,write_content" \
+  --required-scopes "read_products,read_content,read_online_store_pages,write_products,write_content,write_inventory" \
   --require-write-enabled
 ```
 
@@ -448,11 +456,46 @@ Use the stored preview content as the source of truth. Unrelated loose execute i
 - No rule-based or smart collection, publishing, SEO, metafield, media/image, navigation, product discovery, update/delete, or bulk operation is performed.
 - Output and audit contain no secrets, raw reviewed payload, raw product dump, or full Shopify node.
 
+## Inventory Set Quantity E2E
+
+Use only a disposable/development inventory item and location that can be safely changed.
+
+1. Run `inventory.setQuantity.preview` with explicit test data:
+
+```json
+{
+  "inventoryItemId": "gid://shopify/InventoryItem/<test-inventory-item-id>",
+  "locationId": "gid://shopify/Location/<test-location-id>",
+  "quantity": 8,
+  "compareQuantity": 5,
+  "reason": "correction",
+  "referenceDocumentUri": "gid://store-agent/TestRun/<safe-id>"
+}
+```
+
+Use `ignoreCompareQuantity: true` only when the reviewer explicitly accepts stale inventory risk.
+
+2. Review the preview binding values and `executeRequest`.
+
+3. Confirm read-only mode is explicitly off only for this development-store test.
+
+4. Confirm local granted scopes include `write_inventory`.
+
+5. Run `inventory.setQuantity.execute` with the reviewed binding values and `confirmed: true`.
+
+6. Confirm:
+
+- The inventory quantity is set only for the explicit inventory item/location pair.
+- The mutation is limited to `inventorySetQuantities` with quantity name `available`.
+- No product, SKU, inventory item, or location discovery is performed.
+- No bulk inventory, inventory move, product update, or location management operation is performed.
+- Output and audit contain no secrets, raw reviewed payload, raw Shopify response, product dump, location dump, or full Shopify node.
+
 ## Negative Tests
 
 Run these manually against the development-store setup:
 
-- Read-only mode on: `page.create.execute`, `product.create.execute`, `product.update.execute`, and `collection.create.execute` return `blocked`.
+- Read-only mode on: `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, and `inventory.setQuantity.execute` return `blocked`.
 - Missing `confirmed: true`: execute returns `blocked`.
 - Missing `previewId`: execute returns `blocked`.
 - Expired preview: execute returns `blocked`.
@@ -461,6 +504,7 @@ Run these manually against the development-store setup:
 - Unrelated loose execute input is ignored after a valid stored preview binding.
 - Product update with handle-only target and no safe product ID returns `blocked`.
 - Collection create from rule-based or smart collection preview returns `blocked`.
+- Inventory set quantity without `compareQuantity` and without explicit `ignoreCompareQuantity: true` returns `blocked` or preview validation failure.
 - Remaining placeholder execute tools return `not_implemented` after valid binding.
 
 Placeholder execute tools are:
@@ -488,7 +532,7 @@ Confirm:
 - No order/customer dump.
 - Blocked cases audit `blocked`.
 - Placeholder cases audit `not_implemented`.
-- Successful `page.create.execute`, `product.create.execute`, `product.update.execute`, and `collection.create.execute` audit `success` only after Shopify write success.
+- Successful `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, and `inventory.setQuantity.execute` audit `success` only after Shopify write success.
 
 ## Troubleshooting
 
