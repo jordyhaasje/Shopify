@@ -16,11 +16,13 @@ The foundation is in place: auth, config storage, documentation, MCP SDK startup
 
 Real read-only Shopify MCP tools are implemented for `shopify.capabilities.check`, `order.find`, `order.get`, `customer.find`, `tracking.get`, and `product.get`.
 
-Structured preview tools are implemented for `product.create.preview`, `product.update.preview`, `product.media.update.preview`, `product.importFromUserUrl.preview`, `page.create.preview`, and `collection.create.preview`. These previews summarize user-provided inputs, validate required fields, create audit entries, and do not call Shopify write APIs or perform mutations.
+Structured preview tools are implemented for `product.create.preview`, `product.update.preview`, `product.media.update.preview`, `product.importFromUserUrl.preview`, `page.create.preview`, and `collection.create.preview`. These previews summarize user-provided inputs, validate required fields, create audit entries, and do not call Shopify write APIs or perform mutations. `product.create.preview` and `page.create.preview` also return a safe `executeRequest` helper so AI hosts can prepare the matching execute call for user review without manually copying every hash and payload field.
 
 `product.update.preview` can optionally enrich before-values with the read-only `product.get` path when the caller supplies an explicit `productId`, `id`, or `handle` and sets `enrichExistingProduct: true`. It does not search for products, does not fetch when an existing product summary is already supplied, and falls back to `before: "unknown"` with a warning when enrichment is unavailable.
 
 Preview results are also saved to a local in-memory preview store. Stored records contain safe preview content, TTL metadata, unique per-preview `previewId` values, and deterministic `previewHash` values that can later be compared with hashes recomputed from the actual reviewed payload. The store is not file-backed yet, does not persist across process restarts, and never performs Shopify calls.
+
+The `executeRequest` helper is not auto-execute. It still requires explicit user approval and `confirmed: true`, and the existing execute path still verifies the active stored preview, target, expected tool, `previewHash`, reviewed payload, and `reviewedChangesHash` before any write can happen.
 
 `page.create.execute` is the first limited real Shopify write tool. It only attempts the Shopify page create mutation when read-only mode is disabled, local granted scopes include `write_content` or `write_online_store_pages`, a stored `page.create.preview` record exists, the preview is not expired, the reviewed payload hashes back to the stored preview, the target/tool/hash binding matches, and `confirmed: true` is present. After successful creation it performs a safe read-after-write verification by created page ID only. It returns only a safe created-page summary, safe verification summary, or safe Shopify user/error diagnostics.
 

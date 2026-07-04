@@ -241,6 +241,23 @@ describe("MCP tools", () => {
         previewHash: expect.stringMatching(/^sha256:/),
         expiresAt: expect.any(String)
       },
+      executeRequest: {
+        tool: "product.create.execute",
+        requiresConfirmation: true,
+        confirmationField: "confirmed",
+        confirmValue: true,
+        previewId: expect.any(String),
+        expectedTool: "product.create.preview",
+        target: "Linen Shirt",
+        previewHash: expect.stringMatching(/^sha256:/),
+        reviewedPayload: expect.objectContaining({
+          tool: "product.create.preview",
+          target: expect.any(Object),
+          proposedChanges: expect.any(Object)
+        }),
+        reviewedChangesHash: expect.stringMatching(/^sha256:/),
+        instructions: expect.stringContaining("explicit user approval")
+      },
       target: { type: "product", title: "Linen Shirt" },
       auditContext: {
         tool: "product.create.preview",
@@ -258,6 +275,10 @@ describe("MCP tools", () => {
       mode: "preview",
       result: "success"
     });
+    const executeRequest = (result as { executeRequest: Record<string, unknown> }).executeRequest;
+    expect(executeRequest.previewId).toBe((result as { previewId: string }).previewId);
+    expect(executeRequest.previewHash).toBe((result as { previewHash: string }).previewHash);
+    expect(executeRequest.reviewedChangesHash).toBe((result as { previewHash: string }).previewHash);
     expect(context.previewStore?.getPreview((result as { previewId: string }).previewId)).toMatchObject({
       ok: true,
       record: {
@@ -265,6 +286,51 @@ describe("MCP tools", () => {
         previewHash: (result as { previewHash: string }).previewHash
       }
     });
+  });
+
+  it("adds a page create execute helper without weakening confirmation", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+
+    const preview = await callTool("page.create.preview", {
+      title: "Care Guide",
+      body: "Wash cold and hang dry.",
+      handle: "care-guide"
+    }, context) as Record<string, unknown>;
+    const executeRequest = preview.executeRequest as Record<string, unknown>;
+
+    expect(executeRequest).toMatchObject({
+      tool: "page.create.execute",
+      requiresConfirmation: true,
+      confirmationField: "confirmed",
+      confirmValue: true,
+      previewId: preview.previewId,
+      expectedTool: "page.create.preview",
+      target: "care-guide",
+      previewHash: preview.previewHash,
+      reviewedPayload: expect.objectContaining({
+        tool: "page.create.preview",
+        target: expect.any(Object),
+        proposedChanges: expect.any(Object)
+      }),
+      reviewedChangesHash: preview.previewHash
+    });
+
+    const blocked = await callTool("page.create.execute", { ...executeRequest }, context);
+
+    expect(blocked).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "missing_confirmation" })
+      ])
+    });
+    expect(fetchCalled).toBe(false);
   });
 
   it("uses unique stored preview IDs for identical MCP preview events", async () => {
@@ -299,6 +365,8 @@ describe("MCP tools", () => {
       mode: "preview",
       status: "validation_error"
     });
+    expect((missing as Record<string, unknown>).executeRequest).toBeUndefined();
+    expect((invalid as Record<string, unknown>).executeRequest).toBeUndefined();
     expect(context.audit.list()).toEqual([
       expect.objectContaining({ tool: "product.create.preview", result: "blocked" }),
       expect.objectContaining({ tool: "product.create.preview", result: "blocked" })
@@ -336,6 +404,9 @@ describe("MCP tools", () => {
           usesShopifyWriteOperation: false
         }
       });
+      if (tool !== "product.create.preview" && tool !== "page.create.preview") {
+        expect((result as Record<string, unknown>).executeRequest).toBeUndefined();
+      }
     }
 
     expect(fetchCalled).toBe(false);
@@ -346,13 +417,15 @@ describe("MCP tools", () => {
     const result = await callTool("page.create.preview", {
       title: "Large Page",
       body: `shpat_test_secret ${"Long content ".repeat(1000)}`,
-      seo: { token: "shpat_test_secret" }
+      seo: { token: "shpat_test_secret" },
+      rawNodeOnly: { id: "gid://shopify/Page/1", token: "shpat_test_secret" }
     }, context);
     const output = JSON.stringify(result);
 
     expect(result).toMatchObject({ ok: true, mode: "preview", status: "ok" });
     expect(output).not.toContain("shpat_test_secret");
-    expect(output.length).toBeLessThan(3500);
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output.length).toBeLessThan(6000);
     expect(output).toContain("[redacted]");
   });
 

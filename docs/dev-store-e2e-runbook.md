@@ -189,15 +189,18 @@ Use explicit product IDs or handles, order numbers, customer emails, order IDs, 
 - `previewId`
 - `previewHash`
 - `binding`
+- `executeRequest`
 - `target`
 - `proposedChanges`
 - `warnings`
+
+`executeRequest` is a convenience helper for the AI host. It is not auto-execute and must not be submitted until the user explicitly approves the reviewed preview.
 
 3. Confirm read-only mode is explicitly off only for this development-store test.
 
 4. Confirm local granted scopes include `write_content` or `write_online_store_pages`.
 
-5. Run `page.create.execute` with the reviewed binding values:
+5. Run `page.create.execute` with the reviewed binding values, either copied from `executeRequest` or assembled manually:
 
 ```json
 {
@@ -241,15 +244,18 @@ Use the reviewed payload produced from the stored safe preview content. Do not s
 - `previewId`
 - `previewHash`
 - `binding`
+- `executeRequest`
 - `target`
 - `proposedChanges`
 - `warnings`
+
+`executeRequest` is a convenience helper for the AI host. It is not auto-execute and must not be submitted until the user explicitly approves the reviewed preview.
 
 3. Confirm read-only mode is explicitly off only for this development-store test.
 
 4. Confirm local granted scopes include `write_products`.
 
-5. Run `product.create.execute` with the reviewed binding values:
+5. Run `product.create.execute` with the reviewed binding values, either copied from `executeRequest` or assembled manually:
 
 ```json
 {

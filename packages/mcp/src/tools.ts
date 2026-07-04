@@ -19,8 +19,10 @@ import {
   getTracking,
   loadStoredConfig,
   MemoryPreviewStore,
+  hashPreviewContent,
   planThemeSection,
   previewRecordBindingTarget,
+  reviewedPayloadForPreviewRecord,
   type PageCreateInput,
   type PageCreateResult,
   type ProductCreateInput,
@@ -112,7 +114,41 @@ function catalogPreviewResult(result: CatalogPreviewResult, context: ToolContext
     requiredConfirmationForExecute: result.requiredConfirmationForExecute,
     auditContext: result.auditContext
   });
-  return { ...result, mode: "preview", audit, previewId: stored.previewId, previewHash: stored.previewHash, binding: previewBindingOutput(stored) };
+  return {
+    ...result,
+    mode: "preview",
+    audit,
+    previewId: stored.previewId,
+    previewHash: stored.previewHash,
+    binding: previewBindingOutput(stored),
+    executeRequest: result.status === "ok" ? previewExecuteRequest(stored) : undefined
+  };
+}
+
+function previewExecuteRequest(record: StoredPreviewRecord): Record<string, unknown> | undefined {
+  const executeTool = implementedExecuteToolForPreview(record.tool);
+  if (!executeTool) return undefined;
+  const reviewedPayload = reviewedPayloadForPreviewRecord(record);
+  const reviewedChangesHash = hashPreviewContent(reviewedPayload);
+  return {
+    tool: executeTool,
+    requiresConfirmation: true,
+    confirmationField: "confirmed",
+    confirmValue: true,
+    previewId: record.previewId,
+    expectedTool: record.tool,
+    target: previewRecordBindingTarget(record),
+    previewHash: record.previewHash,
+    reviewedPayload,
+    reviewedChangesHash,
+    instructions: "Review this preview with the user. Only call execute with confirmed: true after explicit user approval."
+  };
+}
+
+function implementedExecuteToolForPreview(previewTool: string): string | undefined {
+  if (previewTool === "product.create.preview") return "product.create.execute";
+  if (previewTool === "page.create.preview") return "page.create.execute";
+  return undefined;
 }
 
 async function productUpdatePreviewResult(input: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>> {
