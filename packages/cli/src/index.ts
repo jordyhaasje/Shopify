@@ -603,7 +603,7 @@ function resolveSetupScopes(input: string | readonly string[] | undefined, readO
   const scopes = normalizeScopes(input ?? defaultReadOnlyAdminScopes);
   const writeScopes = scopes.filter((scope) => scope.toLowerCase().startsWith("write_"));
   if (readOnly && writeScopes.length > 0) {
-    throw new Error("write_scopes_blocked: Write scopes require --write-enabled. Only page.create.execute, product.create.execute, and product.update.execute are implemented; all other execute tools remain fail-closed placeholders.");
+    throw new Error("write_scopes_blocked: Write scopes require --write-enabled. Only page.create.execute, product.create.execute, product.update.execute, and collection.create.execute are implemented; all other execute tools remain fail-closed placeholders.");
   }
   return scopes;
 }
@@ -613,13 +613,13 @@ function setupWarnings(readOnly: boolean, scopes: readonly string[]): SetupWarni
   if (!readOnly) {
     warnings.push({
       code: "write_mode_requested",
-      message: "Write mode was requested. Only page.create.execute, product.create.execute, and product.update.execute are implemented; all other execute tools remain fail-closed placeholders."
+      message: "Write mode was requested. Only page.create.execute, product.create.execute, product.update.execute, and collection.create.execute are implemented; all other execute tools remain fail-closed placeholders."
     });
   }
   if (scopes.some((scope) => scope.toLowerCase().startsWith("write_"))) {
     warnings.push({
       code: "write_scopes_requested",
-      message: "Write scopes were requested. Use only the minimal scopes required for reviewed development-store tests of page.create.execute, product.create.execute, or product.update.execute."
+      message: "Write scopes were requested. Use only the minimal scopes required for reviewed development-store tests of page.create.execute, product.create.execute, product.update.execute, or collection.create.execute."
     });
   }
   return warnings;
@@ -629,7 +629,7 @@ function setupNextSteps(authMethod: "manual" | "oauth", configPath: string): str
   const common = [
     `Point your MCP host at the local config path: ${configPath}.`,
     "For the current GitHub-only install, use the generated local node MCP command after pnpm run build.",
-    "Keep read-only mode enabled except for explicit reviewed development-store tests of page.create.execute, product.create.execute, or product.update.execute."
+    "Keep read-only mode enabled except for explicit reviewed development-store tests of page.create.execute, product.create.execute, product.update.execute, or collection.create.execute."
   ];
   if (authMethod === "oauth") {
     return [
