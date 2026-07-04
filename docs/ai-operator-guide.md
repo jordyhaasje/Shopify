@@ -11,7 +11,7 @@ This guide is for users running Shopify Store Agent with Codex, OpenCode, Claude
 - Help place the generated MCP snippet in the host config.
 - Inspect available MCP tools and explain their safety model.
 - Create read-only checks and previews from user-provided inputs.
-- Prepare execute payloads from stored preview binding values for user review.
+- Prepare execute payloads from the preview `executeRequest` helper for user review.
 - Guide negative tests for read-only mode, missing confirmation, missing preview IDs, mismatched hashes, and missing write scopes.
 - Check outputs for secrets, raw Shopify dumps, raw reviewed payloads, and unsafe audit results.
 
@@ -123,3 +123,7 @@ Current real write tools:
 - `product.create.execute`
 
 All other execute tools are placeholders. A real write still requires preview output, stored preview binding, matching target/tool/hash values, matching reviewed payload hash, read-only mode disabled, required local granted scopes, and explicit user confirmation.
+
+`product.create.preview` and `page.create.preview` include an `executeRequest` helper. It contains the matching execute tool, expected preview tool, `previewId`, target, `previewHash`, safe reviewed payload, reviewed changes hash, and confirmation requirement. Use it to prepare the execute call for review, not to run automatically.
+
+Before any real write, the user must review the preview and explicitly approve. The execute call must include `confirmed: true`; without that, execute remains blocked. The helper does not bypass the stored preview, does not weaken hash validation, and does not make placeholder execute tools real writes.

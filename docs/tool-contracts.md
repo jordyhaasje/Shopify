@@ -17,6 +17,8 @@ Every write tool has the same safety requirements:
 
 Structured catalog/content preview tools return `ok`, `status`, `previewId`, `summary`, `target`, `proposedChanges`, `warnings`, `requiredConfirmationForExecute`, and `auditContext`. The output intentionally summarizes large user payloads and redacts secret-looking values instead of echoing raw full inputs.
 
+Implemented write previews also return `executeRequest` as an AI-host UX helper. For `product.create.preview`, it points to `product.create.execute`; for `page.create.preview`, it points to `page.create.execute`. The helper contains the execute tool name, expected preview tool, preview ID, target, preview hash, safe reviewed payload, reviewed changes hash, and confirmation requirement. It is only a prepared request for review. It must not be treated as auto-execute, must not be submitted without explicit user approval, and does not bypass stored-preview validation.
+
 Preview tools may also return local binding metadata such as `previewHash` and `binding`. Runtime preview results are stored in a local in-memory preview store with safe summarized content, `createdAt`, `expiresAt`, status, and deterministic hashes. The preview store is process-local only in this phase; it is not file-backed and does not persist across restarts.
 
 `previewId` identifies one saved preview event and is not derived from the content hash. Saving identical preview content twice produces separate preview IDs. `previewHash` is computed from canonicalized safe preview content. Equivalent objects with different key order hash the same way, while changing the tool, target, or proposed changes changes the hash. `reviewedChangesHash` is the corresponding hash for a reviewed payload. Stored-preview verification recomputes the hash from the actual `reviewedPayload`; callers cannot make arbitrary payloads valid by copying `previewHash` into `reviewedChangesHash`. These hashes are binding material for future execute verification, not proof that a write occurred.
@@ -25,7 +27,7 @@ Stored previews expire by TTL. Missing, expired, invalid, or mismatched stored p
 
 The preview store is in-memory and process-local in this phase. Manual execute testing must create and execute the preview in the same running MCP server process. If the process restarts, create a new preview before executing.
 
-Except for `page.create.execute` and `product.create.execute`, current execute tools are placeholders. After read-only and preview-binding checks pass, placeholder execute tools return `ok: false`, `implemented: false`, `status: "not_implemented"`, and `placeholder: true`. They must not be interpreted as successful Shopify writes, and their audit entries use `result: "not_implemented"` rather than `success`. Missing confirmation, missing preview ID, missing reviewed payload, or binding mismatch is audited as `blocked` and must not expose raw reviewed payloads.
+Except for `page.create.execute` and `product.create.execute`, current execute tools are placeholders. Placeholder preview tools do not present their execute paths as implemented Shopify writes. After read-only and preview-binding checks pass, placeholder execute tools return `ok: false`, `implemented: false`, `status: "not_implemented"`, and `placeholder: true`. They must not be interpreted as successful Shopify writes, and their audit entries use `result: "not_implemented"` rather than `success`. Missing confirmation, missing preview ID, missing reviewed payload, or binding mismatch is audited as `blocked` and must not expose raw reviewed payloads.
 
 `page.create.execute` is implemented as the first narrow production-write foundation. It may call only the Shopify Admin GraphQL page create mutation, and only after read-only mode is disabled, local granted scopes include `write_content` or `write_online_store_pages`, a matching stored `page.create.preview` record exists, the record is active, `confirmed: true` is present, target/tool/hash binding matches, and the actual `reviewedPayload` hashes back to the stored preview. It uses the stored/reviewed preview content as the source of truth, not unrelated loose execute input. Shopify remains the ultimate scope enforcement layer, but the agent fails closed locally when known granted scopes are missing or unknown. Shopify `userErrors` are returned safely and audited as `blocked`; network/API/unexpected errors are audited as `failed`; successful mocked or live page creation is the only execute path that may audit `success`.
 
@@ -60,6 +62,8 @@ Output: minimal product summary with ID, title, handle, status, vendor, and prod
 Required input: user-provided title and product fields. Optional variants, images, collections, SEO fields, and metafields.
 
 Preview output: product creation plan, target summary, variant/media counts, missing-field warnings, confirmation requirement, preview ID, and audit entry. This tool does not call Shopify or perform mutations.
+
+The preview output includes `executeRequest` for `product.create.execute`. This helper is built from the stored, sanitized preview record and exists only to reduce manual copying during user review. The caller must still add or preserve explicit `confirmed: true` only after user approval, and execute validation still recomputes hashes from the actual reviewed payload.
 
 ### `product.create.execute`
 
@@ -186,6 +190,8 @@ Execute requirements: relevant fulfillment scopes, writes enabled, explicit conf
 Required input: user-provided title, body/content, handle, SEO fields, and publish preference.
 
 Preview output: page creation summary, content summary, SEO/publish plan, warnings, preview ID, and audit entry. This tool does not call Shopify or perform mutations.
+
+The preview output includes `executeRequest` for `page.create.execute`. This helper is built from the stored, sanitized preview record and exists only to reduce manual copying during user review. The caller must still add or preserve explicit `confirmed: true` only after user approval, and execute validation still recomputes hashes from the actual reviewed payload.
 
 ### `page.create.execute`
 

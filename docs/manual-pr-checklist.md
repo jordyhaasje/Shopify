@@ -20,6 +20,7 @@ pnpm run smoke:local
 - Review read-tool audit behavior: successful read, not found, and multiple matches use `success`; missing input uses `blocked`; Shopify/API/invalid response uses `failed`.
 - Review preview-tool audit behavior: successful previews use `success`; missing input and validation errors use `blocked`.
 - Confirm preview output summarizes large payloads, redacts secret-looking values, and does not autonomously fetch products or call Shopify write APIs.
+- If preview execute helpers change, confirm they are review-only, appear only for implemented write previews, contain safe bounded reviewed payloads, require explicit `confirmed: true`, and do not make placeholder execute tools look like real writes.
 - Review local preview-store behavior when changed: stored previews are safe/summarized, hash output is deterministic, TTL expiry fails closed, and no raw reviewed payloads are returned.
 - For optional preview read enrichment, confirm it is explicit opt-in, uses only explicit IDs/handles, returns minimal summaries, treats read failures as warnings, and performs no mutations.
 - Review execute tools for read-only, preview binding, confirmation, and audit behavior.
