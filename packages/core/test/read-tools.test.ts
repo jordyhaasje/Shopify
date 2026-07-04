@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createConfig } from "../src/config.js";
-import { findCustomers, findOrders, getOrder, getProduct, getTracking } from "../src/read-tools.js";
+import { findCustomers, findOrders, getOrder, getProduct, getTracking, lookupInventory } from "../src/read-tools.js";
 import type { FetchLike } from "../src/shopify-client.js";
 
 const config = createConfig({
@@ -200,6 +200,110 @@ describe("read-only Shopify helpers", () => {
 
     expect(result).toMatchObject({ ok: false, status: "not_found" });
   });
+
+  it("looks up inventory by item ID with compact variant and location output", async () => {
+    const result = await lookupInventory(config, { inventoryItemId: "gid://shopify/InventoryItem/1" }, {
+      fetcher: fetchJson({
+        data: {
+          inventoryItem: inventoryItemNode()
+        }
+      })
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "ok",
+      item: {
+        inventoryItemId: "gid://shopify/InventoryItem/1",
+        sku: "SKU-1",
+        tracked: true,
+        variants: [{
+          id: "gid://shopify/ProductVariant/1",
+          sku: "SKU-1",
+          product: {
+            id: "gid://shopify/Product/1",
+            title: "Shirt"
+          }
+        }],
+        levels: [{
+          id: "gid://shopify/InventoryLevel/1?inventory_item_id=1",
+          locationId: "gid://shopify/Location/1",
+          locationName: "Main",
+          availableQuantity: 7,
+          quantities: expect.arrayContaining([{ name: "available", quantity: 7 }])
+        }]
+      }
+    });
+    expect(JSON.stringify(result)).not.toContain("rawNodeOnly");
+  });
+
+  it("looks up inventory by variant ID", async () => {
+    const result = await lookupInventory(config, { variantId: "gid://shopify/ProductVariant/1" }, {
+      fetcher: fetchJson({
+        data: {
+          node: {
+            __typename: "ProductVariant",
+            id: "gid://shopify/ProductVariant/1",
+            title: "Small",
+            sku: "SKU-1",
+            product: { id: "gid://shopify/Product/1", title: "Shirt", handle: "shirt" },
+            inventoryItem: inventoryItemNode()
+          }
+        }
+      })
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      item: {
+        inventoryItemId: "gid://shopify/InventoryItem/1",
+        variants: [{ id: "gid://shopify/ProductVariant/1" }]
+      }
+    });
+  });
+
+  it("looks up inventory by SKU and reports multiple explicit matches", async () => {
+    const requests: Array<{ body: string }> = [];
+    const result = await lookupInventory(config, { sku: "SKU-1", first: 2 }, {
+      fetcher: async (_url, init) => {
+        requests.push({ body: init.body });
+        return {
+          ok: true,
+          status: 200,
+          async text() {
+            return JSON.stringify({
+              data: {
+                productVariants: {
+                  nodes: [
+                    { id: "gid://shopify/ProductVariant/1", title: "Small", sku: "SKU-1", product: { id: "gid://shopify/Product/1", title: "Shirt" }, inventoryItem: inventoryItemNode("1") },
+                    { id: "gid://shopify/ProductVariant/2", title: "Large", sku: "SKU-1", product: { id: "gid://shopify/Product/2", title: "Hat" }, inventoryItem: inventoryItemNode("2") }
+                  ]
+                }
+              }
+            });
+          }
+        };
+      }
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "multiple_matches",
+      matches: [
+        { inventoryItemId: "gid://shopify/InventoryItem/1" },
+        { inventoryItemId: "gid://shopify/InventoryItem/2" }
+      ]
+    });
+    expect(JSON.parse(requests[0].body).variables.query).toBe("sku:SKU-1");
+  });
+
+  it("requires exactly one inventory lookup input", async () => {
+    await expect(lookupInventory(config, {})).resolves.toMatchObject({ ok: false, status: "missing_input" });
+    await expect(lookupInventory(config, {
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      sku: "SKU-1"
+    })).resolves.toMatchObject({ ok: false, status: "missing_input" });
+  });
 });
 
 function orderNode(id: string, name: string) {
@@ -230,5 +334,41 @@ function orderNode(id: string, name: string) {
         url: "https://example.com/track/TRACK1"
       }]
     }]
+  };
+}
+
+function inventoryItemNode(suffix = "1") {
+  return {
+    id: `gid://shopify/InventoryItem/${suffix}`,
+    sku: `SKU-${suffix}`,
+    tracked: true,
+    rawNodeOnly: true,
+    variants: {
+      nodes: [{
+        id: `gid://shopify/ProductVariant/${suffix}`,
+        title: "Small",
+        sku: `SKU-${suffix}`,
+        product: {
+          id: `gid://shopify/Product/${suffix}`,
+          title: "Shirt",
+          handle: "shirt"
+        },
+        rawNodeOnly: true
+      }]
+    },
+    inventoryLevels: {
+      nodes: [{
+        id: `gid://shopify/InventoryLevel/${suffix}?inventory_item_id=${suffix}`,
+        rawNodeOnly: true,
+        location: {
+          id: `gid://shopify/Location/${suffix}`,
+          name: "Main"
+        },
+        quantities: [
+          { name: "available", quantity: 7, rawNodeOnly: true },
+          { name: "on_hand", quantity: 10 }
+        ]
+      }]
+    }
   };
 }

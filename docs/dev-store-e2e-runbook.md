@@ -164,7 +164,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --store your-store.myshopify.com \
   --client-id "$SHOPIFY_CLIENT_ID" \
   --client-secret "$SHOPIFY_CLIENT_SECRET" \
-  --scopes "read_products,read_content,read_online_store_pages"
+  --scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations"
 ```
 
 `auth` is the real OAuth browser flow. `setup --auth oauth` only prints guidance and snippets; it does not exchange a token. When a store has multiple connected domains, Shopify can return the original canonical `.myshopify.com` domain in the OAuth callback even if `--store` used the primary storefront domain. Use the canonical stored config domain for Admin API validation and preflight after OAuth completes.
@@ -179,7 +179,7 @@ pnpm --filter shopify-store-agent run setup -- \
   --auth manual \
   --admin-token "$SHOPIFY_ADMIN_TOKEN" \
   --write-enabled \
-  --scopes "read_products,read_content,read_online_store_pages,write_products,write_content,write_inventory"
+  --scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory"
 ```
 
 Use only the write scope needed for the specific test. For page-only validation, `write_content` or `write_online_store_pages` is enough. For product create, basic-field product update, explicit variant price update, explicit variant creation, explicit option creation, explicit option delete, explicit option reorder, explicit option rename, explicit option value rename, explicit option value add, explicit option value delete, or custom explicit-product collection create validation, `write_products` is required. For explicit single-item inventory quantity validation, `write_inventory` is required.
@@ -192,7 +192,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --client-id "$SHOPIFY_CLIENT_ID" \
   --client-secret "$SHOPIFY_CLIENT_SECRET" \
   --write-enabled \
-  --scopes "read_products,read_content,read_online_store_pages,write_products,write_content,write_inventory"
+  --scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory"
 ```
 
 Write mode is only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-delete, explicit-option-reorder, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, or explicit-option-value-delete `product.update.execute`, custom explicit-product `collection.create.execute`, or explicit single-item `inventory.setQuantity.execute`. All other execute tools remain fail-closed placeholders.
@@ -205,7 +205,7 @@ Before any live development-store write step, run a local preflight against the 
 pnpm --filter shopify-store-agent run e2e-preflight -- \
   --store your-store.myshopify.com \
   --config /absolute/path/to/config.json \
-  --required-scopes "read_products,read_content,read_online_store_pages,write_products,write_content,write_inventory" \
+  --required-scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory" \
   --require-write-enabled
 ```
 
@@ -460,7 +460,9 @@ Use the stored preview content as the source of truth. Unrelated loose execute i
 
 Use only a disposable/development inventory item and location that can be safely changed.
 
-1. Run `inventory.setQuantity.preview` with explicit test data:
+1. Optional read-only preparation: run `inventory.lookup` with one explicit inventory item ID, product variant ID, or SKU to collect the test `inventoryItemId`, `locationId`, and current available quantity. Keep only safe pass/fail evidence and compact IDs/quantities; do not record raw Shopify responses or product/location dumps.
+
+2. Run `inventory.setQuantity.preview` with explicit test data:
 
 ```json
 {
@@ -475,19 +477,19 @@ Use only a disposable/development inventory item and location that can be safely
 
 Use `ignoreCompareQuantity: true` only when the reviewer explicitly accepts stale inventory risk.
 
-2. Review the preview binding values and `executeRequest`.
+3. Review the preview binding values and `executeRequest`.
 
-3. Confirm read-only mode is explicitly off only for this development-store test.
+4. Confirm read-only mode is explicitly off only for this development-store test.
 
-4. Confirm local granted scopes include `write_inventory`.
+5. Confirm local granted scopes include `write_inventory`.
 
-5. Run `inventory.setQuantity.execute` with the reviewed binding values and `confirmed: true`.
+6. Run `inventory.setQuantity.execute` with the reviewed binding values and `confirmed: true`.
 
-6. Confirm:
+7. Confirm:
 
 - The inventory quantity is set only for the explicit inventory item/location pair.
 - The mutation is limited to `inventorySetQuantities` with quantity name `available`.
-- No product, SKU, inventory item, or location discovery is performed.
+- No product, SKU, inventory item, or location lookup/discovery is performed during execute.
 - No bulk inventory, inventory move, product update, or location management operation is performed.
 - Output and audit contain no secrets, raw reviewed payload, raw Shopify response, product dump, location dump, or full Shopify node.
 

@@ -78,7 +78,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --store "$SHOPIFY_STORE" \
   --client-id "$SHOPIFY_CLIENT_ID" \
   --client-secret "$SHOPIFY_CLIENT_SECRET" \
-  --scopes "read_products,read_content,read_online_store_pages"
+  --scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations"
 ```
 
 The CLI prints or opens a Shopify install URL. You approve the app in the browser, Shopify redirects to `http://127.0.0.1:3456/auth/callback`, and the CLI stores the Admin API token locally. The token is not for docs or chat.
@@ -150,6 +150,12 @@ Read example:
 Look up the order or customer I provide and return only a minimal status summary. Do not show raw Shopify data.
 ```
 
+Inventory lookup example:
+
+```text
+Use this SKU to find the inventory item and location IDs I need for a reviewed inventory quantity preview. Do not write anything.
+```
+
 ## Step 8 -- Create a preview
 
 Ask your AI host:
@@ -164,6 +170,7 @@ Preview output includes `executeRequest` for:
 page.create.preview -> page.create.execute
 product.create.preview -> product.create.execute
 collection.create.preview -> collection.create.execute
+inventory.setQuantity.preview -> inventory.setQuantity.execute
 ```
 
 ## Step 9 -- Approve and execute
@@ -187,7 +194,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --client-id "$SHOPIFY_CLIENT_ID" \
   --client-secret "$SHOPIFY_CLIENT_SECRET" \
   --write-enabled \
-  --scopes "read_products,read_content,read_online_store_pages,write_products,write_content,write_inventory"
+  --scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory"
 ```
 
 Use only a development or disposable store. `write_products` is required for `product.create.execute`, `product.update.execute`, and custom `collection.create.execute`; `write_content` or `write_online_store_pages` is required for `page.create.execute`; `write_inventory` is required for `inventory.setQuantity.execute`. `product.update.execute` supports one update shape per preview: basic product fields, explicit variant price updates with product ID plus variant IDs and prices, explicit variant creation with product ID plus option values and optional price/SKU, explicit option creation with product ID plus option names and values, explicit option delete with product ID plus option IDs, explicit option reorder with product ID plus option IDs or names in the desired order, explicit option rename with product ID, option ID, and new option name, explicit option value rename with product ID, option ID, option value ID, and new value name, explicit option value add with product ID, option ID, and new value names, or explicit option value delete with product ID, option ID, and option value IDs. Option creation, option rename, option value rename, option value add, and option value delete use `LEAVE_AS_IS`; option delete uses `NON_DESTRUCTIVE`; option reorder uses `productOptionsReorder`. `inventory.setQuantity.execute` supports one explicit inventory item ID and one explicit location ID per reviewed preview, with compare quantity checks unless explicitly ignored. Do not mix update shapes in one preview. All other execute tools are placeholders.
@@ -227,6 +234,7 @@ order.get
 customer.find
 tracking.get
 product.get
+inventory.lookup
 ```
 
 Preview tools:
@@ -269,5 +277,5 @@ theme.rollback
 - npm/npx package install as the primary route.
 - Product update execute beyond basic fields, explicit variant price updates, explicit variant creation, explicit option creation, explicit option delete, explicit option reorder, explicit option rename, explicit option value rename, explicit option value add, and explicit option value delete.
 - Production-store write automation.
-- Rule-based/smart collection create, collection publishing, refund, tracking, customer, bulk, theme, media, inventory beyond explicit single-item quantity set, metafields, publications, translations, and other advanced execute implementations.
+- Rule-based/smart collection create, collection publishing, refund, tracking, customer, bulk, theme, media, inventory beyond explicit lookup and single-item quantity set, metafields, publications, translations, and other advanced execute implementations.
 - Automated live Shopify tests.

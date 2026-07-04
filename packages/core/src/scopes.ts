@@ -3,6 +3,7 @@ export const defaultAdminScopes = [
   "write_products",
   "read_inventory",
   "write_inventory",
+  "read_locations",
   "read_orders",
   "write_orders",
   "read_order_edits",
@@ -44,6 +45,7 @@ export const defaultReadOnlyAdminScopes = [
   "read_files",
   "read_themes",
   "read_inventory",
+  "read_locations",
   "read_metaobjects",
   "read_metaobject_definitions",
   "read_translations"
