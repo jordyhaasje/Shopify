@@ -38,6 +38,8 @@ import {
   type ProductOptionsCreateResult,
   type ProductOptionValueAddInput,
   type ProductOptionValueAddResult,
+  type ProductOptionValueDeleteInput,
+  type ProductOptionValueDeleteResult,
   type ProductOptionValueRenameInput,
   type ProductOptionValueRenameResult,
   type ProductOptionRenameInput,
@@ -58,6 +60,7 @@ import {
   createProduct,
   createProductOptions,
   createProductVariants,
+  deleteProductOptionValues,
   renameProductOption,
   renameProductOptionValue,
   updateProduct,
@@ -452,7 +455,8 @@ async function productUpdateExecuteResult(input: Record<string, unknown>, contex
   const optionRenameExtracted = productOptionRenameInputFromStoredPreview(lookup.record);
   const optionValueRenameExtracted = productOptionValueRenameInputFromStoredPreview(lookup.record);
   const optionValueAddExtracted = productOptionValueAddInputFromStoredPreview(lookup.record);
-  const extractedShapeCount = [extracted, variantPriceExtracted, variantCreateExtracted, optionCreateExtracted, optionRenameExtracted, optionValueRenameExtracted, optionValueAddExtracted].filter((item) => item.ok).length;
+  const optionValueDeleteExtracted = productOptionValueDeleteInputFromStoredPreview(lookup.record);
+  const extractedShapeCount = [extracted, variantPriceExtracted, variantCreateExtracted, optionCreateExtracted, optionRenameExtracted, optionValueRenameExtracted, optionValueAddExtracted, optionValueDeleteExtracted].filter((item) => item.ok).length;
   if (extractedShapeCount > 1) {
     return blockedImplementedExecuteResult(tool, storedTarget, [diagnostic("mixed_product_update_fields", "Stored product update preview mixes multiple product update shapes; create separate previews to avoid partial writes.")], context, binding);
   }
@@ -461,6 +465,7 @@ async function productUpdateExecuteResult(input: Record<string, unknown>, contex
     if (!optionRenameExtracted.ok && hasDiagnostic(optionRenameExtracted.diagnostics, "multiple_option_renames")) diagnostics.push(...optionRenameExtracted.diagnostics);
     if (!optionValueRenameExtracted.ok && hasDiagnostic(optionValueRenameExtracted.diagnostics, "multiple_option_value_renames")) diagnostics.push(...optionValueRenameExtracted.diagnostics);
     if (!optionValueAddExtracted.ok && hasDiagnostic(optionValueAddExtracted.diagnostics, "multiple_option_value_adds")) diagnostics.push(...optionValueAddExtracted.diagnostics);
+    if (!optionValueDeleteExtracted.ok && hasDiagnostic(optionValueDeleteExtracted.diagnostics, "multiple_option_value_deletes")) diagnostics.push(...optionValueDeleteExtracted.diagnostics);
     if (!extracted.ok) diagnostics.push(...extracted.diagnostics);
     if (!variantPriceExtracted.ok && diagnostics.length === 0) diagnostics.push(...variantPriceExtracted.diagnostics);
     if (!variantCreateExtracted.ok && diagnostics.length === 0) diagnostics.push(...variantCreateExtracted.diagnostics);
@@ -468,6 +473,7 @@ async function productUpdateExecuteResult(input: Record<string, unknown>, contex
     if (!optionRenameExtracted.ok && diagnostics.length === 0) diagnostics.push(...optionRenameExtracted.diagnostics);
     if (!optionValueRenameExtracted.ok && diagnostics.length === 0) diagnostics.push(...optionValueRenameExtracted.diagnostics);
     if (!optionValueAddExtracted.ok && diagnostics.length === 0) diagnostics.push(...optionValueAddExtracted.diagnostics);
+    if (!optionValueDeleteExtracted.ok && diagnostics.length === 0) diagnostics.push(...optionValueDeleteExtracted.diagnostics);
     return blockedImplementedExecuteResult(tool, storedTarget, diagnostics, context, binding);
   }
 
@@ -502,6 +508,11 @@ async function productUpdateExecuteResult(input: Record<string, unknown>, contex
   if (optionValueAddExtracted.ok) {
     const write = await addProductOptionValues(context.config, optionValueAddExtracted.input, { fetcher: context.fetcher });
     return productOptionValueAddWriteResult(tool, storedTarget, binding, write, context);
+  }
+
+  if (optionValueDeleteExtracted.ok) {
+    const write = await deleteProductOptionValues(context.config, optionValueDeleteExtracted.input, { fetcher: context.fetcher });
+    return productOptionValueDeleteWriteResult(tool, storedTarget, binding, write, context);
   }
 
   if (!extracted.ok) return blockedImplementedExecuteResult(tool, storedTarget, extracted.diagnostics, context, binding);
@@ -958,6 +969,39 @@ function productOptionValueAddWriteResult(
   };
 }
 
+function productOptionValueDeleteWriteResult(
+  tool: string,
+  target: string,
+  binding: ExecutePreviewBindingResult,
+  write: ProductOptionValueDeleteResult,
+  context: ToolContext
+): Record<string, unknown> {
+  const result = productUpdateAuditResult(write);
+  const audit = context.audit.record({
+    tool,
+    target: safeExecuteString(target),
+    mode: "execute",
+    summary: write.summary,
+    result
+  });
+  return {
+    ok: write.ok,
+    mode: "execute",
+    implemented: true,
+    status: write.status,
+    summary: write.summary,
+    audit,
+    deletedOptionValues: write.optionValueDelete,
+    userErrors: write.userErrors,
+    diagnostics: write.diagnostics,
+    previewBinding: {
+      previewId: binding.previewId,
+      expectedTool: binding.expectedPreviewTool,
+      target: binding.target
+    }
+  };
+}
+
 function collectionCreateWriteResult(
   tool: string,
   target: string,
@@ -997,7 +1041,7 @@ function productCreateAuditResult(write: ProductCreateResult): "success" | "bloc
   return "failed";
 }
 
-function productUpdateAuditResult(write: ProductUpdateResult | ProductVariantPriceUpdateResult | ProductVariantBulkCreateResult | ProductOptionsCreateResult | ProductOptionRenameResult | ProductOptionValueRenameResult | ProductOptionValueAddResult): "success" | "blocked" | "failed" {
+function productUpdateAuditResult(write: ProductUpdateResult | ProductVariantPriceUpdateResult | ProductVariantBulkCreateResult | ProductOptionsCreateResult | ProductOptionRenameResult | ProductOptionValueRenameResult | ProductOptionValueAddResult | ProductOptionValueDeleteResult): "success" | "blocked" | "failed" {
   if (write.status === "ok") return "success";
   if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
   return "failed";
@@ -1180,6 +1224,34 @@ function productOptionValueAddInputFromStoredPreview(record: StoredPreviewRecord
       productId,
       optionId: optionValueAdds[0].optionId,
       values: optionValueAdds[0].values
+    }
+  };
+}
+
+function productOptionValueDeleteInputFromStoredPreview(record: StoredPreviewRecord): { ok: true; input: ProductOptionValueDeleteInput } | { ok: false; diagnostics: ExecutePreviewBindingDiagnostic[] } {
+  const productId = safeContentText(targetField(record, "id") ?? targetField(record, "productId") ?? changeAfterValue(record, "id") ?? changeAfterValue(record, "productId"), 180);
+  const optionValueDeletes = optionValueDeletesFromStoredPreview(record);
+
+  if (!productId || optionValueDeletes.length === 0) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_product_update_fields", "Stored product update preview did not include supported basic product fields, explicit variant fields, explicit option create fields, explicit option rename fields, explicit option value rename fields, explicit option value add fields, or explicit option value delete fields for execution.")]
+    };
+  }
+
+  if (optionValueDeletes.length > 1) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("multiple_option_value_deletes", "Stored product update preview includes option value deletes for multiple options; create separate previews to avoid partial writes.")]
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      productId,
+      optionId: optionValueDeletes[0].optionId,
+      valueIds: optionValueDeletes[0].valueIds
     }
   };
 }
@@ -1378,6 +1450,20 @@ function optionValueAddsFromStoredPreview(record: StoredPreviewRecord): Array<{ 
   return result;
 }
 
+function optionValueDeletesFromStoredPreview(record: StoredPreviewRecord): Array<{ optionId: string; valueIds: string[] }> {
+  const result: Array<{ optionId: string; valueIds: string[] }> = [];
+  for (const item of storedChangeArray(record, "options", "after")) {
+    const fields = objectFields(item);
+    const optionId = safeVariantText(fields.id ?? fields.optionId, 180);
+    if (!optionId) continue;
+    const valueIds = optionValueDeleteIdsFromStoredValue(fields.deleteValueIds ?? fields.deletedValueIds ?? fields.valuesToDelete ?? fields.optionValuesToDelete ?? fields.deleteValues);
+    if (valueIds.length === 0) continue;
+    result.push({ optionId, valueIds });
+    if (result.length > 1) return result;
+  }
+  return result;
+}
+
 function optionRenamesFromStoredPreview(record: StoredPreviewRecord): Array<ProductOptionRenameInput["option"]> {
   const result: Array<ProductOptionRenameInput["option"]> = [];
   const seen = new Set<string>();
@@ -1443,6 +1529,20 @@ function optionValueAddNamesFromStoredValue(value: unknown): string[] {
     if (!name || seen.has(name)) continue;
     seen.add(name);
     result.push(name);
+    if (result.length >= 25) break;
+  }
+  return result;
+}
+
+function optionValueDeleteIdsFromStoredValue(value: unknown): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const item of arraySummaryItems(value)) {
+    const fields = objectFields(item);
+    const id = safeVariantText(fields.id ?? fields.optionValueId ?? item, 180);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    result.push(id);
     if (result.length >= 25) break;
   }
   return result;
@@ -1747,7 +1847,7 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: "product.update.execute",
-    description: "Update basic Shopify product fields, explicit variant prices, explicit variants, explicit options, explicit option names, explicit option value names, or explicit option value additions after stored product update preview binding and explicit confirmation.",
+    description: "Update basic Shopify product fields, explicit variant prices, explicit variants, explicit options, explicit option names, explicit option value names, explicit option value additions, or explicit option value deletions after stored product update preview binding and explicit confirmation.",
     inputSchema: { type: "object" },
     handler: (input, context) => productUpdateExecuteResult(input, context)
   },

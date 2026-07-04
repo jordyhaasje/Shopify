@@ -12,7 +12,7 @@ The goal is to test the current local-first flow end to end:
 - Preview tools and local preview storage.
 - `page.create.execute`.
 - `product.create.execute`.
-- `product.update.execute` for basic fields, explicit variant price updates, explicit variant creation, explicit option creation, explicit option rename, explicit option value rename, or explicit option value add only.
+- `product.update.execute` for basic fields, explicit variant price updates, explicit variant creation, explicit option creation, explicit option rename, explicit option value rename, explicit option value add, or explicit option value delete only.
 - `collection.create.execute` for custom collections with explicit product IDs only.
 - Audit and output safety.
 
@@ -94,7 +94,7 @@ or:
 write_online_store_pages
 ```
 
-For `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-rename, explicit-option-value-rename, or explicit-option-value-add `product.update.execute`, or custom explicit-product `collection.create.execute`, add:
+For `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, or explicit-option-value-delete `product.update.execute`, or custom explicit-product `collection.create.execute`, add:
 
 ```text
 write_products
@@ -174,7 +174,7 @@ pnpm --filter shopify-store-agent run setup -- \
   --scopes "read_products,read_content,read_online_store_pages,write_products,write_content"
 ```
 
-Use only the write scope needed for the specific test. For page-only validation, `write_content` or `write_online_store_pages` is enough. For product create, basic-field product update, explicit variant price update, explicit variant creation, explicit option creation, explicit option rename, explicit option value rename, explicit option value add, or custom explicit-product collection create validation, `write_products` is required.
+Use only the write scope needed for the specific test. For page-only validation, `write_content` or `write_online_store_pages` is enough. For product create, basic-field product update, explicit variant price update, explicit variant creation, explicit option creation, explicit option rename, explicit option value rename, explicit option value add, explicit option value delete, or custom explicit-product collection create validation, `write_products` is required.
 
 For deliberate OAuth write testing on a development store, run `auth` with write mode and the minimal reviewed scope set:
 
@@ -187,7 +187,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --scopes "read_products,read_content,read_online_store_pages,write_products,write_content"
 ```
 
-Write mode is only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-rename, explicit-option-value-rename, or explicit-option-value-add `product.update.execute`, or custom explicit-product `collection.create.execute`. All other execute tools remain fail-closed placeholders.
+Write mode is only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, or explicit-option-value-delete `product.update.execute`, or custom explicit-product `collection.create.execute`. All other execute tools remain fail-closed placeholders.
 
 ## Local E2E Config Preflight
 
@@ -336,7 +336,7 @@ Use the stored/reviewed preview content as the source of truth. Unrelated loose 
 
 - The Shopify product is created in the development store.
 - Output contains only a safe product summary: `id`, `title`, `handle`, and `status`.
-- No option value delete, option reorder/delete, inventory, media/files/images, collections, metafields, SEO bulk fields, publications/channels, translations, delete, or bulk operations are performed.
+- No option reorder/delete, inventory, media/files/images, collections, metafields, SEO bulk fields, publications/channels, translations, delete, or bulk operations are performed.
 - Output and audit contain no secrets, raw reviewed payload, or full Shopify node.
 
 ## Product Update E2E
@@ -392,7 +392,7 @@ Use the stored preview content as the source of truth. Unrelated loose execute i
 
 - The Shopify product basic fields are updated in the development store.
 - Output contains only a safe updated product summary: `id`, `title`, `handle`, and `status`.
-- No option value delete, option reorder/delete, inventory, media/files/images, collections, metafields, SEO, publications/channels, translations, delete, or bulk operations are performed. If validating a variant price update, confirm it uses explicit variant IDs and prices through `productVariantsBulkUpdate`. If validating explicit variant creation, confirm it uses explicit option values and optional price/SKU through `productVariantsBulkCreate`. If validating explicit option creation, confirm it uses explicit option names and values through `productOptionsCreate` with `LEAVE_AS_IS`. If validating explicit option rename, confirm it uses product ID, option ID, and new option name through `productOptionUpdate` with `LEAVE_AS_IS`. If validating explicit option value rename, confirm it uses product ID, option ID, option value ID, and new value name through `productOptionUpdate` with `LEAVE_AS_IS`. If validating explicit option value add, confirm it uses product ID, option ID, and new value names through `productOptionUpdate` with `LEAVE_AS_IS`. Confirm mixed update-shape previews fail closed before fetch.
+- No option reorder/delete, inventory, media/files/images, collections, metafields, SEO, publications/channels, translations, delete, or bulk operations are performed. If validating a variant price update, confirm it uses explicit variant IDs and prices through `productVariantsBulkUpdate`. If validating explicit variant creation, confirm it uses explicit option values and optional price/SKU through `productVariantsBulkCreate`. If validating explicit option creation, confirm it uses explicit option names and values through `productOptionsCreate` with `LEAVE_AS_IS`. If validating explicit option rename, confirm it uses product ID, option ID, and new option name through `productOptionUpdate` with `LEAVE_AS_IS`. If validating explicit option value rename, confirm it uses product ID, option ID, option value ID, and new value name through `productOptionUpdate` with `LEAVE_AS_IS`. If validating explicit option value add, confirm it uses product ID, option ID, and new value names through `productOptionUpdate` with `LEAVE_AS_IS`. If validating explicit option value delete, confirm it uses product ID, option ID, and option value IDs through `productOptionUpdate` with `LEAVE_AS_IS`. Confirm mixed update-shape previews fail closed before fetch.
 - Output and audit contain no secrets, raw reviewed payload, raw descriptions, or full Shopify node.
 
 ## Collection Create E2E
