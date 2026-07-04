@@ -209,6 +209,34 @@ describe("catalog and content previews", () => {
     expect(JSON.stringify(optionChange)).not.toContain("linkedMetafieldValue");
   });
 
+  it("keeps product update option value delete IDs compact for stored option value delete execution", () => {
+    const preview = previewProductUpdate({
+      productId: "gid://shopify/Product/1",
+      options: [{
+        id: "gid://shopify/ProductOption/1",
+        deleteValueIds: [{
+          id: "gid://shopify/ProductOptionValue/1",
+          linkedMetafieldValue: "hidden"
+        }, "gid://shopify/ProductOptionValue/2"]
+      }]
+    });
+    const optionChange = preview.proposedChanges.find((change) => change.field === "options");
+
+    expect(optionChange).toMatchObject({
+      field: "options",
+      after: {
+        count: 1,
+        items: [expect.objectContaining({
+          fields: {
+            id: "gid://shopify/ProductOption/1",
+            deleteValueIds: ["gid://shopify/ProductOptionValue/1", "gid://shopify/ProductOptionValue/2"]
+          }
+        })]
+      }
+    });
+    expect(JSON.stringify(optionChange)).not.toContain("linkedMetafieldValue");
+  });
+
   it("requires an explicit product target for update previews", () => {
     const preview = previewProductUpdate({ changes: { title: "New Shirt" } });
 

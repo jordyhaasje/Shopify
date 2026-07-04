@@ -87,6 +87,12 @@ export interface ProductOptionValueAddInput {
   values: ProductOptionValueCreateInput[];
 }
 
+export interface ProductOptionValueDeleteInput {
+  productId: string;
+  optionId: string;
+  valueIds: string[];
+}
+
 export interface ProductCreateSummary {
   id: string;
   title?: string;
@@ -158,6 +164,15 @@ export interface ProductOptionValueAddSummary {
   variantStrategy: "LEAVE_AS_IS";
 }
 
+export interface ProductOptionValueDeleteSummary {
+  productId: string;
+  optionId: string;
+  deletedValueCount: number;
+  valueIds: string[];
+  remainingValues: ProductOptionValueSummary[];
+  variantStrategy: "LEAVE_AS_IS";
+}
+
 export interface ProductWriteDiagnostic {
   severity: "warning" | "error";
   code: string;
@@ -201,6 +216,10 @@ export interface ProductOptionValueRenameResult extends ProductWriteResultBase {
 
 export interface ProductOptionValueAddResult extends ProductWriteResultBase {
   optionValueAdd?: ProductOptionValueAddSummary;
+}
+
+export interface ProductOptionValueDeleteResult extends ProductWriteResultBase {
+  optionValueDelete?: ProductOptionValueDeleteSummary;
 }
 
 export interface ProductWriteOptions {
@@ -924,6 +943,104 @@ export async function addProductOptionValues(
   };
 }
 
+export async function deleteProductOptionValues(
+  config: StoreAgentConfig,
+  input: ProductOptionValueDeleteInput,
+  options: ProductWriteOptions = {}
+): Promise<ProductOptionValueDeleteResult> {
+  if (config.readOnly) return blocked("Product option value delete is blocked because read-only mode is enabled.");
+
+  const productId = safeText(input.productId, 180);
+  if (!productId) return missingInput("Provide a product ID.");
+
+  const optionId = safeText(input.optionId, 180);
+  const valueIds = safeOptionValueIds(input.valueIds);
+  if (!optionId || valueIds.length === 0) return missingInput("Provide an option ID and at least one option value ID to delete.");
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  let result: ShopifyGraphqlResult<ProductOptionUpdateData>;
+  try {
+    result = await client.request<ProductOptionUpdateData>({
+      query: productOptionUpdateMutation,
+      variables: {
+        productId,
+        option: { id: optionId },
+        optionValuesToDelete: valueIds,
+        variantStrategy: "LEAVE_AS_IS"
+      }
+    });
+  } catch {
+    return shopifyFailure("Shopify product option value delete request failed before a safe response was available.");
+  }
+
+  if (!result.ok) return mapGraphqlFailure(result);
+
+  const userErrors = result.data.productOptionUpdate?.userErrors ?? result.userErrors;
+  if (userErrors.length > 0) {
+    return {
+      ok: false,
+      status: "user_errors",
+      summary: "Shopify rejected the product option value delete request.",
+      userErrors: sanitizeUserErrors(userErrors),
+      diagnostics: [{ severity: "warning", code: "shopify_user_errors", message: "Shopify returned product option value delete user errors." }]
+    };
+  }
+
+  const productNode = result.data.productOptionUpdate?.product;
+  const updatedProductId = safeText(productNode?.id, 180);
+  if (!updatedProductId) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product option value delete response did not include a product ID.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product option value delete response did not include a product ID." }]
+    };
+  }
+
+  const optionNode = productNode?.options?.find((candidate) => safeText(candidate?.id, 180) === optionId);
+  if (!optionNode) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product option value delete response did not include the updated option summary.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product option value delete response did not include the updated option summary." }]
+    };
+  }
+
+  const remainingValues = (optionNode.optionValues ?? [])
+    .map((candidate) => optionValueSummaryFromNode(candidate))
+    .filter((value): value is ProductOptionValueSummary => Boolean(value))
+    .slice(0, 25);
+  const remainingIds = new Set(remainingValues.map((value) => value.id));
+  if (valueIds.some((valueId) => remainingIds.has(valueId))) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product option value delete response still included a deleted option value ID.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product option value delete response still included a deleted option value ID." }]
+    };
+  }
+
+  return {
+    ok: true,
+    status: "ok",
+    summary: `Deleted ${valueIds.length} Shopify product option value${valueIds.length === 1 ? "" : "s"}.`,
+    optionValueDelete: {
+      productId: updatedProductId,
+      optionId,
+      deletedValueCount: valueIds.length,
+      valueIds,
+      remainingValues,
+      variantStrategy: "LEAVE_AS_IS"
+    },
+    userErrors: [],
+    diagnostics: []
+  };
+}
+
 const productCreateMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentProductCreate($product: ProductCreateInput!) {
     productCreate(product: $product) {
@@ -1016,8 +1133,8 @@ const productOptionsCreateMutation = /* GraphQL */ `
 `;
 
 const productOptionUpdateMutation = /* GraphQL */ `
-  mutation ShopifyStoreAgentProductOptionUpdate($productId: ID!, $option: OptionUpdateInput!, $optionValuesToAdd: [OptionValueCreateInput!], $optionValuesToUpdate: [OptionValueUpdateInput!], $variantStrategy: ProductOptionUpdateVariantStrategy) {
-    productOptionUpdate(productId: $productId, option: $option, optionValuesToAdd: $optionValuesToAdd, optionValuesToUpdate: $optionValuesToUpdate, variantStrategy: $variantStrategy) {
+  mutation ShopifyStoreAgentProductOptionUpdate($productId: ID!, $option: OptionUpdateInput!, $optionValuesToAdd: [OptionValueCreateInput!], $optionValuesToUpdate: [OptionValueUpdateInput!], $optionValuesToDelete: [ID!], $variantStrategy: ProductOptionUpdateVariantStrategy) {
+    productOptionUpdate(productId: $productId, option: $option, optionValuesToAdd: $optionValuesToAdd, optionValuesToUpdate: $optionValuesToUpdate, optionValuesToDelete: $optionValuesToDelete, variantStrategy: $variantStrategy) {
       product {
         id
         options {
@@ -1178,6 +1295,20 @@ function safeOptionValueCreateInputs(value: ProductOptionValueCreateInput[] | un
     if (!name || seen.has(name)) continue;
     seen.add(name);
     results.push({ name });
+    if (results.length >= 25) break;
+  }
+  return results;
+}
+
+function safeOptionValueIds(value: string[] | undefined): string[] {
+  if (!Array.isArray(value)) return [];
+  const results: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const id = safeText(item, 180);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    results.push(id);
     if (results.length >= 25) break;
   }
   return results;

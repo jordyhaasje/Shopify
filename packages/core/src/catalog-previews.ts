@@ -427,7 +427,8 @@ function summarizeUpdateOptions(options: unknown[]): unknown {
       const id = summarizeValue("id", object.id ?? object.optionId);
       const name = summarizeValue("name", object.name ?? object.optionName);
       const values = summarizeOptionValues(object.values ?? object.optionValues);
-      const fields = Object.fromEntries(Object.entries({ id, name, values }).filter(([, entryValue]) => entryValue !== undefined));
+      const deleteValueIds = summarizeOptionValueIds(object.deleteValueIds ?? object.deletedValueIds ?? object.valuesToDelete ?? object.optionValuesToDelete ?? object.deleteValues);
+      const fields = Object.fromEntries(Object.entries({ id, name, values, deleteValueIds }).filter(([, entryValue]) => entryValue !== undefined));
       return {
         fields,
         omittedFieldCount: Math.max(0, Object.keys(object).length - Object.keys(fields).length)
@@ -450,6 +451,19 @@ function summarizeOptionValues(value: unknown): unknown {
     })
     .filter(Boolean);
   return values.length > 0 ? values : undefined;
+}
+
+function summarizeOptionValueIds(value: unknown): unknown {
+  if (!Array.isArray(value)) return undefined;
+  const ids = value.slice(0, 25)
+    .map((item) => {
+      if (typeof item === "string") return safeString(item, 180);
+      const fields = objectInput(item);
+      const id = fields ? stringValue(fields.id ?? fields.optionValueId) : undefined;
+      return id ? safeString(id, 180) : undefined;
+    })
+    .filter(Boolean);
+  return ids.length > 0 ? ids : undefined;
 }
 
 function summarizeMedia(media: unknown[]): unknown[] {

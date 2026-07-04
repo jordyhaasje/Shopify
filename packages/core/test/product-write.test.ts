@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addProductOptionValues, createConfig, createProduct, createProductOptions, createProductVariants, renameProductOption, renameProductOptionValue, updateProduct, updateProductVariantPrices, type FetchLike } from "../src/index.js";
+import { addProductOptionValues, createConfig, createProduct, createProductOptions, createProductVariants, deleteProductOptionValues, renameProductOption, renameProductOptionValue, updateProduct, updateProductVariantPrices, type FetchLike } from "../src/index.js";
 
 describe("product write helper", () => {
   it("creates a product through the productCreate mutation and returns a safe summary", async () => {
@@ -1047,6 +1047,123 @@ describe("product write helper", () => {
       ok: false,
       status: "user_errors",
       userErrors: [{ field: ["optionValuesToAdd", "0", "name"], message: "Option value already exists." }],
+      diagnostics: [{ code: "shopify_user_errors" }]
+    });
+  });
+
+  it("deletes explicit product option values through only productOptionUpdate with LEAVE_AS_IS", async () => {
+    const requests: Array<{ body: string }> = [];
+    const fetcher: FetchLike = async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          productOptionUpdate: {
+            product: {
+              id: "gid://shopify/Product/1",
+              options: [
+                {
+                  id: "gid://shopify/ProductOption/1",
+                  name: "Color",
+                  position: 1,
+                  optionValues: [
+                    { id: "gid://shopify/ProductOptionValue/2", name: "Red", hasVariants: true, rawNodeOnly: "do-not-return" }
+                  ],
+                  rawNodeOnly: "do-not-return"
+                }
+              ],
+              variants: { nodes: [{ id: "do-not-return" }] }
+            },
+            userErrors: []
+          }
+        }
+      });
+    };
+
+    const result = await deleteProductOptionValues(config(), {
+      productId: "gid://shopify/Product/1",
+      optionId: "gid://shopify/ProductOption/1",
+      valueIds: ["gid://shopify/ProductOptionValue/1"]
+    }, { fetcher });
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "ok",
+      optionValueDelete: {
+        productId: "gid://shopify/Product/1",
+        optionId: "gid://shopify/ProductOption/1",
+        deletedValueCount: 1,
+        valueIds: ["gid://shopify/ProductOptionValue/1"],
+        variantStrategy: "LEAVE_AS_IS",
+        remainingValues: [
+          { id: "gid://shopify/ProductOptionValue/2", name: "Red" }
+        ]
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentProductOptionUpdate");
+    expect(request.query).toContain("productOptionUpdate");
+    expect(request.query).not.toContain("productUpdate");
+    expect(request.query).not.toContain("productOptionsCreate");
+    expect(request.query).not.toContain("inventory");
+    expect(request.query).not.toContain("metafields");
+    expect(request.variables).toEqual({
+      productId: "gid://shopify/Product/1",
+      option: { id: "gid://shopify/ProductOption/1" },
+      optionValuesToDelete: ["gid://shopify/ProductOptionValue/1"],
+      variantStrategy: "LEAVE_AS_IS"
+    });
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("variants");
+    expect(output).not.toContain("shpat_product_secret");
+  });
+
+  it("blocks option value delete read-only config before calling Shopify", async () => {
+    let fetchCalled = false;
+    const result = await deleteProductOptionValues(createConfig({
+      storeUrl: "demo",
+      adminAccessToken: "shpat_product_secret",
+      readOnly: true
+    }), {
+      productId: "gid://shopify/Product/1",
+      optionId: "gid://shopify/ProductOption/1",
+      valueIds: ["gid://shopify/ProductOptionValue/1"]
+    }, {
+      fetcher: async () => {
+        fetchCalled = true;
+        return jsonResponse({});
+      }
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "blocked",
+      diagnostics: [{ code: "read_only" }]
+    });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("returns option value delete user errors safely", async () => {
+    const result = await deleteProductOptionValues(config(), {
+      productId: "gid://shopify/Product/1",
+      optionId: "gid://shopify/ProductOption/1",
+      valueIds: ["gid://shopify/ProductOptionValue/1"]
+    }, {
+      fetcher: async () => jsonResponse({
+        data: {
+          productOptionUpdate: {
+            product: null,
+            userErrors: [{ field: ["optionValuesToDelete", "0"], message: "Option value cannot be deleted.", code: "INVALID" }]
+          }
+        }
+      })
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "user_errors",
+      userErrors: [{ field: ["optionValuesToDelete", "0"], message: "Option value cannot be deleted." }],
       diagnostics: [{ code: "shopify_user_errors" }]
     });
   });
