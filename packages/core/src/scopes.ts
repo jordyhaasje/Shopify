@@ -34,6 +34,21 @@ export const defaultAdminScopes = [
   "write_translations"
 ] as const;
 
+export const defaultReadOnlyAdminScopes = [
+  "read_products",
+  "read_orders",
+  "read_customers",
+  "read_fulfillments",
+  "read_content",
+  "read_online_store_pages",
+  "read_files",
+  "read_themes",
+  "read_inventory",
+  "read_metaobjects",
+  "read_metaobject_definitions",
+  "read_translations"
+] as const;
+
 export function normalizeScopes(input: string | readonly string[]): string[] {
   const raw: readonly string[] = typeof input === "string" ? input.split(",") : input;
   return [...new Set(raw.map((scope) => scope.trim()).filter(Boolean))];

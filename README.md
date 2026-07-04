@@ -54,7 +54,7 @@ The intended future setup is:
 npx shopify-store-agent setup
 ```
 
-The wizard guides users through store URL normalization, manual-token or local-OAuth setup guidance, read-only local config, capability checks, and MCP host snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts. Setup defaults to read-only mode and does not implement or activate Shopify writes.
+The wizard guides users through store URL normalization, manual-token or local-OAuth setup guidance, read-only local config, capability checks, and MCP host snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts. Setup and OAuth auth default to read-only scopes, do not request write scopes for read/preview mode, and do not implement or activate Shopify writes.
 
 `shopify.capabilities.check` is partially real: by default it only inspects local config and redacted capability flags. Optional live mode performs only a minimal shop identity check and does not fetch products, orders, customers, or other sensitive data.
 

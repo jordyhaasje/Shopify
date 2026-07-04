@@ -7,9 +7,9 @@ import {
   checkShopifyCapabilities,
   type CapabilityCheckResult,
   createOAuthState,
-  defaultAdminScopes,
   defaultApiVersion,
   defaultConfigPath,
+  defaultReadOnlyAdminScopes,
   exchangeCodeForOfflineToken,
   createConfig,
   emptyCapabilities,
@@ -17,6 +17,7 @@ import {
   normalizeScopes,
   saveStoredConfig,
   scopesToString,
+  type TokenFetch,
   validateOAuthCallback,
   redactConfig,
   summarizeCapabilities,
@@ -48,6 +49,7 @@ export interface AuthOptions {
   readOnly?: boolean;
   open?: boolean;
   configPath?: string;
+  tokenFetcher?: TokenFetch;
 }
 
 export interface SetupWarning {
@@ -68,21 +70,6 @@ export interface SetupResult {
   snippets: Record<"codex" | "claude" | "cursor" | "generic", string>;
   nextSteps: string[];
 }
-
-const readOnlyAdminScopes = [
-  "read_products",
-  "read_orders",
-  "read_customers",
-  "read_fulfillments",
-  "read_content",
-  "read_online_store_pages",
-  "read_files",
-  "read_themes",
-  "read_inventory",
-  "read_metaobjects",
-  "read_metaobject_definitions",
-  "read_translations"
-] as const;
 
 export function generateMcpConfigSnippets(config: StoreAgentConfig, options: { configPath?: string } = {}): Record<"codex" | "claude" | "cursor" | "generic", string> {
   const env = {
@@ -141,7 +128,8 @@ export async function runOAuthInstall(options: AuthOptions): Promise<{
     const storeUrl = options.storeUrl ?? await rl!.question("Shopify store URL: ");
     const clientId = options.clientId ?? await rl!.question("Shopify app client ID: ");
     const clientSecret = options.clientSecret ?? await rl!.question("Shopify app client secret: ");
-    const scopes = normalizeScopes(options.scopes ?? defaultAdminScopes);
+    const readOnly = options.readOnly ?? true;
+    const scopes = resolveSetupScopes(options.scopes, readOnly);
     const port = options.redirectPort ?? 3456;
     const redirectUri = `http://127.0.0.1:${port}/auth/callback`;
     const state = createOAuthState();
@@ -165,11 +153,11 @@ export async function runOAuthInstall(options: AuthOptions): Promise<{
       clientId,
       clientSecret,
       code: callback.code!
-    });
+    }, options.tokenFetcher);
     const config = createConfig({
       storeUrl: callback.shop ?? storeUrl,
       adminAccessToken: token.access_token,
-      readOnly: options.readOnly ?? true
+      readOnly
     });
     const configPath = options.configPath ?? defaultConfigPath();
     await saveStoredConfig({
@@ -218,9 +206,9 @@ export async function runSetup(options: SetupOptions): Promise<{
       : undefined;
     const themeAccessToken = options.themeAccessToken ?? (interactive ? await rl!.question("Theme Access token (optional, stored locally only): ") : undefined);
     const configPath = options.configPath ?? defaultConfigPath();
-    const scopes = normalizeScopes(options.scopes ?? readOnlyAdminScopes);
     const readOnly = options.readOnly ?? true;
-    const warnings = setupWarnings(readOnly);
+    const scopes = resolveSetupScopes(options.scopes, readOnly);
+    const warnings = setupWarnings(readOnly, scopes);
     const config = createConfig({
       storeUrl,
       adminAccessToken: adminAccessToken || undefined,
@@ -359,12 +347,30 @@ function normalizeAuthMethod(value: unknown): "manual" | "oauth" {
   return typeof value === "string" && value.trim().toLowerCase() === "oauth" ? "oauth" : "manual";
 }
 
-function setupWarnings(readOnly: boolean): SetupWarning[] {
-  if (readOnly) return [];
-  return [{
-    code: "write_mode_requested",
-    message: "Write mode was requested in config, but setup does not implement or activate Shopify execute/write tools."
-  }];
+function resolveSetupScopes(input: string | readonly string[] | undefined, readOnly: boolean): string[] {
+  const scopes = normalizeScopes(input ?? defaultReadOnlyAdminScopes);
+  const writeScopes = scopes.filter((scope) => scope.toLowerCase().startsWith("write_"));
+  if (readOnly && writeScopes.length > 0) {
+    throw new Error("write_scopes_blocked: Write scopes require --write-enabled, and Shopify write tools are not implemented yet.");
+  }
+  return scopes;
+}
+
+function setupWarnings(readOnly: boolean, scopes: readonly string[]): SetupWarning[] {
+  const warnings: SetupWarning[] = [];
+  if (!readOnly) {
+    warnings.push({
+      code: "write_mode_requested",
+      message: "Write mode was requested in config, but setup does not implement or activate Shopify execute/write tools."
+    });
+  }
+  if (scopes.some((scope) => scope.toLowerCase().startsWith("write_"))) {
+    warnings.push({
+      code: "write_scopes_requested",
+      message: "Write scopes were explicitly requested, but Shopify write tools are not implemented yet."
+    });
+  }
+  return warnings;
 }
 
 function setupNextSteps(authMethod: "manual" | "oauth", configPath: string): string[] {
