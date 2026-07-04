@@ -38,9 +38,9 @@ It must continue to ignore loose execute-only input, require a safe product ID, 
 
 ### 1. Keep Basic Product Update Separate
 
-Do not silently add media, option reorder, SEO, inventory, metafields, publications, translations, or collection changes to the existing product update path.
+Do not silently add media, SEO, inventory, metafields, publications, translations, or collection changes to the existing product update path.
 
-Any future expansion of `product.update.execute` must be a separate roadmap item with focused tests and docs. The existing basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-delete, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, and explicit-option-value-delete mutations should remain easy to review and reason about.
+Any future expansion of `product.update.execute` must be a separate roadmap item with focused tests and docs. The existing basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-delete, explicit-option-reorder, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, and explicit-option-value-delete mutations should remain easy to review and reason about.
 
 ### 2. First Media Execute Candidate: Add New Product Media
 

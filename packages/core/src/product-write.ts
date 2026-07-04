@@ -98,6 +98,22 @@ export interface ProductOptionsDeleteInput {
   optionIds: string[];
 }
 
+export interface ProductOptionReorderValueInput {
+  id?: string;
+  name?: string;
+}
+
+export interface ProductOptionReorderInput {
+  id?: string;
+  name?: string;
+  values?: ProductOptionReorderValueInput[];
+}
+
+export interface ProductOptionsReorderInput {
+  productId: string;
+  options: ProductOptionReorderInput[];
+}
+
 export interface ProductCreateSummary {
   id: string;
   title?: string;
@@ -186,6 +202,12 @@ export interface ProductOptionsDeleteSummary {
   strategy: "NON_DESTRUCTIVE";
 }
 
+export interface ProductOptionsReorderSummary {
+  productId: string;
+  reorderedOptionCount: number;
+  options: ProductOptionSummary[];
+}
+
 export interface ProductWriteDiagnostic {
   severity: "warning" | "error";
   code: string;
@@ -237,6 +259,10 @@ export interface ProductOptionValueDeleteResult extends ProductWriteResultBase {
 
 export interface ProductOptionsDeleteResult extends ProductWriteResultBase {
   optionDelete?: ProductOptionsDeleteSummary;
+}
+
+export interface ProductOptionsReorderResult extends ProductWriteResultBase {
+  optionReorder?: ProductOptionsReorderSummary;
 }
 
 export interface ProductWriteOptions {
@@ -313,6 +339,16 @@ interface ProductOptionsCreateData {
 interface ProductOptionsDeleteData {
   productOptionsDelete?: {
     deletedOptionsIds?: unknown[] | null;
+    product?: {
+      id?: unknown;
+      options?: Array<ProductOptionSummaryNode | null> | null;
+    } | null;
+    userErrors?: GraphqlUserError[];
+  } | null;
+}
+
+interface ProductOptionsReorderData {
+  productOptionsReorder?: {
     product?: {
       id?: unknown;
       options?: Array<ProductOptionSummaryNode | null> | null;
@@ -817,6 +853,87 @@ export async function deleteProductOptions(
   };
 }
 
+export async function reorderProductOptions(
+  config: StoreAgentConfig,
+  input: ProductOptionsReorderInput,
+  options: ProductWriteOptions = {}
+): Promise<ProductOptionsReorderResult> {
+  if (config.readOnly) return blocked("Product option reorder is blocked because read-only mode is enabled.");
+
+  const productId = safeText(input.productId, 180);
+  if (!productId) return missingInput("Provide a product ID.");
+
+  const optionOrder = safeOptionReorderInputs(input.options);
+  if (optionOrder.length < 2) return missingInput("Provide at least two explicit product options in the desired order.");
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  let result: ShopifyGraphqlResult<ProductOptionsReorderData>;
+  try {
+    result = await client.request<ProductOptionsReorderData>({
+      query: productOptionsReorderMutation,
+      variables: {
+        productId,
+        options: optionOrder
+      }
+    });
+  } catch {
+    return shopifyFailure("Shopify product option reorder request failed before a safe response was available.");
+  }
+
+  if (!result.ok) return mapGraphqlFailure(result);
+
+  const userErrors = result.data.productOptionsReorder?.userErrors ?? result.userErrors;
+  if (userErrors.length > 0) {
+    return {
+      ok: false,
+      status: "user_errors",
+      summary: "Shopify rejected the product option reorder request.",
+      userErrors: sanitizeUserErrors(userErrors),
+      diagnostics: [{ severity: "warning", code: "shopify_user_errors", message: "Shopify returned product option reorder user errors." }]
+    };
+  }
+
+  const productNode = result.data.productOptionsReorder?.product;
+  const updatedProductId = safeText(productNode?.id, 180);
+  if (!updatedProductId) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product option reorder response did not include a product ID.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product option reorder response did not include a product ID." }]
+    };
+  }
+
+  const reorderedOptions = (productNode?.options ?? [])
+    .map((candidate) => optionSummaryFromNode(candidate))
+    .filter((option): option is ProductOptionSummary => Boolean(option))
+    .slice(0, 10);
+  const returnedOrder = reorderedOptions.slice(0, optionOrder.length);
+  if (returnedOrder.length < optionOrder.length || optionOrder.some((requested, index) => !optionMatchesRequested(returnedOrder[index], requested))) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product option reorder response did not reflect the requested option order.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product option reorder response did not reflect the requested option order." }]
+    };
+  }
+
+  return {
+    ok: true,
+    status: "ok",
+    summary: `Reordered ${optionOrder.length} Shopify product option${optionOrder.length === 1 ? "" : "s"}.`,
+    optionReorder: {
+      productId: updatedProductId,
+      reorderedOptionCount: optionOrder.length,
+      options: reorderedOptions
+    },
+    userErrors: [],
+    diagnostics: []
+  };
+}
+
 export async function renameProductOption(
   config: StoreAgentConfig,
   input: ProductOptionRenameInput,
@@ -1281,6 +1398,31 @@ const productOptionsDeleteMutation = /* GraphQL */ `
   }
 `;
 
+const productOptionsReorderMutation = /* GraphQL */ `
+  mutation ShopifyStoreAgentProductOptionsReorder($productId: ID!, $options: [OptionReorderInput!]!) {
+    productOptionsReorder(productId: $productId, options: $options) {
+      product {
+        id
+        options {
+          id
+          name
+          position
+          optionValues {
+            id
+            name
+            hasVariants
+          }
+        }
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
 const productOptionUpdateMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentProductOptionUpdate($productId: ID!, $option: OptionUpdateInput!, $optionValuesToAdd: [OptionValueCreateInput!], $optionValuesToUpdate: [OptionValueUpdateInput!], $optionValuesToDelete: [ID!], $variantStrategy: ProductOptionUpdateVariantStrategy) {
     productOptionUpdate(productId: $productId, option: $option, optionValuesToAdd: $optionValuesToAdd, optionValuesToUpdate: $optionValuesToUpdate, optionValuesToDelete: $optionValuesToDelete, variantStrategy: $variantStrategy) {
@@ -1306,7 +1448,7 @@ const productOptionUpdateMutation = /* GraphQL */ `
   }
 `;
 
-function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<ProductCreateData | ProductUpdateData | ProductVariantsBulkUpdateData | ProductVariantsBulkCreateData | ProductOptionsCreateData | ProductOptionsDeleteData | ProductOptionUpdateData>, { ok: false }>): ProductWriteResultBase {
+function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<ProductCreateData | ProductUpdateData | ProductVariantsBulkUpdateData | ProductVariantsBulkCreateData | ProductOptionsCreateData | ProductOptionsDeleteData | ProductOptionsReorderData | ProductOptionUpdateData>, { ok: false }>): ProductWriteResultBase {
   return {
     ok: false,
     status: "shopify_error",
@@ -1437,6 +1579,48 @@ function safeOptionIds(value: string[] | undefined): string[] {
   return results;
 }
 
+function safeOptionReorderInputs(value: ProductOptionReorderInput[] | undefined): ProductOptionReorderInput[] {
+  if (!Array.isArray(value)) return [];
+  const results: ProductOptionReorderInput[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const id = safeText(item?.id, 180);
+    const name = safeNonSecretText(item?.name, 120);
+    if (!id && !name) continue;
+    const key = id ? `id:${id}` : `name:${name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const option: ProductOptionReorderInput = {};
+    if (id) option.id = id;
+    else if (name) option.name = name;
+    const values = safeOptionReorderValues(item?.values);
+    if (values.length > 0) option.values = values;
+    results.push(option);
+    if (results.length >= 3) break;
+  }
+  return results;
+}
+
+function safeOptionReorderValues(value: ProductOptionReorderValueInput[] | undefined): ProductOptionReorderValueInput[] {
+  if (!Array.isArray(value)) return [];
+  const results: ProductOptionReorderValueInput[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const id = safeText(item?.id, 180);
+    const name = safeNonSecretText(item?.name, 120);
+    if (!id && !name) continue;
+    const key = id ? `id:${id}` : `name:${name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const optionValue: ProductOptionReorderValueInput = {};
+    if (id) optionValue.id = id;
+    else if (name) optionValue.name = name;
+    results.push(optionValue);
+    if (results.length >= 25) break;
+  }
+  return results;
+}
+
 function safeOptionUpdateInput(value: ProductOptionUpdateInput | undefined): ProductOptionUpdateInput | undefined {
   const id = safeText(value?.id, 180);
   const name = safeNonSecretText(value?.name, 120);
@@ -1493,6 +1677,12 @@ function optionValueSummaryFromNode(value: { id?: unknown; name?: unknown } | nu
   const id = safeText(value?.id, 180);
   const name = safeNonSecretText(value?.name, 120);
   return id && name ? { id, name } : undefined;
+}
+
+function optionMatchesRequested(option: ProductOptionSummary | undefined, requested: ProductOptionReorderInput): boolean {
+  if (!option) return false;
+  if (requested.id) return option.id === requested.id;
+  return Boolean(requested.name && option.name === requested.name);
 }
 
 function safeOptionValueNames(value: unknown): string[] {
