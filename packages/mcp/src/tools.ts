@@ -1,5 +1,6 @@
 import {
-  MemoryAuditLog,
+  type AuditLog,
+  FileAuditLog,
   assertWritable,
   checkShopifyCapabilities,
   checkWriteScopePreflight,
@@ -19,6 +20,7 @@ import {
   getProduct,
   getTracking,
   loadStoredConfig,
+  defaultAuditLogPath,
   defaultPreviewStorePath,
   FilePreviewStore,
   MemoryPreviewStore,
@@ -61,7 +63,7 @@ export interface ToolDefinition {
 
 export interface ToolContext {
   config: StoreAgentConfig;
-  audit: MemoryAuditLog;
+  audit: AuditLog;
   fetcher?: FetchLike;
   previewStore?: MemoryPreviewStore;
 }
@@ -1024,17 +1026,25 @@ function looksLikeSecret(value: string): boolean {
 export async function createDefaultContext(): Promise<ToolContext> {
   const configPath = process.env.SHOPIFY_STORE_AGENT_CONFIG;
   const stored = await loadStoredConfig(configPath);
+  const config = stored ?? createConfig({
+    storeUrl: process.env.SHOPIFY_STORE_AGENT_STORE ?? "example.myshopify.com",
+    adminAccessToken: process.env.SHOPIFY_STORE_AGENT_ADMIN_TOKEN,
+    themeAccessToken: process.env.SHOPIFY_STORE_AGENT_THEME_TOKEN,
+    readOnly: process.env.SHOPIFY_STORE_AGENT_READ_ONLY !== "false",
+    capabilities: emptyCapabilities()
+  });
   return {
-    config: stored ?? createConfig({
-      storeUrl: process.env.SHOPIFY_STORE_AGENT_STORE ?? "example.myshopify.com",
-      adminAccessToken: process.env.SHOPIFY_STORE_AGENT_ADMIN_TOKEN,
-      themeAccessToken: process.env.SHOPIFY_STORE_AGENT_THEME_TOKEN,
-      readOnly: process.env.SHOPIFY_STORE_AGENT_READ_ONLY !== "false",
-      capabilities: emptyCapabilities()
-    }),
-    audit: new MemoryAuditLog(),
+    config,
+    audit: new FileAuditLog({ path: auditLogPath(configPath, config) }),
     previewStore: new FilePreviewStore({ path: previewStorePath(configPath) })
   };
+}
+
+function auditLogPath(configPath: string | undefined, config: StoreAgentConfig): string {
+  if (process.env.SHOPIFY_STORE_AGENT_AUDIT_LOG) return process.env.SHOPIFY_STORE_AGENT_AUDIT_LOG;
+  if (config.auditLogPath) return config.auditLogPath;
+  if (configPath) return join(dirname(configPath), "audit.jsonl");
+  return defaultAuditLogPath();
 }
 
 function previewStorePath(configPath: string | undefined): string {

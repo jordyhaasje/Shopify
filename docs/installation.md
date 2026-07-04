@@ -135,6 +135,14 @@ The MCP default context stores safe preview binding records here by default:
 
 When `SHOPIFY_STORE_AGENT_CONFIG` points to a custom config path, preview records are stored as `previews.json` beside that config file. Set `SHOPIFY_STORE_AGENT_PREVIEW_STORE` to override the preview-store path. The preview store contains sanitized binding material only; it must not contain raw reviewed payloads, raw Shopify nodes, tokens, or customer/order data.
 
+The MCP default context also stores safe audit entries locally:
+
+```text
+~/.shopify-store-agent/audit.jsonl
+```
+
+When `SHOPIFY_STORE_AGENT_CONFIG` points to a custom config path, audit entries are stored as `audit.jsonl` beside that config file. Set `SHOPIFY_STORE_AGENT_AUDIT_LOG` or config `auditLogPath` to override the audit path. The audit log contains compact tool metadata only; it must not contain secrets, raw Shopify nodes, raw reviewed payloads, or customer/order dumps.
+
 The setup wizard prints MCP snippets for:
 
 - Codex.

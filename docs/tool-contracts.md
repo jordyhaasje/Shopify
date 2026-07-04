@@ -15,6 +15,8 @@ Every write tool has the same safety requirements:
 - Audit requirement: preview and execute attempts must be written to the audit log with tool name, target, mode, summary, and result.
 - Failure behavior: fail closed, do not partially continue silently, return a clear error, and leave enough audit context for review.
 
+The MCP default context persists audit entries to local append-only JSONL. The default path is `audit.jsonl` beside the configured local config file, with `SHOPIFY_STORE_AGENT_AUDIT_LOG` and config `auditLogPath` available as local overrides. Audit entries are evidence metadata only; they must stay compact and must not contain secrets, raw Shopify response nodes, raw reviewed payloads, or customer/order dumps.
+
 Structured catalog/content preview tools return `ok`, `status`, `previewId`, `summary`, `target`, `proposedChanges`, `warnings`, `requiredConfirmationForExecute`, and `auditContext`. The output intentionally summarizes large user payloads and redacts secret-looking values instead of echoing raw full inputs.
 
 Implemented write previews also return `executeRequest` as an AI-host UX helper. For `product.create.preview`, it points to `product.create.execute`; for `page.create.preview`, it points to `page.create.execute`; for `collection.create.preview`, it points to `collection.create.execute`. The helper contains the execute tool name, expected preview tool, preview ID, target, preview hash, safe reviewed payload, reviewed changes hash, and confirmation requirement. It is only a prepared request for review. It must not be treated as auto-execute, must not be submitted without explicit user approval, and does not bypass stored-preview validation.
