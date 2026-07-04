@@ -10,6 +10,10 @@ Shopify Store Agent is not a Shopify App Store app, not an embedded Shopify Admi
 
 Shopify OAuth, when used, is only a local install/auth mechanism for the MCP/CLI package. Manual Admin API token setup remains supported.
 
+## Start Here
+
+New users should start with the compact [User Quickstart](docs/user-quickstart.md). It walks through GitHub install, local OAuth, MCP host config, first read, first preview, and reviewed execute flow for Codex, OpenCode, Claude Code, Cursor, and generic MCP-compatible hosts.
+
 ## Current Status
 
 The foundation is in place: auth, config storage, documentation, MCP SDK startup, setup wizard scaffolding, safety helpers, Admin GraphQL client, capability diagnostics, and structured catalog/content preview helpers.
@@ -58,7 +62,7 @@ http://127.0.0.1:3456/auth/callback
 
 OAuth is the recommended auth route when the user has Shopify app client credentials. Run `shopify-store-agent auth` through pnpm to open the browser install flow and store the resulting Admin API token locally. `setup --auth oauth` only prints guidance and MCP snippets; it does not exchange a token. Manual Admin API token setup remains supported as a fallback.
 
-See [docs/installation.md](docs/installation.md) for OAuth and manual token setup, [docs/ai-operator-guide.md](docs/ai-operator-guide.md) for Codex/OpenCode/Claude Code/Cursor operator guidance, and [docs/dev-store-e2e-runbook.md](docs/dev-store-e2e-runbook.md) for manual development-store validation.
+Start with [docs/user-quickstart.md](docs/user-quickstart.md). See [docs/installation.md](docs/installation.md) for OAuth and manual token setup, [docs/ai-operator-guide.md](docs/ai-operator-guide.md) for deeper Codex/OpenCode/Claude Code/Cursor operator guidance, and [docs/dev-store-e2e-runbook.md](docs/dev-store-e2e-runbook.md) for manual development-store validation.
 
 ## Future NPM Setup
 

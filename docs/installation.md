@@ -2,6 +2,8 @@
 
 Shopify Store Agent is a local-first MCP + CLI + bootstrap skill package for AI hosts. It is not a Shopify App Store app or embedded Shopify Admin app.
 
+New users should start with [user-quickstart.md](user-quickstart.md). This installation document is the deeper reference for setup, OAuth, manual token fallback, local config, and validation details.
+
 ## Current GitHub-Only Setup
 
 This path is temporary while npm publishing is not active. It is the current primary working route:
