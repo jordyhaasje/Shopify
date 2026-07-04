@@ -28,10 +28,10 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 7. The AI host executes only through the matching execute tool with strict stored preview binding and `confirmed: true`.
 8. Output and audit entries stay safe, compact, and free of secrets, raw Shopify nodes, raw reviewed payloads, and large dumps.
 
-## Current MVP Status After PR #27
+## Current MVP Status After PR #31
 
 - GitHub-local install is the primary working route.
-- Local OAuth-first setup is documented and implemented, with manual token fallback still supported.
+- Local OAuth-first setup is documented and implemented, with hidden interactive client-secret entry and manual token fallback still supported.
 - Setup generates MCP snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts.
 - Read tools are implemented for explicit inputs.
 - Preview tools are implemented for product, page, collection, import, media, and related planning surfaces.
@@ -44,6 +44,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 - Safe audit entries persist locally across MCP server restarts in an append-only JSONL file.
 - npm/npx package metadata is prepared, locally pack-checkable, and covered by a manual release runbook, but packages are not published.
 - A compact user quickstart exists for AI coding harness users.
+- Local dev-store E2E config preflight exists to verify the expected store, config path, token presence, granted scopes, and write-mode state before any manual live write run.
 - Manual development-store E2E validation has been run once against a development store with safe evidence recorded in the PR. The flow covered local validation, OAuth setup, live-safe capability check, preview-bound page create, preview-bound product create, preview-bound basic-field product update, negative execute checks, audit/output safety review, and read-only config restoration.
 - Local smoke validation exists and remains local/no-write with `fetchCalls: 0`.
 
