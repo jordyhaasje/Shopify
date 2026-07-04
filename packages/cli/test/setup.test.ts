@@ -296,6 +296,61 @@ describe("setup", () => {
     }
   });
 
+  it("stores the canonical OAuth callback shop when it differs from the requested domain", async () => {
+    const port = await unusedPort();
+    const logs: string[] = [];
+    const originalLog = console.log;
+    const tokenExchangeUrls: string[] = [];
+    console.log = (...values: unknown[]) => {
+      logs.push(values.map(String).join(" "));
+    };
+    try {
+      const directory = await mkdtemp(join(tmpdir(), "shopify-store-agent-oauth-mismatch-"));
+      const configPath = join(directory, "config.json");
+      const install = runOAuthInstall({
+        storeUrl: "demo",
+        clientId: "client-id-123",
+        clientSecret: "client-secret-123",
+        redirectPort: port,
+        configPath,
+        tokenFetcher: async (url) => {
+          tokenExchangeUrls.push(url);
+          return {
+            ok: true,
+            status: 200,
+            async text() {
+              return JSON.stringify({
+                access_token: "shpat_oauth_secret",
+                scope: "read_products"
+              });
+            }
+          };
+        }
+      });
+
+      const installUrl = await waitForInstallUrl(logs);
+      const state = installUrl.searchParams.get("state") ?? "";
+      await fetch(`http://127.0.0.1:${port}/auth/callback?${signedOAuthCallback({
+        code: "code-123",
+        shop: "other-demo.myshopify.com",
+        state,
+        timestamp: "123"
+      }, "client-secret-123")}`);
+
+      const result = await install;
+      const saved = JSON.parse(await readFile(configPath, "utf8")) as { storeUrl?: string; adminAccessToken?: string };
+      const output = logs.join("\n");
+
+      expect(result.storeUrl).toBe("other-demo.myshopify.com");
+      expect(saved.storeUrl).toBe("other-demo.myshopify.com");
+      expect(saved.adminAccessToken).toBe("shpat_oauth_secret");
+      expect(tokenExchangeUrls).toEqual(["https://other-demo.myshopify.com/admin/oauth/access_token"]);
+      expect(output).toContain("canonical shop other-demo.myshopify.com");
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
   it("blocks explicit OAuth write scopes unless write mode is explicitly enabled", async () => {
     await expect(runOAuthInstall({
       storeUrl: "demo",
@@ -403,7 +458,7 @@ describe("setup", () => {
       apiVersion: "2026-07",
       adminAccessToken: "shpat_e2e_preflight_secret",
       readOnly: false,
-      grantedScopes: ["read_products", "read_content", "read_online_store_pages", "write_products", "write_content"]
+      grantedScopes: ["read_online_store_pages", "write_products", "write_content"]
     }, null, 2));
 
     const result = await runDevStoreE2ePreflight({

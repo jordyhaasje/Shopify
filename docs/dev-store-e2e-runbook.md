@@ -159,7 +159,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --scopes "read_products,read_content,read_online_store_pages"
 ```
 
-`auth` is the real OAuth browser flow. `setup --auth oauth` only prints guidance and snippets; it does not exchange a token.
+`auth` is the real OAuth browser flow. `setup --auth oauth` only prints guidance and snippets; it does not exchange a token. When a store has multiple connected domains, Shopify can return the original canonical `.myshopify.com` domain in the OAuth callback even if `--store` used the primary storefront domain. Use the canonical stored config domain for Admin API validation and preflight after OAuth completes.
 
 Manual Admin API token setup remains available as a fallback:
 
@@ -201,7 +201,7 @@ pnpm --filter shopify-store-agent run e2e-preflight -- \
   --require-write-enabled
 ```
 
-The preflight must pass before live write E2E. It fails closed when the config is missing, points at a different store, lacks a local Admin API token, is still read-only while write testing is requested, or lacks required local granted scopes. Do not continue live E2E with a failed preflight.
+The preflight must pass before live write E2E. It fails closed when the config is missing, points at a different store, lacks a local Admin API token, is still read-only while write testing is requested, or lacks required local granted scopes. Shopify can omit a read scope from the granted scope string when the matching write scope is granted, so local preflight treats `write_products`, `write_content`, and similar write scopes as satisfying their paired read checks. Do not continue live E2E with a failed preflight.
 
 ## MCP Host Connection
 
