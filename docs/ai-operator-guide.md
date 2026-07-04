@@ -124,9 +124,10 @@ Current real write tools:
 - `page.create.execute`
 - `product.create.execute`
 - `product.update.execute` for basic product fields only
+- `collection.create.execute` for custom collections with explicit product IDs only
 
 All other execute tools are placeholders. A real write still requires preview output, stored preview binding, matching target/tool/hash values, matching reviewed payload hash, read-only mode disabled, required local granted scopes, and explicit user confirmation.
 
-`product.create.preview` and `page.create.preview` include an `executeRequest` helper. It contains the matching execute tool, expected preview tool, `previewId`, target, `previewHash`, safe reviewed payload, reviewed changes hash, and confirmation requirement. Use it to prepare the execute call for review, not to run automatically.
+`product.create.preview`, `page.create.preview`, and `collection.create.preview` include an `executeRequest` helper. It contains the matching execute tool, expected preview tool, `previewId`, target, `previewHash`, safe reviewed payload, reviewed changes hash, and confirmation requirement. Use it to prepare the execute call for review, not to run automatically.
 
 Before any real write, the user must review the preview and explicitly approve. The execute call must include `confirmed: true`; without that, execute remains blocked. The helper does not bypass the stored preview, does not weaken hash validation, and does not make placeholder execute tools real writes.

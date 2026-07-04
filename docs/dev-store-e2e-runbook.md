@@ -13,6 +13,7 @@ The goal is to test the current local-first flow end to end:
 - `page.create.execute`.
 - `product.create.execute`.
 - `product.update.execute` for basic fields only.
+- `collection.create.execute` for custom collections with explicit product IDs only.
 - Audit and output safety.
 
 ## Requirements
@@ -47,6 +48,7 @@ Manual development-store E2E validation:
 - page.create.execute: passed/failed/skipped
 - product.create.execute: passed/failed/skipped
 - product.update.execute: passed/failed/skipped
+- collection.create.execute: passed/failed/skipped
 - Negative execute checks: passed/failed/skipped
 - Audit/output safety review: passed/failed/skipped
 - Cleanup completed:
@@ -92,7 +94,7 @@ or:
 write_online_store_pages
 ```
 
-For `product.create.execute` or basic-field `product.update.execute`, add:
+For `product.create.execute`, basic-field `product.update.execute`, or custom explicit-product `collection.create.execute`, add:
 
 ```text
 write_products
@@ -172,7 +174,7 @@ pnpm --filter shopify-store-agent run setup -- \
   --scopes "read_products,read_content,read_online_store_pages,write_products,write_content"
 ```
 
-Use only the write scope needed for the specific test. For page-only validation, `write_content` or `write_online_store_pages` is enough. For product create or basic-field product update validation, `write_products` is required.
+Use only the write scope needed for the specific test. For page-only validation, `write_content` or `write_online_store_pages` is enough. For product create, basic-field product update, or custom explicit-product collection create validation, `write_products` is required.
 
 For deliberate OAuth write testing on a development store, run `auth` with write mode and the minimal reviewed scope set:
 
@@ -185,7 +187,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --scopes "read_products,read_content,read_online_store_pages,write_products,write_content"
 ```
 
-Write mode is only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, or basic-field `product.update.execute`. All other execute tools remain fail-closed placeholders.
+Write mode is only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field `product.update.execute`, or custom explicit-product `collection.create.execute`. All other execute tools remain fail-closed placeholders.
 
 ## MCP Host Connection
 
@@ -379,11 +381,64 @@ Use the stored preview content as the source of truth. Unrelated loose execute i
 - No variants, inventory, media/files/images, collections, metafields, SEO, publications/channels, translations, delete, or bulk operations are performed.
 - Output and audit contain no secrets, raw reviewed payload, raw descriptions, or full Shopify node.
 
+## Collection Create E2E
+
+Use only disposable/development products and a temporary collection title.
+
+1. Run `collection.create.preview` with safe test data and explicit product IDs:
+
+```json
+{
+  "title": "Store Agent Test Collection",
+  "handle": "store-agent-test-collection",
+  "productIds": ["gid://shopify/Product/<test-product-id>"]
+}
+```
+
+2. Review the preview binding values:
+
+- `previewId`
+- `previewHash`
+- `binding`
+- `executeRequest`
+- `target`
+- `proposedChanges`
+- `warnings`
+
+`executeRequest` is a convenience helper for the AI host. It is not auto-execute and must not be submitted until the user explicitly approves the reviewed preview.
+
+3. Confirm read-only mode is explicitly off only for this development-store test.
+
+4. Confirm local granted scopes include `write_products`.
+
+5. Run `collection.create.execute` with the reviewed binding values:
+
+```json
+{
+  "previewId": "<previewId from collection.create.preview>",
+  "confirmed": true,
+  "reviewedPayload": "<safe reviewed preview payload>",
+  "expectedTool": "collection.create.preview",
+  "target": "<binding target>",
+  "previewHash": "<previewHash>",
+  "reviewedChangesHash": "<hash of the actual reviewed payload>"
+}
+```
+
+Use the stored preview content as the source of truth. Unrelated loose execute input must be ignored.
+
+6. Confirm:
+
+- The Shopify collection is created in the development store.
+- Output contains only a safe collection summary: `id`, `title`, and `handle`.
+- No rule-based or smart collection, publishing, SEO, metafield, media/image, navigation, product discovery, update/delete, or bulk operation is performed.
+- Output and audit contain no secrets, raw reviewed payload, raw product dump, or full Shopify node.
+
 ## Negative Tests
 
 Run these manually against the development-store setup:
 
-- Read-only mode on: `page.create.execute`, `product.create.execute`, and `product.update.execute` return `blocked`.
+- Read-only mode on: `page.create.execute`, `product.create.execute`, `product.update.execute`, and `collection.create.execute` return `blocked`.
 - Missing `confirmed: true`: execute returns `blocked`.
 - Missing `previewId`: execute returns `blocked`.
 - Expired preview: execute returns `blocked`.
@@ -391,6 +446,7 @@ Run these manually against the development-store setup:
 - Missing or unknown write scope: execute returns `blocked` before fetch.
 - Unrelated loose execute input is ignored after a valid stored preview binding.
 - Product update with handle-only target and no safe product ID returns `blocked`.
+- Collection create from rule-based or smart collection preview returns `blocked`.
 - Remaining placeholder execute tools return `not_implemented` after valid binding.
 
 Placeholder execute tools are:
@@ -398,7 +454,6 @@ Placeholder execute tools are:
 ```text
 product.media.update.execute
 product.importFromUserUrl.execute
-collection.create.execute
 customer.updateAddress.execute
 tracking.update.execute
 refund.execute
@@ -419,7 +474,7 @@ Confirm:
 - No order/customer dump.
 - Blocked cases audit `blocked`.
 - Placeholder cases audit `not_implemented`.
-- Successful `page.create.execute`, `product.create.execute`, and `product.update.execute` audit `success` only after Shopify write success.
+- Successful `page.create.execute`, `product.create.execute`, `product.update.execute`, and `collection.create.execute` audit `success` only after Shopify write success.
 
 ## Troubleshooting
 

@@ -253,9 +253,9 @@ export async function runSmokeValidation(options: SmokeOptions = {}): Promise<Sm
   checks.push(check("preview_output", preview.ok === true && preview.status === "ok", "Product create preview generated."));
   checks.push(check("preview_store_record", stored.ok === true, "Preview store received a record."));
 
-  const placeholderPreview = await callTool("collection.create.preview", {
-    title: "Smoke Test Collection",
-    productIds: ["gid://shopify/Product/1"]
+  const placeholderPreview = await callTool("product.media.update.preview", {
+    productId: "gid://shopify/Product/1",
+    media: [{ url: "https://example.com/smoke.jpg", altText: "Smoke test media" }]
   }, context) as Record<string, unknown>;
   const placeholderPreviewId = typeof placeholderPreview.previewId === "string" ? placeholderPreview.previewId : undefined;
   const placeholderPreviewHash = typeof placeholderPreview.previewHash === "string" ? placeholderPreview.previewHash : undefined;
@@ -270,7 +270,7 @@ export async function runSmokeValidation(options: SmokeOptions = {}): Promise<Sm
       capabilities: emptyCapabilities()
     })
   };
-  const invalidExecute = await callTool("collection.create.execute", {
+  const invalidExecute = await callTool("product.media.update.execute", {
     previewId: placeholderPreviewId,
     confirmed: true,
     reviewedPayload: { arbitrary: "payload" },
@@ -278,7 +278,7 @@ export async function runSmokeValidation(options: SmokeOptions = {}): Promise<Sm
     target: placeholderBinding.target,
     previewHash: placeholderPreviewHash,
     reviewedChangesHash: placeholderPreviewHash,
-    title: "Smoke Test Collection"
+    productId: "gid://shopify/Product/1"
   }, executeContext) as Record<string, unknown>;
   checks.push(check("invalid_execute_blocked", invalidExecute.status === "blocked", "Invalid execute binding is blocked."));
 
@@ -286,7 +286,7 @@ export async function runSmokeValidation(options: SmokeOptions = {}): Promise<Sm
   const reviewedPayload = activeRecord ? reviewedPayloadForPreviewRecord(activeRecord) : {};
   const reviewedChangesHash = hashPreviewContent(reviewedPayload);
   const target = activeRecord ? previewRecordBindingTarget(activeRecord) : placeholderBinding.target;
-  const validExecute = await callTool("collection.create.execute", {
+  const validExecute = await callTool("product.media.update.execute", {
     previewId: placeholderPreviewId,
     confirmed: true,
     reviewedPayload,
@@ -294,7 +294,7 @@ export async function runSmokeValidation(options: SmokeOptions = {}): Promise<Sm
     target,
     previewHash: placeholderPreviewHash,
     reviewedChangesHash,
-    title: "Smoke Test Collection"
+    productId: "gid://shopify/Product/1"
   }, executeContext) as Record<string, unknown>;
   checks.push(check("valid_execute_not_implemented", validExecute.status === "not_implemented", "Valid stored binding reaches only the not-implemented placeholder."));
 
