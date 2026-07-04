@@ -35,4 +35,5 @@ pnpm run smoke:local
 - Confirm write-mode warnings name `page.create.execute`, `product.create.execute`, and `product.update.execute` as the only implemented execute tools, with all other execute tools remaining fail-closed placeholders.
 - Review smoke validation changes for local/mocked defaults, no default fetches, no writes or mutations, preview-store coverage, and execute placeholders auditing `blocked` or `not_implemented` but never `success`.
 - Review dev-store runbook changes for manual-only language, development-store-only writes, no production customer store guidance, in-memory preview-store caveats, read-only defaults, explicit write scopes, and `fetchCalls: 0` local smoke expectations.
+- For manual dev-store validation evidence, confirm the PR or issue records only safe pass/fail/skipped summaries, keeps `smoke:local` at `fetchCalls: 0`, avoids raw Shopify responses and reviewed payloads, and does not include secrets, customer data, order data, or production product data.
 - Merge manually only after local validation and reviewer approval.

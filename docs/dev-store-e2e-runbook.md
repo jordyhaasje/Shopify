@@ -26,6 +26,48 @@ The goal is to test the current local-first flow end to end:
 - Setup defaults to read-only mode. Disable read-only only for the deliberate development-store write steps below.
 - This runbook is manual. Do not add live automated tests or real dev-store writes to `pnpm run smoke:local`.
 
+## Evidence To Record
+
+When a reviewer or maintainer runs this manual validation, record only safe summaries in the PR or issue that requested the run. Do not create a separate status document unless the result becomes durable product documentation.
+
+Use this format:
+
+```text
+Manual development-store E2E validation:
+- Date:
+- Runner:
+- Store type: development or disposable test store
+- Install route: GitHub local clone
+- Auth route: OAuth or manual token
+- Local validation: lint/typecheck/test/build/smoke passed
+- smoke:local fetchCalls: 0
+- MCP host used:
+- Read-only checks: passed/failed/skipped
+- Preview checks: passed/failed/skipped
+- page.create.execute: passed/failed/skipped
+- product.create.execute: passed/failed/skipped
+- product.update.execute: passed/failed/skipped
+- Negative execute checks: passed/failed/skipped
+- Audit/output safety review: passed/failed/skipped
+- Cleanup completed:
+- Notes:
+```
+
+Allowed evidence:
+
+- Tool names and pass/fail/skipped status.
+- Safe object identifiers only when needed for cleanup, such as redacted Shopify GIDs ending in the last 4 characters.
+- Safe created or updated test titles that contain no customer or production data.
+- Safe error summaries and Shopify `userErrors` messages.
+- Confirmation that `pnpm run smoke:local` reported `fetchCalls: 0`.
+
+Do not record:
+
+- Admin API tokens, OAuth client secrets, Theme Access tokens, bearer headers, cookies, or authorization URLs containing secrets.
+- Raw Shopify GraphQL responses, raw nodes, raw reviewed payloads, or config files.
+- Real customer, order, address, email, phone, fulfillment, or production product data.
+- Screenshots that show secrets, customer data, raw response bodies, or browser/admin URLs with sensitive query parameters.
+
 ## Scopes
 
 Use the smallest scope set for the workflow being tested.
