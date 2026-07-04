@@ -23,4 +23,5 @@ pnpm run build
 - Review execute tools for read-only, preview binding, confirmation, and audit behavior.
 - Confirm execute placeholders require preview ID plus reviewed payload/context; missing, expired, invalid, or mismatched binding uses `blocked`, and valid placeholders use `not_implemented`, never `success`.
 - Review capability or auth changes for token redaction and mocked tests only.
+- Review setup wizard changes for read-only defaults, OAuth auth read-only default scopes, explicit handling of requested `write_` scopes, local-only config storage, safe capability checks, host snippets without raw secrets, and no Shopify write-scope requirement for read/preview setup.
 - Merge manually only after local validation and reviewer approval.

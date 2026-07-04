@@ -12,7 +12,7 @@ Shopify OAuth, when used, is only a local install/auth mechanism for the MCP/CLI
 
 ## Current Status
 
-The foundation is in place: auth, config storage, documentation, MCP SDK startup, safety helpers, Admin GraphQL client, capability diagnostics, and structured catalog/content preview helpers.
+The foundation is in place: auth, config storage, documentation, MCP SDK startup, setup wizard scaffolding, safety helpers, Admin GraphQL client, capability diagnostics, and structured catalog/content preview helpers.
 
 Real read-only Shopify MCP tools are implemented for `shopify.capabilities.check`, `order.find`, `order.get`, `customer.find`, `tracking.get`, and `product.get`.
 
@@ -35,7 +35,7 @@ git clone https://github.com/jordyhaasje/Shopify.git
 cd Shopify
 pnpm install
 pnpm run build
-pnpm --filter shopify-store-agent exec shopify-store-agent auth --store your-store.myshopify.com
+pnpm --filter shopify-store-agent exec shopify-store-agent setup --store your-store.myshopify.com
 ```
 
 For local OAuth, add this redirect URL to the Shopify Dev Dashboard app:
@@ -54,7 +54,7 @@ The intended future setup is:
 npx shopify-store-agent setup
 ```
 
-The wizard should guide users through auth, local config, capability checks, and MCP host snippets.
+The wizard guides users through store URL normalization, manual-token or local-OAuth setup guidance, read-only local config, capability checks, and MCP host snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts. Setup and OAuth auth default to read-only scopes, do not request write scopes for read/preview mode, and do not implement or activate Shopify writes.
 
 `shopify.capabilities.check` is partially real: by default it only inspects local config and redacted capability flags. Optional live mode performs only a minimal shop identity check and does not fetch products, orders, customers, or other sensitive data.
 
