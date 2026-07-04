@@ -20,11 +20,32 @@ export interface ProductUpdateInput {
   tags?: string[];
 }
 
+export interface ProductVariantPriceInput {
+  id: string;
+  price: string;
+}
+
+export interface ProductVariantPriceUpdateInput {
+  productId: string;
+  variants: ProductVariantPriceInput[];
+}
+
 export interface ProductCreateSummary {
   id: string;
   title?: string;
   handle?: string;
   status?: string;
+}
+
+export interface ProductVariantPriceSummary {
+  id: string;
+  price?: string;
+}
+
+export interface ProductVariantPriceUpdateSummary {
+  productId: string;
+  updatedVariantCount: number;
+  variants: ProductVariantPriceSummary[];
 }
 
 export interface ProductWriteDiagnostic {
@@ -47,6 +68,10 @@ interface ProductWriteResultBase {
 export interface ProductCreateResult extends ProductWriteResultBase {}
 
 export interface ProductUpdateResult extends ProductWriteResultBase {}
+
+export interface ProductVariantPriceUpdateResult extends ProductWriteResultBase {
+  variantPriceUpdate?: ProductVariantPriceUpdateSummary;
+}
 
 export interface ProductWriteOptions {
   fetcher?: FetchLike;
@@ -72,6 +97,16 @@ interface ProductUpdateData {
       handle?: unknown;
       status?: unknown;
     } | null;
+    userErrors?: GraphqlUserError[];
+  } | null;
+}
+
+interface ProductVariantsBulkUpdateData {
+  productVariantsBulkUpdate?: {
+    productVariants?: Array<{
+      id?: unknown;
+      price?: unknown;
+    } | null> | null;
     userErrors?: GraphqlUserError[];
   } | null;
 }
@@ -228,6 +263,75 @@ export async function updateProduct(
   };
 }
 
+export async function updateProductVariantPrices(
+  config: StoreAgentConfig,
+  input: ProductVariantPriceUpdateInput,
+  options: ProductWriteOptions = {}
+): Promise<ProductVariantPriceUpdateResult> {
+  if (config.readOnly) return blocked("Product variant price update is blocked because read-only mode is enabled.");
+
+  const productId = safeText(input.productId, 180);
+  if (!productId) return missingInput("Provide a product ID.");
+
+  const variants = safeVariantPriceInputs(input.variants);
+  if (variants.length === 0) return missingInput("Provide at least one variant ID and non-negative price.");
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  let result: ShopifyGraphqlResult<ProductVariantsBulkUpdateData>;
+  try {
+    result = await client.request<ProductVariantsBulkUpdateData>({
+      query: productVariantsBulkUpdateMutation,
+      variables: { productId, variants }
+    });
+  } catch {
+    return shopifyFailure("Shopify product variant price update request failed before a safe response was available.");
+  }
+
+  if (!result.ok) return mapGraphqlFailure(result);
+
+  const userErrors = result.data.productVariantsBulkUpdate?.userErrors ?? result.userErrors;
+  if (userErrors.length > 0) {
+    return {
+      ok: false,
+      status: "user_errors",
+      summary: "Shopify rejected the product variant price update request.",
+      userErrors: sanitizeUserErrors(userErrors),
+      diagnostics: [{ severity: "warning", code: "shopify_user_errors", message: "Shopify returned product variant price update user errors." }]
+    };
+  }
+
+  const updatedVariants: ProductVariantPriceSummary[] = [];
+  for (const variant of result.data.productVariantsBulkUpdate?.productVariants ?? []) {
+    const id = safeText(variant?.id, 180);
+    if (!id) continue;
+    updatedVariants.push({ id, price: safePrice(variant?.price) });
+    if (updatedVariants.length >= variants.length) break;
+  }
+
+  if (updatedVariants.length === 0) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product variant price update response did not include updated variant IDs.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product variant price update response did not include updated variant IDs." }]
+    };
+  }
+
+  return {
+    ok: true,
+    status: "ok",
+    summary: `Updated ${updatedVariants.length} Shopify product variant price${updatedVariants.length === 1 ? "" : "s"}.`,
+    variantPriceUpdate: {
+      productId,
+      updatedVariantCount: updatedVariants.length,
+      variants: updatedVariants
+    },
+    userErrors: [],
+    diagnostics: []
+  };
+}
+
 const productCreateMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentProductCreate($product: ProductCreateInput!) {
     productCreate(product: $product) {
@@ -262,7 +366,22 @@ const productUpdateMutation = /* GraphQL */ `
   }
 `;
 
-function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<ProductCreateData | ProductUpdateData>, { ok: false }>): ProductWriteResultBase {
+const productVariantsBulkUpdateMutation = /* GraphQL */ `
+  mutation ShopifyStoreAgentProductVariantPricesUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+    productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+      productVariants {
+        id
+        price
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
+function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<ProductCreateData | ProductUpdateData | ProductVariantsBulkUpdateData>, { ok: false }>): ProductWriteResultBase {
   return {
     ok: false,
     status: "shopify_error",
@@ -316,6 +435,27 @@ function sanitizeUserErrors(userErrors: GraphqlUserError[]): GraphqlUserError[] 
 function safeTags(value: string[] | undefined): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((tag) => safeText(tag, 80)).filter((tag): tag is string => Boolean(tag)).slice(0, 20);
+}
+
+function safeVariantPriceInputs(value: ProductVariantPriceInput[] | undefined): ProductVariantPriceInput[] {
+  if (!Array.isArray(value)) return [];
+  const results: ProductVariantPriceInput[] = [];
+  for (const item of value) {
+    const id = safeText(item?.id, 180);
+    const price = safePrice(item?.price);
+    if (id && price !== undefined) results.push({ id, price });
+    if (results.length >= 25) break;
+  }
+  return results;
+}
+
+function safePrice(value: unknown): string | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value.toFixed(2);
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  if (looksLikeSecret(value)) return undefined;
+  const normalized = value.trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return undefined;
+  return normalized;
 }
 
 function safeProductStatus(value: unknown): string | undefined {
