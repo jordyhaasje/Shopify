@@ -109,6 +109,8 @@ Required input: preview ID or reviewed media plan and confirmation.
 
 Execute requirements: `write_products` and possibly `write_files`, writes enabled, explicit confirmation.
 
+Current status: not implemented. The intended expansion is planned in [product-media-update-execute-plan.md](product-media-update-execute-plan.md). Do not implement media add/delete/reorder, file workflows, or broader `product.update.execute` behavior without a separate scoped roadmap item.
+
 ### `product.importFromUserUrl.preview`
 
 Required input: user-provided Shopify URL and explicit instruction about what may be imported or rewritten.
