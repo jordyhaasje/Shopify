@@ -54,9 +54,9 @@ Use only the fulfillment-order scopes that match the store's fulfillment workflo
 ## Content And Pages
 
 - Read content/pages: `read_content`, `read_online_store_pages`
-- Write content/pages: `write_content`
+- Write content/pages: `write_content`, `write_online_store_pages`
 
-Shopify page writes should use content/page APIs and `write_content`; `write_online_store_pages` is not part of the accepted V1 default list.
+`page.create.execute` accepts either `write_content` or `write_online_store_pages` in local granted-scope preflight. Shopify remains the ultimate scope enforcement layer, but the agent blocks locally before fetch when known granted scopes do not include either accepted page write scope, or when local granted scopes are unknown.
 
 ## Files And Media
 

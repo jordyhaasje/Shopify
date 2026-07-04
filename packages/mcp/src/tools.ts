@@ -2,6 +2,7 @@ import {
   MemoryAuditLog,
   assertWritable,
   checkShopifyCapabilities,
+  checkWriteScopePreflight,
   type CatalogPreviewResult,
   createBulkPreview,
   createConfig,
@@ -290,6 +291,9 @@ async function pageCreateExecuteResult(input: Record<string, unknown>, context: 
   const extracted = pageCreateInputFromStoredPreview(lookup.record);
   if (!extracted.ok) return blockedImplementedExecuteResult(tool, storedTarget, extracted.diagnostics, context, binding);
 
+  const preflight = checkWriteScopePreflight(context.config, tool);
+  if (!preflight.ok) return blockedImplementedExecuteResult(tool, storedTarget, preflight.diagnostics, context, binding);
+
   const write = await createPage(context.config, extracted.input, { fetcher: context.fetcher });
   return pageCreateWriteResult(tool, storedTarget, binding, write, context);
 }
@@ -416,6 +420,7 @@ function pageCreateWriteResult(
     summary: write.summary,
     audit,
     createdPage: write.page,
+    verification: write.verification,
     userErrors: write.userErrors,
     diagnostics: write.diagnostics,
     previewBinding: {

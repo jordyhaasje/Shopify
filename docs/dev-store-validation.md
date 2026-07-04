@@ -23,7 +23,7 @@ pnpm --filter shopify-store-agent run smoke -- --live --admin-token "$SHOPIFY_AD
 - Use a development store or disposable test store.
 - Keep setup read-only by default.
 - Use read-only Admin API scopes for read and preview validation.
-- Do not request write scopes for read, preview, setup, or smoke validation. For the first limited write test, use only a development store and the minimum page-content write scope needed for `page.create.execute`, with read-only mode explicitly disabled for that test.
+- Do not request write scopes for read, preview, setup, or smoke validation. For the first limited write test, use only a development store and the minimum page-content write scope needed for `page.create.execute` (`write_content` or `write_online_store_pages`), with read-only mode explicitly disabled for that test.
 - Run setup and review the generated MCP host snippet.
 - Confirm snippets point to a local config path and do not print raw tokens.
 
@@ -36,7 +36,9 @@ pnpm --filter shopify-store-agent run smoke -- --live --admin-token "$SHOPIFY_AD
 - Test an execute placeholder with invalid binding and confirm `blocked`.
 - Test an execute placeholder with valid stored binding and confirm `not_implemented`.
 - Confirm execute placeholders never audit `success`.
-- If testing the first real write path, create a `page.create.preview`, review the stored binding payload, then run `page.create.execute` only with `confirmed: true`, matching target/tool/hash values, and read-only mode disabled.
+- If testing the first real write path, create a `page.create.preview`, review the stored binding payload, then run `page.create.execute` only with `confirmed: true`, matching target/tool/hash values, local granted scopes showing `write_content` or `write_online_store_pages`, and read-only mode disabled.
+- Confirm missing or unknown local write scopes block before any Shopify fetch.
+- Confirm successful page create performs only the page create mutation followed by verification of the created page ID.
 - Confirm all non-page execute tools still remain placeholders.
 - Review the audit log for safe targets and no raw payload dumps.
 
