@@ -782,29 +782,38 @@ describe("MCP tools", () => {
     expect(fetchCalled).toBe(false);
   });
 
-  it("blocks execute with confirmation but missing reviewed payload", async () => {
-    const context: ToolContext = {
-      config: createConfig({ storeUrl: "demo", readOnly: false }),
-      audit: new MemoryAuditLog()
-    };
+  it("blocks product.update.execute with confirmation but missing reviewed payload", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      title: "Updated Shirt"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
 
     const result = await callTool("product.update.execute", {
       confirmed: true,
-      previewId: "preview_123",
-      expectedTool: "product.update.preview",
-      productId: "gid://shopify/Product/1"
+      previewId: preview.previewId,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: preview.previewHash
     }, context);
 
     expect(result).toMatchObject({
       ok: false,
       mode: "execute",
-      implemented: false,
+      implemented: true,
       status: "blocked",
       diagnostics: expect.arrayContaining([
         expect.objectContaining({ code: "missing_reviewed_payload" })
       ])
     });
-    expect(context.audit.list()[0]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
+    expect(fetchCalled).toBe(false);
   });
 
   it("blocks product.create.execute with previewId, confirmation, and payload but missing binding context", async () => {
@@ -836,68 +845,88 @@ describe("MCP tools", () => {
     });
   });
 
-  it("blocks execute when preview binding expected tool mismatches", async () => {
-    const context: ToolContext = {
-      config: createConfig({ storeUrl: "demo", readOnly: false }),
-      audit: new MemoryAuditLog()
-    };
+  it("blocks product.update.execute when preview binding expected tool mismatches", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      title: "Updated Shirt"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
 
     const result = await callTool("product.update.execute", {
-      ...executeBinding("product.create.preview", "gid://shopify/Product/1"),
+      previewId: preview.previewId,
       confirmed: true,
-      productId: "gid://shopify/Product/1"
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: "product.create.preview",
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
     }, context);
 
     expect(result).toMatchObject({
       ok: false,
       mode: "execute",
+      implemented: true,
       status: "blocked",
       diagnostics: expect.arrayContaining([
         expect.objectContaining({ code: "preview_tool_mismatch" })
       ])
     });
-    expect(context.audit.list()[0]).toMatchObject({ result: "blocked" });
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
+    expect(fetchCalled).toBe(false);
   });
 
-  it("blocks execute with secret-looking mismatched hashes without leaking them", async () => {
-    const context: ToolContext = {
-      config: createConfig({ storeUrl: "demo", readOnly: false }),
-      audit: new MemoryAuditLog()
-    };
+  it("blocks product.update.execute with secret-looking mismatched hashes without leaking them", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      title: "Updated Shirt"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
 
     const result = await callTool("product.update.execute", {
-      previewId: "preview_123",
+      previewId: preview.previewId,
       confirmed: true,
-      reviewedPayload: { reviewed: true },
-      expectedTool: "product.update.preview",
-      target: "gid://shopify/Product/1",
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
       previewHash: "shpat_hash_a",
-      reviewedChangesHash: "shpat_hash_b",
-      productId: "gid://shopify/Product/1"
+      reviewedChangesHash: "shpat_hash_b"
     }, context);
     const output = JSON.stringify(result);
 
     expect(result).toMatchObject({
       ok: false,
       mode: "execute",
-      implemented: false,
+      implemented: true,
       status: "blocked",
-      placeholder: true,
       diagnostics: expect.arrayContaining([
         expect.objectContaining({ code: "invalid_secret_like_hash" }),
-        expect.objectContaining({ code: "preview_hash_mismatch" })
+        expect.objectContaining({ code: "preview_hash_mismatch" }),
+        expect.objectContaining({ code: "stored_preview_hash_mismatch" })
       ])
     });
     expect(output).not.toContain("shpat_hash_a");
     expect(output).not.toContain("shpat_hash_b");
-    expect(context.audit.list()[0]).toMatchObject({
+    expect(context.audit.list()[1]).toMatchObject({
       tool: "product.update.execute",
       mode: "execute",
       result: "blocked"
     });
+    expect(fetchCalled).toBe(false);
   });
 
-  it("keeps a validly bound product update execute placeholder not implemented", async () => {
+  it("blocks product.update.execute before fetch when no preview store exists", async () => {
     let fetchCalled = false;
     const context: ToolContext = {
       config: createConfig({ storeUrl: "demo", readOnly: false }),
@@ -916,28 +945,22 @@ describe("MCP tools", () => {
 
     const result = await callTool("product.update.execute", {
       ...executeBinding("product.update.preview", "gid://shopify/Product/1"),
-      productId: "gid://shopify/Product/1",
       confirmed: true
     }, context);
 
     expect(result).toMatchObject({
       ok: false,
       mode: "execute",
-      implemented: false,
-      status: "not_implemented",
-      placeholder: true,
-      previewBinding: {
-        previewId: "preview_123",
-        expectedTool: "product.update.preview",
-        target: "gid://shopify/Product/1"
-      }
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "stored_preview_missing" })
+      ])
     });
-    expect(JSON.stringify(result)).toContain("No Shopify change was made");
-    expect(JSON.stringify(result)).not.toContain("mutation");
     expect(context.audit.list()[0]).toMatchObject({
       tool: "product.update.execute",
       mode: "execute",
-      result: "not_implemented"
+      result: "blocked"
     });
     expect(fetchCalled).toBe(false);
   });
@@ -1252,6 +1275,476 @@ describe("MCP tools", () => {
     expect(output).not.toContain("shpat_product_execute_secret");
     expect(context.audit.list()[1]).toMatchObject({
       tool: "product.create.execute",
+      mode: "execute",
+      result: "failed"
+    });
+  });
+
+  it("blocks product.update.execute in read-only mode before fetch", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    });
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      title: "Updated Shirt"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "read_only" })])
+    });
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("blocks product.update.execute without confirmation before fetch", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      title: "Updated Shirt"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.update.execute", {
+      previewId: preview.previewId,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "missing_confirmation" })])
+    });
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("blocks product.update.execute with expired stored preview before fetch", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      title: "Updated Shirt"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+    context.previewStore?.expirePreview(preview.previewId);
+
+    const result = await callTool("product.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "stored_preview_expired" })])
+    });
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("blocks product.update.execute with mismatched target, hash, and reviewed payload before fetch", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      title: "Updated Shirt"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+
+    const result = await callTool("product.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: { arbitrary: "payload", token: "shpat_product_update_review_secret" },
+      expectedTool: binding.expectedTool,
+      target: "gid://shopify/Product/2",
+      previewHash: "sha256:different",
+      reviewedChangesHash: hashPreviewContent({ arbitrary: "payload", token: "shpat_product_update_review_secret" }),
+      title: "UNTRUSTED EXECUTE TITLE"
+    }, context);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "stored_preview_target_mismatch" }),
+        expect.objectContaining({ code: "stored_preview_hash_mismatch" }),
+        expect.objectContaining({ code: "reviewed_payload_hash_mismatch" })
+      ])
+    });
+    expect(output).not.toContain("shpat_product_update_review_secret");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("blocks product.update.execute before fetch when granted scopes are unknown", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      title: "Updated Shirt"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "unknown_write_scopes" })])
+    });
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("blocks product.update.execute before fetch when known scopes miss write_products", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["read_products", "shpat_scope_secret"];
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      title: "Updated Shirt"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "missing_write_scope" })])
+    });
+    expect(output).not.toContain("shpat_scope_secret");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("calls only productUpdate after valid stored product update binding and write_products preflight", async () => {
+    const requests: Array<{ body: string }> = [];
+    const context = baseContext(async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          productUpdate: {
+            product: {
+              id: "gid://shopify/Product/1",
+              title: "Stored Update Shirt",
+              handle: "stored-update-shirt",
+              status: "ACTIVE",
+              rawNodeOnly: "do not return",
+              variants: { nodes: [{ id: "do-not-return" }] },
+              media: { nodes: [{ id: "do-not-return" }] },
+              metafields: { nodes: [{ id: "do-not-return" }] },
+              seo: { title: "do-not-return" },
+              inventoryQuantity: 5
+            },
+            userErrors: []
+          }
+        }
+      });
+    }, false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      title: "Stored Update Shirt",
+      description: "<p>Updated description from preview.</p>",
+      vendor: "Acme",
+      productType: "Shirts",
+      status: "active",
+      tags: ["linen", "summer"],
+      variants: [{ sku: "UNUSED" }],
+      media: [{ url: "https://example.com/ignored.jpg" }],
+      metafields: [{ key: "ignored" }],
+      seo: { title: "ignored" },
+      inventory: { quantity: 100 }
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash,
+      title: "UNRELATED EXECUTE TITLE",
+      vendor: "UNRELATED EXECUTE VENDOR",
+      variants: [{ sku: "UNTRUSTED" }]
+    }, context);
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "execute",
+      implemented: true,
+      status: "ok",
+      updatedProduct: {
+        id: "gid://shopify/Product/1",
+        title: "Stored Update Shirt",
+        handle: "stored-update-shirt",
+        status: "ACTIVE"
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentProductUpdate");
+    expect(request.query).toContain("productUpdate");
+    expect(request.query).not.toContain("productCreate");
+    expect(request.query).not.toContain("pageCreate");
+    expect(request.query).not.toContain("collectionCreate");
+    expect(request.query).not.toContain("refundCreate");
+    expect(request.query).not.toContain("variants");
+    expect(request.query).not.toContain("media");
+    expect(request.query).not.toContain("collections");
+    expect(request.query).not.toContain("metafields");
+    expect(request.query).not.toContain("seo");
+    expect(request.query).not.toContain("inventory");
+    expect(request.variables.product).toEqual({
+      id: "gid://shopify/Product/1",
+      title: "Stored Update Shirt",
+      descriptionHtml: "<p>Updated description from preview.</p>",
+      vendor: "Acme",
+      productType: "Shirts",
+      status: "ACTIVE",
+      tags: ["linen", "summer"]
+    });
+    expect(requests[0].body).not.toContain("UNRELATED EXECUTE TITLE");
+    expect(requests[0].body).not.toContain("UNRELATED EXECUTE VENDOR");
+    expect(request.variables.product).not.toHaveProperty("variants");
+    expect(request.variables.product).not.toHaveProperty("media");
+    expect(request.variables.product).not.toHaveProperty("metafields");
+    expect(request.variables.product).not.toHaveProperty("seo");
+    expect(request.variables.product).not.toHaveProperty("inventory");
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("Updated description from preview");
+    expect(output).not.toContain("variants");
+    expect(output).not.toContain("media");
+    expect(output).not.toContain("metafields");
+    expect(output).not.toContain("seo");
+    expect(output).not.toContain("inventoryQuantity");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "success" });
+  });
+
+  it("blocks handle-only product.update.execute when stored preview has no safe product ID", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("product.update.preview", {
+      handle: "stored-update-shirt",
+      title: "Stored Update Shirt"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "missing_product_update_id" })])
+    });
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("blocks product.update.execute when stored preview contains only unsupported fields", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      variants: [{ sku: "UNSUPPORTED" }],
+      media: [{ url: "https://example.com/unsupported.jpg" }],
+      metafields: [{ key: "unsupported" }],
+      seo: { title: "unsupported" },
+      inventory: { quantity: 100 }
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "missing_product_update_fields" })])
+    });
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("returns Shopify product update user errors safely", async () => {
+    const context = baseContext(async () => jsonResponse({
+      data: {
+        productUpdate: {
+          product: null,
+          userErrors: [{ field: ["title"], message: "Title is invalid." }]
+        }
+      }
+    }), false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      title: "Updated Shirt"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "user_errors",
+      userErrors: [{ field: ["title"], message: "Title is invalid." }]
+    });
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
+  });
+
+  it("returns safe failed audit for product.update.execute network errors", async () => {
+    const context = baseContext(async () => {
+      throw new Error("network failed with token shpat_product_update_execute_secret");
+    }, false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      title: "Updated Shirt"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "shopify_error",
+      diagnostics: [{ code: "shopify_request_failed" }]
+    });
+    expect(output).not.toContain("shpat_product_update_execute_secret");
+    expect(context.audit.list()[1]).toMatchObject({
+      tool: "product.update.execute",
       mode: "execute",
       result: "failed"
     });
@@ -1763,7 +2256,6 @@ describe("MCP tools", () => {
       };
     }, false);
     const executeCalls: Array<[string, Record<string, unknown>]> = [
-      ["product.update.execute", { ...executeBinding("product.update.preview", "gid://shopify/Product/1"), productId: "gid://shopify/Product/1", confirmed: true }],
       ["product.media.update.execute", { ...executeBinding("product.media.update.preview", "gid://shopify/Product/1"), productId: "gid://shopify/Product/1", confirmed: true }],
       ["product.importFromUserUrl.execute", { ...executeBinding("product.importFromUserUrl.preview", "https://example.com/products/shirt"), url: "https://example.com/products/shirt", confirmed: true }],
       ["collection.create.execute", { ...executeBinding("collection.create.preview", "Summer"), title: "Summer", confirmed: true }]

@@ -27,6 +27,8 @@ import {
   type PageCreateResult,
   type ProductCreateInput,
   type ProductCreateResult,
+  type ProductUpdateInput,
+  type ProductUpdateResult,
   type PreviewWarning,
   type ProductSummary,
   type ReadResult,
@@ -34,6 +36,7 @@ import {
   validateExecutePreviewBinding,
   verifyStoredPreviewBinding,
   createProduct,
+  updateProduct,
   previewCollectionCreate,
   previewPageCreate,
   previewProductCreate,
@@ -381,6 +384,50 @@ async function productCreateExecuteResult(input: Record<string, unknown>, contex
   return productCreateWriteResult(tool, storedTarget, binding, write, context);
 }
 
+async function productUpdateExecuteResult(input: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>> {
+  const tool = "product.update.execute";
+  const target = productExecuteTarget(input, context);
+
+  if (context.config.readOnly) {
+    return blockedImplementedExecuteResult(tool, target, [diagnostic("read_only", "Execute is blocked because read-only mode is enabled.")], context, "product.update.preview");
+  }
+
+  if (!context.previewStore) {
+    return blockedImplementedExecuteResult(tool, target, [diagnostic("stored_preview_missing", "Stored preview was not found; execute binding fails closed.")], context, "product.update.preview");
+  }
+
+  const lookup = context.previewStore.getPreview(stringInput(input, "previewId"));
+  const storedTarget = lookup.record ? previewRecordBindingTarget(lookup.record) : target;
+  const binding = verifyStoredPreviewBinding(context.previewStore, input, {
+    executeTool: tool,
+    expectedPreviewTool: "product.update.preview",
+    target: storedTarget
+  });
+  if (!stringInput(input, "target")) {
+    binding.ok = false;
+    binding.diagnostics = [
+      diagnostic("missing_target", "Execute requires the reviewed preview target."),
+      ...binding.diagnostics.filter((item) => item.code !== "missing_target")
+    ];
+  }
+  if (!binding.ok) return blockedImplementedExecuteResult(tool, storedTarget, binding.diagnostics, context, binding);
+  if (!lookup.ok || !lookup.record) {
+    return blockedImplementedExecuteResult(tool, storedTarget, [lookup.diagnostic ?? diagnostic("stored_preview_missing", "Stored preview was not found; execute binding fails closed.")], context, binding);
+  }
+  if (lookup.record.tool !== "product.update.preview") {
+    return blockedImplementedExecuteResult(tool, storedTarget, [diagnostic("stored_preview_tool_mismatch", "Stored preview is not a product update preview.")], context, binding);
+  }
+
+  const extracted = productUpdateInputFromStoredPreview(lookup.record);
+  if (!extracted.ok) return blockedImplementedExecuteResult(tool, storedTarget, extracted.diagnostics, context, binding);
+
+  const preflight = checkWriteScopePreflight(context.config, tool);
+  if (!preflight.ok) return blockedImplementedExecuteResult(tool, storedTarget, preflight.diagnostics, context, binding);
+
+  const write = await updateProduct(context.config, extracted.input, { fetcher: context.fetcher });
+  return productUpdateWriteResult(tool, storedTarget, binding, write, context);
+}
+
 function savePreviewRecord(context: ToolContext, record: Parameters<MemoryPreviewStore["savePreview"]>[0]): StoredPreviewRecord {
   return ensurePreviewStore(context).savePreview(record);
 }
@@ -555,7 +602,46 @@ function productCreateWriteResult(
   };
 }
 
+function productUpdateWriteResult(
+  tool: string,
+  target: string,
+  binding: ExecutePreviewBindingResult,
+  write: ProductUpdateResult,
+  context: ToolContext
+): Record<string, unknown> {
+  const result = productUpdateAuditResult(write);
+  const audit = context.audit.record({
+    tool,
+    target: safeExecuteString(target),
+    mode: "execute",
+    summary: write.summary,
+    result
+  });
+  return {
+    ok: write.ok,
+    mode: "execute",
+    implemented: true,
+    status: write.status,
+    summary: write.summary,
+    audit,
+    updatedProduct: write.product,
+    userErrors: write.userErrors,
+    diagnostics: write.diagnostics,
+    previewBinding: {
+      previewId: binding.previewId,
+      expectedTool: binding.expectedPreviewTool,
+      target: binding.target
+    }
+  };
+}
+
 function productCreateAuditResult(write: ProductCreateResult): "success" | "blocked" | "failed" {
+  if (write.status === "ok") return "success";
+  if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
+  return "failed";
+}
+
+function productUpdateAuditResult(write: ProductUpdateResult): "success" | "blocked" | "failed" {
   if (write.status === "ok") return "success";
   if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
   return "failed";
@@ -615,10 +701,51 @@ function productCreateInputFromStoredPreview(record: StoredPreviewRecord): { ok:
   };
 }
 
+function productUpdateInputFromStoredPreview(record: StoredPreviewRecord): { ok: true; input: ProductUpdateInput } | { ok: false; diagnostics: ExecutePreviewBindingDiagnostic[] } {
+  const id = safeContentText(targetField(record, "id") ?? targetField(record, "productId") ?? changeAfterValue(record, "id") ?? changeAfterValue(record, "productId"), 180);
+  if (!id) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_product_update_id", "Stored product update preview did not include a safe product ID; handle-only execute is blocked.")]
+    };
+  }
+
+  const input: ProductUpdateInput = { id };
+  const title = safeContentText(changeAfterValue(record, "title"), 255);
+  if (title) input.title = title;
+  const descriptionHtml = safeContentText(changeAfterValue(record, "descriptionHtml") ?? changeAfterValue(record, "description"), 5000);
+  if (descriptionHtml) input.descriptionHtml = descriptionHtml;
+  const vendor = safeContentText(changeAfterValue(record, "vendor"), 255);
+  if (vendor) input.vendor = vendor;
+  const productType = safeContentText(changeAfterValue(record, "productType"), 255);
+  if (productType) input.productType = productType;
+  const status = productStatus(changeAfterValue(record, "status"));
+  if (status) input.status = status;
+  const tags = tagValues(changeAfterValue(record, "tags"));
+  if (tags) input.tags = tags;
+
+  if (Object.keys(input).length === 1) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_product_update_fields", "Stored product update preview did not include supported basic product fields for execution.")]
+    };
+  }
+
+  return { ok: true, input };
+}
+
 function changeValue(record: StoredPreviewRecord, field: string): unknown {
   for (const item of arrayItems(record.proposedChanges)) {
     const change = objectFields(item);
     if (stringFromUnknown(change.field) === field) return unwrapStoredValue(change.value);
+  }
+  return undefined;
+}
+
+function changeAfterValue(record: StoredPreviewRecord, field: string): unknown {
+  for (const item of arrayItems(record.proposedChanges)) {
+    const change = objectFields(item);
+    if (stringFromUnknown(change.field) === field) return unwrapStoredValue(change.after);
   }
   return undefined;
 }
@@ -815,15 +942,15 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: "product.update.preview",
-    description: "Preview updating price, media, variants, or description for an explicit product ID.",
+    description: "Preview user-provided product updates for an explicit product ID or handle.",
     inputSchema: { type: "object" },
     handler: (input, context) => productUpdatePreviewResult(input, context)
   },
   {
     name: "product.update.execute",
-    description: "Placeholder for updating an explicit product after preview and confirmation.",
+    description: "Update basic Shopify product fields only after stored product update preview binding and explicit confirmation.",
     inputSchema: { type: "object" },
-    handler: (input, context) => executePlaceholder("product.update.execute", stringInput(input, "productId", "product"), "Product update execution placeholder.", input, context)
+    handler: (input, context) => productUpdateExecuteResult(input, context)
   },
   {
     name: "product.media.update.preview",

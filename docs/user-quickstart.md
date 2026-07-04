@@ -154,7 +154,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --scopes "read_products,read_content,read_online_store_pages,write_products,write_content"
 ```
 
-Use only a development or disposable store. `write_products` is required for `product.create.execute`; `write_content` or `write_online_store_pages` is required for `page.create.execute`. All other execute tools are placeholders.
+Use only a development or disposable store. `write_products` is required for `product.create.execute` and the basic-field `product.update.execute`; `write_content` or `write_online_store_pages` is required for `page.create.execute`. All other execute tools are placeholders.
 
 ## Safety rules
 
@@ -208,12 +208,12 @@ Real execute tools:
 ```text
 page.create.execute
 product.create.execute
+product.update.execute
 ```
 
 Placeholder execute tools:
 
 ```text
-product.update.execute
 product.media.update.execute
 product.importFromUserUrl.execute
 collection.create.execute
@@ -228,6 +228,7 @@ theme.rollback
 ## Not available yet
 
 - npm/npx package install as the primary route.
+- Product update execute beyond basic title, description/descriptionHtml, vendor, product type, status, and tags.
 - Production-store write automation.
 - Product update, collection create, refund, tracking, customer, bulk, theme, variants, media, inventory, metafields, and collection execute implementations.
 - Automated live Shopify tests.

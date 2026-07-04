@@ -48,7 +48,7 @@ pnpm --filter shopify-store-agent run setup -- \
 
 Setup writes local config only when run as the CLI command. Programmatic dry runs do not write config. The generated MCP snippets use `SHOPIFY_STORE_AGENT_CONFIG` and other non-secret environment values instead of printing Admin API tokens or OAuth client secrets.
 
-Setup defaults to `readOnly: true`. The setup command itself does not perform Shopify writes, does not activate execute tools, and does not require write scopes for read/preview/smoke validation. OAuth auth also defaults to read-only Admin API scopes. Explicit `write_` scopes are blocked unless write mode is explicitly requested; in this phase write mode is only for reviewed development-store testing of `page.create.execute` or the minimal `product.create.execute` path. Only `page.create.execute` and `product.create.execute` are implemented; all other execute tools remain fail-closed placeholders.
+Setup defaults to `readOnly: true`. The setup command itself does not perform Shopify writes, does not activate execute tools, and does not require write scopes for read/preview/smoke validation. OAuth auth also defaults to read-only Admin API scopes. Explicit `write_` scopes are blocked unless write mode is explicitly requested; in this phase write mode is only for reviewed development-store testing of `page.create.execute`, the minimal `product.create.execute` path, or the basic-field `product.update.execute` path. Only `page.create.execute`, `product.create.execute`, and `product.update.execute` are implemented; all other execute tools remain fail-closed placeholders.
 
 ## Local Smoke Validation
 
@@ -91,9 +91,9 @@ The CLI opens or prints an install URL, validates the callback state/HMAC, excha
 
 `setup --auth oauth` is only guidance for local config and MCP snippets. It does not run the browser flow, does not exchange a token, and does not overwrite a working token-bearing OAuth config with incomplete tokenless config.
 
-V1 defaults to read-only mode unless writes are explicitly enabled. The default OAuth install URL uses read-only scopes only. Do not request write scopes for setup, smoke, reads, or previews; request `write_content` or `write_online_store_pages` only when intentionally testing the reviewed `page.create.execute` path in a development store, and request `write_products` only when intentionally testing the reviewed minimal `product.create.execute` path.
+V1 defaults to read-only mode unless writes are explicitly enabled. The default OAuth install URL uses read-only scopes only. Do not request write scopes for setup, smoke, reads, or previews; request `write_content` or `write_online_store_pages` only when intentionally testing the reviewed `page.create.execute` path in a development store, and request `write_products` only when intentionally testing the reviewed minimal `product.create.execute` or basic-field `product.update.execute` path.
 
-For deliberate development-store write testing, read-only mode must be explicitly disabled and local granted scopes must include the write scope required by the execute path. Missing or unknown write scopes fail closed before fetch. The only real execute tools in this phase are `page.create.execute` and `product.create.execute`; all other execute tools remain placeholders.
+For deliberate development-store write testing, read-only mode must be explicitly disabled and local granted scopes must include the write scope required by the execute path. Missing or unknown write scopes fail closed before fetch. The only real execute tools in this phase are `page.create.execute`, `product.create.execute`, and `product.update.execute`; all other execute tools remain placeholders.
 
 ## Manual Admin API Token Setup
 

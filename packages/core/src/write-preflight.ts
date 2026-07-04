@@ -18,8 +18,11 @@ export interface WriteScopePreflightResult {
 
 export const pageCreateWriteScopes = ["write_content", "write_online_store_pages"] as const;
 export const productCreateWriteScopes = ["write_products"] as const;
+export const productUpdateWriteScopes = ["write_products"] as const;
 
-export function checkWriteScopePreflight(config: StoreAgentConfig, tool: "page.create.execute" | "product.create.execute"): WriteScopePreflightResult {
+type WriteExecuteTool = "page.create.execute" | "product.create.execute" | "product.update.execute";
+
+export function checkWriteScopePreflight(config: StoreAgentConfig, tool: WriteExecuteTool): WriteScopePreflightResult {
   const requiredScopes = requiredWriteScopes(tool);
   const grantedScopes = Array.isArray(config.grantedScopes) ? normalizeScopes(config.grantedScopes).map((scope) => scope.toLowerCase()) : undefined;
 
@@ -42,9 +45,10 @@ export function checkWriteScopePreflight(config: StoreAgentConfig, tool: "page.c
   };
 }
 
-function requiredWriteScopes(tool: "page.create.execute" | "product.create.execute"): readonly string[] {
+function requiredWriteScopes(tool: WriteExecuteTool): readonly string[] {
   if (tool === "page.create.execute") return pageCreateWriteScopes;
   if (tool === "product.create.execute") return productCreateWriteScopes;
+  if (tool === "product.update.execute") return productUpdateWriteScopes;
   return [];
 }
 
