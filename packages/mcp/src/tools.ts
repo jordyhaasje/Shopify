@@ -5,9 +5,11 @@ import {
   type CatalogPreviewResult,
   createBulkPreview,
   createConfig,
+  createPage,
   createRefundPreview,
   emptyCapabilities,
   type ExecutePreviewBindingResult,
+  type ExecutePreviewBindingDiagnostic,
   type FetchLike,
   findCustomers,
   findOrders,
@@ -18,6 +20,8 @@ import {
   MemoryPreviewStore,
   planThemeSection,
   previewRecordBindingTarget,
+  type PageCreateInput,
+  type PageCreateResult,
   type PreviewWarning,
   type ProductSummary,
   type ReadResult,
@@ -97,7 +101,6 @@ function catalogPreviewResult(result: CatalogPreviewResult, context: ToolContext
     result: result.status === "ok" ? "success" : "blocked"
   });
   const stored = savePreviewRecord(context, {
-    previewId: result.previewId,
     tool: result.auditContext.tool,
     target: result.target,
     summary: result.summary,
@@ -105,7 +108,7 @@ function catalogPreviewResult(result: CatalogPreviewResult, context: ToolContext
     requiredConfirmationForExecute: result.requiredConfirmationForExecute,
     auditContext: result.auditContext
   });
-  return { ...result, mode: "preview", audit, previewHash: stored.previewHash, binding: previewBindingOutput(stored) };
+  return { ...result, mode: "preview", audit, previewId: stored.previewId, previewHash: stored.previewHash, binding: previewBindingOutput(stored) };
 }
 
 async function productUpdatePreviewResult(input: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>> {
@@ -250,6 +253,47 @@ function executePlaceholder(tool: string, target: string, summary: string, input
   };
 }
 
+async function pageCreateExecuteResult(input: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>> {
+  const tool = "page.create.execute";
+  const target = pageExecuteTarget(input, context);
+
+  if (context.config.readOnly) {
+    return blockedImplementedExecuteResult(tool, target, [diagnostic("read_only", "Execute is blocked because read-only mode is enabled.")], context);
+  }
+
+  if (!context.previewStore) {
+    return blockedImplementedExecuteResult(tool, target, [diagnostic("stored_preview_missing", "Stored preview was not found; execute binding fails closed.")], context);
+  }
+
+  const lookup = context.previewStore.getPreview(stringInput(input, "previewId"));
+  const storedTarget = lookup.record ? previewRecordBindingTarget(lookup.record) : target;
+  const binding = verifyStoredPreviewBinding(context.previewStore, input, {
+    executeTool: tool,
+    expectedPreviewTool: "page.create.preview",
+    target: storedTarget
+  });
+  if (!stringInput(input, "target")) {
+    binding.ok = false;
+    binding.diagnostics = [
+      diagnostic("missing_target", "Execute requires the reviewed preview target."),
+      ...binding.diagnostics.filter((item) => item.code !== "missing_target")
+    ];
+  }
+  if (!binding.ok) return blockedImplementedExecuteResult(tool, storedTarget, binding.diagnostics, context, binding);
+  if (!lookup.ok || !lookup.record) {
+    return blockedImplementedExecuteResult(tool, storedTarget, [lookup.diagnostic ?? diagnostic("stored_preview_missing", "Stored preview was not found; execute binding fails closed.")], context, binding);
+  }
+  if (lookup.record.tool !== "page.create.preview") {
+    return blockedImplementedExecuteResult(tool, storedTarget, [diagnostic("stored_preview_tool_mismatch", "Stored preview is not a page creation preview.")], context, binding);
+  }
+
+  const extracted = pageCreateInputFromStoredPreview(lookup.record);
+  if (!extracted.ok) return blockedImplementedExecuteResult(tool, storedTarget, extracted.diagnostics, context, binding);
+
+  const write = await createPage(context.config, extracted.input, { fetcher: context.fetcher });
+  return pageCreateWriteResult(tool, storedTarget, binding, write, context);
+}
+
 function savePreviewRecord(context: ToolContext, record: Parameters<MemoryPreviewStore["savePreview"]>[0]): StoredPreviewRecord {
   return ensurePreviewStore(context).savePreview(record);
 }
@@ -315,6 +359,171 @@ function blockedExecuteResult(
     },
     placeholder: true
   };
+}
+
+function blockedImplementedExecuteResult(
+  tool: string,
+  target: string,
+  diagnostics: ExecutePreviewBindingDiagnostic[],
+  context: ToolContext,
+  binding?: ExecutePreviewBindingResult
+): Record<string, unknown> {
+  const safeTarget = safeExecuteString(target);
+  const summary = "Execute blocked because page create preconditions were not met.";
+  const audit = context.audit.record({
+    tool,
+    target: safeTarget,
+    mode: "execute",
+    summary,
+    result: "blocked"
+  });
+  return {
+    ok: false,
+    mode: "execute",
+    implemented: true,
+    status: "blocked",
+    summary,
+    audit,
+    diagnostics,
+    previewBinding: {
+      previewId: binding?.previewId ? safeExecuteString(binding.previewId) : undefined,
+      expectedTool: binding?.expectedPreviewTool ?? "page.create.preview",
+      target: binding?.target ? safeExecuteString(binding.target) : safeTarget
+    }
+  };
+}
+
+function pageCreateWriteResult(
+  tool: string,
+  target: string,
+  binding: ExecutePreviewBindingResult,
+  write: PageCreateResult,
+  context: ToolContext
+): Record<string, unknown> {
+  const result = pageCreateAuditResult(write);
+  const audit = context.audit.record({
+    tool,
+    target: safeExecuteString(target),
+    mode: "execute",
+    summary: write.summary,
+    result
+  });
+  return {
+    ok: write.ok,
+    mode: "execute",
+    implemented: true,
+    status: write.status,
+    summary: write.summary,
+    audit,
+    createdPage: write.page,
+    userErrors: write.userErrors,
+    diagnostics: write.diagnostics,
+    previewBinding: {
+      previewId: binding.previewId,
+      expectedTool: binding.expectedPreviewTool,
+      target: binding.target
+    }
+  };
+}
+
+function pageCreateAuditResult(write: PageCreateResult): "success" | "blocked" | "failed" {
+  if (write.status === "ok") return "success";
+  if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
+  return "failed";
+}
+
+function pageCreateInputFromStoredPreview(record: StoredPreviewRecord): { ok: true; input: PageCreateInput } | { ok: false; diagnostics: ExecutePreviewBindingDiagnostic[] } {
+  const title = safeContentText(changeValue(record, "title") ?? targetField(record, "title"), 255);
+  const body = safeContentText(changeValue(record, "body") ?? changeValue(record, "content") ?? changeValue(record, "bodyHtml"), 5000);
+  const handle = safeContentText(changeValue(record, "handle") ?? targetField(record, "handle"), 180);
+  const templateSuffix = safeContentText(changeValue(record, "templateSuffix"), 180);
+  const isPublished = publishPreference(changeValue(record, "publishPreference")) ?? false;
+
+  if (!title) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_page_title", "Stored page preview did not include a safe title for execution.")]
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      title,
+      body,
+      handle,
+      templateSuffix,
+      isPublished
+    }
+  };
+}
+
+function changeValue(record: StoredPreviewRecord, field: string): unknown {
+  for (const item of arrayItems(record.proposedChanges)) {
+    const change = objectFields(item);
+    if (stringFromUnknown(change.field) === field) return unwrapStoredValue(change.value);
+  }
+  return undefined;
+}
+
+function targetField(record: StoredPreviewRecord, field: string): unknown {
+  const target = objectFields(record.target);
+  return unwrapStoredValue(target[field]);
+}
+
+function arrayItems(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "object") return [];
+  const record = value as { items?: unknown };
+  return Array.isArray(record.items) ? record.items : [];
+}
+
+function objectFields(value: unknown): Record<string, unknown> {
+  const unwrapped = unwrapStoredValue(value);
+  if (unwrapped && typeof unwrapped === "object" && !Array.isArray(unwrapped)) return unwrapped as Record<string, unknown>;
+  return {};
+}
+
+function unwrapStoredValue(value: unknown): unknown {
+  if (value && typeof value === "object" && !Array.isArray(value) && "fields" in value) {
+    const fields = (value as { fields?: unknown }).fields;
+    if (fields && typeof fields === "object" && !Array.isArray(fields)) return fields;
+  }
+  return value;
+}
+
+function safeContentText(value: unknown, maxLength: number): string | undefined {
+  const unwrapped = unwrapStoredValue(value);
+  const text = stringFromUnknown(unwrapped) ?? stringFromUnknown(objectFields(unwrapped).excerpt);
+  if (!text) return undefined;
+  if (looksLikeSecret(text)) return "[redacted]";
+  const normalized = text.trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
+}
+
+function publishPreference(value: unknown): boolean | undefined {
+  const unwrapped = unwrapStoredValue(value);
+  if (typeof unwrapped === "boolean") return unwrapped;
+  const text = stringFromUnknown(unwrapped)?.toLowerCase();
+  if (!text) return undefined;
+  if (["true", "publish", "published", "active", "online"].includes(text)) return true;
+  if (["false", "draft", "unpublished", "hidden"].includes(text)) return false;
+  return undefined;
+}
+
+function pageExecuteTarget(input: Record<string, unknown>, context: ToolContext): string {
+  const previewId = stringInput(input, "previewId");
+  const lookup = previewId && context.previewStore ? context.previewStore.getPreview(previewId) : undefined;
+  if (lookup?.record) return previewRecordBindingTarget(lookup.record);
+  return safeExecuteString(stringInput(input, "target") || stringInput(input, "title", "page"));
+}
+
+function stringFromUnknown(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function diagnostic(code: string, message: string): ExecutePreviewBindingDiagnostic {
+  return { code, message };
 }
 
 function expectedPreviewTool(tool: string): string {
@@ -582,9 +791,9 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: "page.create.execute",
-    description: "Placeholder for page creation after preview and confirmation.",
+    description: "Create a Shopify page only after stored preview binding and explicit confirmation.",
     inputSchema: { type: "object" },
-    handler: (input, context) => executePlaceholder("page.create.execute", stringInput(input, "title", "page"), "Page create execution placeholder.", input, context)
+    handler: (input, context) => pageCreateExecuteResult(input, context)
   },
   {
     name: "collection.create.preview",

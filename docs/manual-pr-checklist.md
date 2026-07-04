@@ -22,6 +22,7 @@ pnpm run build
 - For optional preview read enrichment, confirm it is explicit opt-in, uses only explicit IDs/handles, returns minimal summaries, treats read failures as warnings, and performs no mutations.
 - Review execute tools for read-only, preview binding, confirmation, and audit behavior.
 - Confirm execute placeholders require preview ID plus reviewed payload/context; missing, expired, invalid, or mismatched binding uses `blocked`, and valid placeholders use `not_implemented`, never `success`.
+- For `page.create.execute` changes, confirm it is the only implemented write path, is blocked by read-only mode, requires a valid stored `page.create.preview` binding, calls Shopify only after binding succeeds, returns safe Shopify `userErrors`, audits success only after a successful page create, and never returns raw reviewed payloads or raw Shopify nodes.
 - Review capability or auth changes for token redaction and mocked tests only.
 - Review setup wizard changes for read-only defaults, OAuth auth read-only default scopes, explicit handling of requested `write_` scopes, local-only config storage, safe capability checks, host snippets without raw secrets, and no Shopify write-scope requirement for read/preview setup.
 - Review smoke validation changes for local/mocked defaults, no default fetches, no writes or mutations, preview-store coverage, and execute placeholders auditing `blocked` or `not_implemented` but never `success`.

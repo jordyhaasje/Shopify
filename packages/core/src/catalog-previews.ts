@@ -51,7 +51,7 @@ type PreviewTool =
   | "page.create.preview"
   | "collection.create.preview";
 
-const requiredConfirmationForExecute = "Execute is not implemented. A future execute tool must require this preview ID and explicit user confirmation before any Shopify mutation.";
+const requiredConfirmationForExecute = "Execute requires this preview ID, stored preview binding, reviewed payload, matching hashes, and explicit user confirmation before any Shopify mutation. Execute tools that are still placeholders remain not implemented.";
 const omitted = "[omitted]";
 const redacted = "[redacted]";
 const maxScalarLength = 180;
