@@ -6,6 +6,7 @@ Durable project constraints:
 
 - Keep PRs small and focused, one meaningful change at a time.
 - Keep [user-quickstart.md](user-quickstart.md) as the compact first-run user guide; deeper docs should link to it instead of duplicating the full flow.
+- Keep [product-goal-and-roadmap.md](product-goal-and-roadmap.md) as the canonical product goal, MVP status, implementation roadmap, and Codex operating-rules document.
 - Default to read-only mode.
 - Do not add `.github/workflows`.
 - Do not commit, log, document, or test with real secrets or real customer/order data.

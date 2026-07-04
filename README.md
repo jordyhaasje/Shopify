@@ -14,6 +14,8 @@ Shopify OAuth, when used, is only a local install/auth mechanism for the MCP/CLI
 
 New users should start with the compact [User Quickstart](docs/user-quickstart.md). It walks through GitHub install, local OAuth, MCP host config, first read, first preview, and reviewed execute flow for Codex, OpenCode, Claude Code, Cursor, and generic MCP-compatible hosts.
 
+For the canonical product goal, current MVP status, implementation roadmap, and Codex operating rules, see [Product Goal And Roadmap](docs/product-goal-and-roadmap.md).
+
 ## Current Status
 
 The foundation is in place: auth, config storage, documentation, MCP SDK startup, setup wizard scaffolding, safety helpers, Admin GraphQL client, capability diagnostics, and structured catalog/content preview helpers.
