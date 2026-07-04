@@ -1,6 +1,6 @@
 # Tool Contracts
 
-These are the intended V1 Shopify Store Agent MCP tool contracts. The current implementation includes real read-only Admin GraphQL tools and structured catalog/content preview tools. Execute/write tools remain fail-closed placeholders; real Shopify write API behavior will be added in later PRs.
+These are the intended V1 Shopify Store Agent MCP tool contracts. The current implementation includes real read-only Admin GraphQL tools, structured catalog/content preview tools, a local preview store, and one limited real write tool: `page.create.execute`. All other execute/write tools remain fail-closed placeholders.
 
 ## Global Write Contract
 
@@ -23,7 +23,9 @@ Preview tools may also return local binding metadata such as `previewHash` and `
 
 Stored previews expire by TTL. Missing, expired, invalid, or mismatched stored preview records must fail closed before any future write path. Store output and audit context must not include raw reviewed payloads, raw Shopify nodes, secrets, or oversized user content.
 
-Current execute tools are placeholders. After read-only and preview-binding checks pass, placeholder execute tools return `ok: false`, `implemented: false`, `status: "not_implemented"`, and `placeholder: true`. They must not be interpreted as successful Shopify writes, and their audit entries use `result: "not_implemented"` rather than `success`. Missing confirmation, missing preview ID, missing reviewed payload, or binding mismatch is audited as `blocked` and must not expose raw reviewed payloads.
+Except for `page.create.execute`, current execute tools are placeholders. After read-only and preview-binding checks pass, placeholder execute tools return `ok: false`, `implemented: false`, `status: "not_implemented"`, and `placeholder: true`. They must not be interpreted as successful Shopify writes, and their audit entries use `result: "not_implemented"` rather than `success`. Missing confirmation, missing preview ID, missing reviewed payload, or binding mismatch is audited as `blocked` and must not expose raw reviewed payloads.
+
+`page.create.execute` is implemented as the first narrow production-write foundation. It may call only the Shopify Admin GraphQL page create mutation, and only after read-only mode is disabled, a matching stored `page.create.preview` record exists, the record is active, `confirmed: true` is present, target/tool/hash binding matches, and the actual `reviewedPayload` hashes back to the stored preview. It uses the stored/reviewed preview content as the source of truth, not unrelated loose execute input. Shopify `userErrors` are returned safely and audited as `blocked`; network/API/unexpected errors are audited as `failed`; successful mocked or live page creation is the only execute path that may audit `success`.
 
 The agent must never autonomously search for products. Users provide the product data, source URL, CSV, images, or IDs.
 
@@ -179,9 +181,11 @@ Preview output: page creation summary, content summary, SEO/publish plan, warnin
 
 ### `page.create.execute`
 
-Required input: preview ID or reviewed page payload and confirmation.
+Required input: stored `page.create.preview` `previewId`, `confirmed: true`, reviewed payload, expected preview tool, target, `previewHash`, and `reviewedChangesHash`.
 
-Execute requirements: `write_content`, writes enabled, explicit confirmation.
+Execute requirements: `write_content`, read-only mode disabled, explicit confirmation, active stored preview, matching target/tool/hash binding, and reviewed payload hash matching the stored preview. The mutation payload is limited to reviewed page creation fields such as title, body/content summary, handle, publish preference, and template suffix when present in the preview. It does not implement page update/delete, SEO bulk changes, metafields, navigation, media, theme edits, products, or collections.
+
+Output: safe status, created page ID/title/handle on success, safe Shopify `userErrors` or diagnostics on failure, and an audit entry. It must not return raw reviewed payloads, raw Shopify response nodes, tokens, or unrelated execute input.
 
 ### `collection.create.preview`
 

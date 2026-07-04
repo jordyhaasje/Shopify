@@ -38,7 +38,7 @@ pnpm --filter shopify-store-agent run setup -- \
 
 Setup writes local config only when run as the CLI command. Programmatic dry runs do not write config. The generated MCP snippets use `SHOPIFY_STORE_AGENT_CONFIG` and other non-secret environment values instead of printing Admin API tokens or OAuth client secrets.
 
-Setup defaults to `readOnly: true`. It does not implement Shopify writes, does not enable execute tools, and does not require write scopes for read/preview setup. OAuth auth also defaults to read-only Admin API scopes. Explicit `write_` scopes are blocked unless write mode is explicitly requested, and even then the wizard only records configuration intent; execute tools remain fail-closed placeholders because no Shopify mutations or Admin API write calls exist in this phase.
+Setup defaults to `readOnly: true`. The setup command itself does not perform Shopify writes, does not activate execute tools, and does not require write scopes for read/preview/smoke validation. OAuth auth also defaults to read-only Admin API scopes. Explicit `write_` scopes are blocked unless write mode is explicitly requested; in this phase write mode is only for reviewed development-store testing of `page.create.execute`. All other execute tools remain fail-closed placeholders.
 
 ## Local Smoke Validation
 
@@ -76,7 +76,7 @@ pnpm --filter shopify-store-agent run auth -- --store your-store.myshopify.com
 
 The CLI asks for the Shopify app client ID and client secret, opens or prints an install URL, validates the callback state/HMAC, exchanges the OAuth code, and stores the resulting Admin API token locally.
 
-V1 defaults to read-only mode unless writes are explicitly enabled. The default OAuth install URL uses read-only scopes only; write scopes should not be requested until future write tools are implemented and intentionally enabled.
+V1 defaults to read-only mode unless writes are explicitly enabled. The default OAuth install URL uses read-only scopes only. Do not request write scopes for setup, smoke, reads, or previews; request the minimum page-content write scope only when intentionally testing the reviewed `page.create.execute` path in a development store.
 
 ## Manual Admin API Token Setup
 

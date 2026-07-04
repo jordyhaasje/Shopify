@@ -22,9 +22,9 @@ Structured preview tools are implemented for `product.create.preview`, `product.
 
 Preview results are also saved to a local in-memory preview store. Stored records contain safe preview content, TTL metadata, unique per-preview `previewId` values, and deterministic `previewHash` values that can later be compared with hashes recomputed from the actual reviewed payload. The store is not file-backed yet, does not persist across process restarts, and never performs Shopify calls.
 
-Write tools are still guarded fail-closed placeholders, including product create/update execute, customer address update execute, refund execute, tracking update execute, page/collection execute, bulk execute, and theme apply. No Shopify mutations are implemented yet.
+`page.create.execute` is the first limited real Shopify write tool. It only attempts the Shopify page create mutation when read-only mode is disabled, a stored `page.create.preview` record exists, the preview is not expired, the reviewed payload hashes back to the stored preview, the target/tool/hash binding matches, and `confirmed: true` is present. It returns only a safe created-page summary or safe Shopify user/error diagnostics.
 
-Execute placeholders require preview binding context before they reach the not-implemented placeholder response. Confirmation alone is insufficient: callers must provide a `previewId` plus reviewed payload context that can be tied to the expected preview tool, target, preview hash, and reviewed changes hash. Missing, expired, or mismatched preview binding fails closed and is audited as `blocked`; validly bound placeholders are audited as `not_implemented`, never `success`.
+All other write tools are still guarded fail-closed placeholders, including product create/update execute, customer address update execute, refund execute, tracking update execute, collection execute, bulk execute, and theme apply. Confirmation alone is insufficient: callers must provide a `previewId` plus reviewed payload context that can be tied to the expected preview tool, target, preview hash, and reviewed changes hash. Missing, expired, or mismatched preview binding fails closed and is audited as `blocked`; validly bound placeholders are audited as `not_implemented`, never `success`.
 
 ## Temporary GitHub Install
 
