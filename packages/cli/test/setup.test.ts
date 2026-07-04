@@ -242,6 +242,7 @@ describe("setup", () => {
   it("defaults OAuth install to read-only scopes and no write scopes in the install URL", async () => {
     const port = await unusedPort();
     const logs: string[] = [];
+    const secretPrompts: string[] = [];
     const originalLog = console.log;
     console.log = (...values: unknown[]) => {
       logs.push(values.map(String).join(" "));
@@ -252,7 +253,10 @@ describe("setup", () => {
       const install = runOAuthInstall({
         storeUrl: "demo",
         clientId: "client-id-123",
-        clientSecret: "client-secret-123",
+        clientSecretPrompt: async (prompt) => {
+          secretPrompts.push(prompt);
+          return "client-secret-123";
+        },
         redirectPort: port,
         configPath,
         tokenFetcher: async () => ({
@@ -283,6 +287,7 @@ describe("setup", () => {
       const output = logs.join("\n");
 
       expect(result.grantedScopes).toEqual(["read_products", "read_orders", "read_customers"]);
+      expect(secretPrompts).toEqual(["Shopify app client secret: "]);
       expect(output).not.toContain("write_");
       expect(output).not.toContain("client-secret-123");
       expect(output).not.toContain("shpat_oauth_secret");
