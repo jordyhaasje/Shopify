@@ -4,6 +4,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
 import { callTool, createDefaultContext, listTools } from "./tools.js";
 
+export { callTool, createDefaultContext, listTools, type ToolContext } from "./tools.js";
+
 export async function createShopifyStoreAgentServer(): Promise<McpServer> {
   const server = new McpServer({
     name: "shopify-store-agent-mcp",

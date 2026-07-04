@@ -24,4 +24,5 @@ pnpm run build
 - Confirm execute placeholders require preview ID plus reviewed payload/context; missing, expired, invalid, or mismatched binding uses `blocked`, and valid placeholders use `not_implemented`, never `success`.
 - Review capability or auth changes for token redaction and mocked tests only.
 - Review setup wizard changes for read-only defaults, OAuth auth read-only default scopes, explicit handling of requested `write_` scopes, local-only config storage, safe capability checks, host snippets without raw secrets, and no Shopify write-scope requirement for read/preview setup.
+- Review smoke validation changes for local/mocked defaults, no default fetches, no writes or mutations, preview-store coverage, and execute placeholders auditing `blocked` or `not_implemented` but never `success`.
 - Merge manually only after local validation and reviewer approval.

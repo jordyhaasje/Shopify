@@ -35,7 +35,7 @@ git clone https://github.com/jordyhaasje/Shopify.git
 cd Shopify
 pnpm install
 pnpm run build
-pnpm --filter shopify-store-agent exec shopify-store-agent setup --store your-store.myshopify.com
+pnpm --filter shopify-store-agent run setup -- --store your-store.myshopify.com
 ```
 
 For local OAuth, add this redirect URL to the Shopify Dev Dashboard app:
@@ -56,6 +56,14 @@ npx shopify-store-agent setup
 
 The wizard guides users through store URL normalization, manual-token or local-OAuth setup guidance, read-only local config, capability checks, and MCP host snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts. Setup and OAuth auth default to read-only scopes, do not request write scopes for read/preview mode, and do not implement or activate Shopify writes.
 
+Local smoke validation is available before connecting a store:
+
+```bash
+pnpm run smoke:local
+```
+
+The default smoke path is local/mocked only. It checks setup, MCP snippets, local capability diagnostics, preview storage, and execute placeholder fail-closed behavior without Shopify writes or mutations.
+
 `shopify.capabilities.check` is partially real: by default it only inspects local config and redacted capability flags. Optional live mode performs only a minimal shop identity check and does not fetch products, orders, customers, or other sensitive data.
 
 ## Safety Model
@@ -67,6 +75,7 @@ The wizard guides users through store URL normalization, manual-token or local-O
 - No secrets belong in the repo, docs, tests, or logs.
 
 See [docs/safety.md](docs/safety.md), [docs/scopes.md](docs/scopes.md), and [docs/tool-contracts.md](docs/tool-contracts.md).
+For dev-store readiness, see [docs/dev-store-validation.md](docs/dev-store-validation.md).
 
 ## Local Validation
 

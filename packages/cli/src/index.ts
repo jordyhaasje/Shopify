@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
+import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import { fileURLToPath } from "node:url";
 import {
   buildInstallUrl,
   checkShopifyCapabilities,
@@ -14,7 +16,12 @@ import {
   createConfig,
   emptyCapabilities,
   type FetchLike,
+  hashPreviewContent,
+  MemoryAuditLog,
+  MemoryPreviewStore,
   normalizeScopes,
+  previewRecordBindingTarget,
+  reviewedPayloadForPreviewRecord,
   saveStoredConfig,
   scopesToString,
   type TokenFetch,
@@ -23,6 +30,7 @@ import {
   summarizeCapabilities,
   type StoreAgentConfig
 } from "@shopify-store-agent/core";
+import { callTool, type ToolContext } from "shopify-store-agent-mcp";
 
 export interface SetupOptions {
   storeUrl?: string;
@@ -52,6 +60,14 @@ export interface AuthOptions {
   tokenFetcher?: TokenFetch;
 }
 
+export interface SmokeOptions {
+  storeUrl?: string;
+  configPath?: string;
+  live?: boolean;
+  adminAccessToken?: string;
+  fetcher?: FetchLike;
+}
+
 export interface SetupWarning {
   code: string;
   message: string;
@@ -69,6 +85,33 @@ export interface SetupResult {
   warnings: SetupWarning[];
   snippets: Record<"codex" | "claude" | "cursor" | "generic", string>;
   nextSteps: string[];
+}
+
+export interface SmokeCheck {
+  name: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface SmokeValidationResult {
+  ok: boolean;
+  mode: "local" | "live";
+  storeUrl: string;
+  configPath: string;
+  readOnly: boolean;
+  fetchCalls: number;
+  checks: SmokeCheck[];
+  snippets: Record<"codex" | "claude" | "cursor" | "generic", string>;
+  capabilityCheck: CapabilityCheckResult;
+  previewId?: string;
+  previewHash?: string;
+  execute: {
+    invalidStatus?: string;
+    invalidAuditResult?: string;
+    validStatus?: string;
+    validAuditResult?: string;
+    anySuccessAudit: boolean;
+  };
 }
 
 export function generateMcpConfigSnippets(config: StoreAgentConfig, options: { configPath?: string } = {}): Record<"codex" | "claude" | "cursor" | "generic", string> {
@@ -114,6 +157,139 @@ export function generateMcpConfigSnippets(config: StoreAgentConfig, options: { c
       args,
       env
     }, null, 2)
+  };
+}
+
+export async function runSmokeValidation(options: SmokeOptions = {}): Promise<SmokeValidationResult> {
+  let fetchCalls = 0;
+  const fetcher: FetchLike = async (url, init) => {
+    fetchCalls += 1;
+    if (options.fetcher) return options.fetcher(url, init);
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({
+          data: {
+            shop: {
+              name: "Smoke Test Shop",
+              myshopifyDomain: "smoke-test.myshopify.com",
+              primaryDomain: { host: "smoke-test.example" }
+            }
+          }
+        });
+      }
+    };
+  };
+  const setup = await runSetup({
+    storeUrl: options.storeUrl ?? "smoke-test",
+    adminAccessToken: options.adminAccessToken,
+    configPath: options.configPath,
+    dryRun: true,
+    liveCapabilityCheck: options.live === true,
+    fetcher: options.live === true ? fetcher : undefined
+  });
+  const config = createConfig({
+    storeUrl: setup.config.storeUrl,
+    apiVersion: setup.config.apiVersion,
+    readOnly: true,
+    capabilities: emptyCapabilities()
+  });
+  const previewStore = new MemoryPreviewStore();
+  const context: ToolContext = {
+    config,
+    audit: new MemoryAuditLog(),
+    previewStore,
+    fetcher: async () => {
+      fetchCalls += 1;
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return "{}";
+        }
+      };
+    }
+  };
+
+  const checks: SmokeCheck[] = [];
+  checks.push(check("config_path_available", Boolean(setup.configPath), "Config path can be resolved."));
+  checks.push(check("store_url_normalized", setup.config.storeUrl === "smoke-test.myshopify.com" || setup.config.storeUrl.includes("."), `Store URL normalized to ${setup.config.storeUrl}.`));
+  checks.push(check("read_only_default", setup.config.readOnly === true, "Setup defaults to read-only mode."));
+  checks.push(check("capability_check", setup.capabilityCheck.mode === (options.live ? "live" : "local"), `Capability check ran in ${setup.capabilityCheck.mode} mode.`));
+  checks.push(check("mcp_snippets", Object.values(setup.snippets).every((snippet) => snippet.includes("shopify-store-agent")), "MCP snippets generated for supported hosts."));
+
+  const preview = await callTool("product.create.preview", {
+    title: "Smoke Test Product",
+    description: "Local smoke validation product preview."
+  }, context) as Record<string, unknown>;
+  const previewId = typeof preview.previewId === "string" ? preview.previewId : undefined;
+  const previewHash = typeof preview.previewHash === "string" ? preview.previewHash : undefined;
+  const stored = previewStore.getPreview(previewId);
+  checks.push(check("preview_output", preview.ok === true && preview.status === "ok", "Product create preview generated."));
+  checks.push(check("preview_store_record", stored.ok === true, "Preview store received a record."));
+
+  const executeContext: ToolContext = {
+    ...context,
+    config: createConfig({
+      storeUrl: config.storeUrl,
+      readOnly: false,
+      capabilities: emptyCapabilities()
+    })
+  };
+  const binding = preview.binding && typeof preview.binding === "object" ? preview.binding as Record<string, unknown> : {};
+  const invalidExecute = await callTool("product.create.execute", {
+    previewId,
+    confirmed: true,
+    reviewedPayload: { arbitrary: "payload" },
+    expectedTool: binding.expectedTool,
+    target: binding.target,
+    previewHash,
+    reviewedChangesHash: previewHash,
+    title: "Smoke Test Product"
+  }, executeContext) as Record<string, unknown>;
+  checks.push(check("invalid_execute_blocked", invalidExecute.status === "blocked", "Invalid execute binding is blocked."));
+
+  const activeRecord = stored.record;
+  const reviewedPayload = activeRecord ? reviewedPayloadForPreviewRecord(activeRecord) : {};
+  const reviewedChangesHash = hashPreviewContent(reviewedPayload);
+  const target = activeRecord ? previewRecordBindingTarget(activeRecord) : binding.target;
+  const validExecute = await callTool("product.create.execute", {
+    previewId,
+    confirmed: true,
+    reviewedPayload,
+    expectedTool: binding.expectedTool,
+    target,
+    previewHash,
+    reviewedChangesHash,
+    title: "Smoke Test Product"
+  }, executeContext) as Record<string, unknown>;
+  checks.push(check("valid_execute_not_implemented", validExecute.status === "not_implemented", "Valid stored binding reaches only the not-implemented placeholder."));
+
+  const auditEntries = executeContext.audit.list();
+  const anySuccessAudit = auditEntries.some((entry) => entry.mode === "execute" && entry.result === "success");
+  checks.push(check("execute_never_success", !anySuccessAudit, "Execute placeholders never audit success."));
+  checks.push(check("no_default_fetch", options.live === true || fetchCalls === 0, "Default smoke validation made no fetch calls."));
+
+  return {
+    ok: checks.every((item) => item.ok),
+    mode: options.live ? "live" : "local",
+    storeUrl: setup.config.storeUrl,
+    configPath: setup.configPath,
+    readOnly: setup.config.readOnly,
+    fetchCalls,
+    checks,
+    snippets: setup.snippets,
+    capabilityCheck: setup.capabilityCheck,
+    previewId,
+    previewHash,
+    execute: {
+      invalidStatus: stringField(invalidExecute.status),
+      invalidAuditResult: auditResult(invalidExecute),
+      validStatus: stringField(validExecute.status),
+      validAuditResult: auditResult(validExecute),
+      anySuccessAudit
+    }
   };
 }
 
@@ -250,9 +426,9 @@ export async function runSetup(options: SetupOptions): Promise<{
   }
 }
 
-function parseArgs(argv: string[]): (SetupOptions & AuthOptions & { command: string }) {
+function parseArgs(argv: string[]): (SetupOptions & AuthOptions & SmokeOptions & { command: string }) {
   const [command = "help", ...rest] = argv;
-  const options: SetupOptions & AuthOptions & { command: string } = { command };
+  const options: SetupOptions & AuthOptions & SmokeOptions & { command: string } = { command };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     const next = rest[index + 1];
@@ -277,6 +453,8 @@ function parseArgs(argv: string[]): (SetupOptions & AuthOptions & { command: str
       options.dryRun = true;
     } else if (arg === "--live-capability-check") {
       options.liveCapabilityCheck = true;
+    } else if (arg === "--live") {
+      options.live = true;
     } else if (arg === "--client-id" && next) {
       options.clientId = next;
       index += 1;
@@ -299,15 +477,28 @@ function parseArgs(argv: string[]): (SetupOptions & AuthOptions & { command: str
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
-  if (options.command !== "setup" && options.command !== "auth") {
+  if (options.command !== "setup" && options.command !== "auth" && options.command !== "smoke") {
     console.log("Usage:");
     console.log("  shopify-store-agent setup --store example.myshopify.com [--auth manual|oauth] [--dry-run]");
     console.log("  shopify-store-agent auth --store example.myshopify.com --client-id ... --client-secret ...");
+    console.log("  shopify-store-agent smoke [--store example.myshopify.com] [--live]");
     return;
   }
 
   if (options.command === "auth") {
     await runOAuthInstall(options);
+    return;
+  }
+
+  if (options.command === "smoke") {
+    const result = await runSmokeValidation({
+      storeUrl: options.storeUrl,
+      configPath: options.configPath,
+      live: options.live === true,
+      adminAccessToken: options.adminAccessToken
+    });
+    console.log(JSON.stringify(redactSmokeResult(result), null, 2));
+    if (!result.ok) process.exitCode = 1;
     return;
   }
 
@@ -345,6 +536,24 @@ async function main(): Promise<void> {
 
 function normalizeAuthMethod(value: unknown): "manual" | "oauth" {
   return typeof value === "string" && value.trim().toLowerCase() === "oauth" ? "oauth" : "manual";
+}
+
+function check(name: string, ok: boolean, detail: string): SmokeCheck {
+  return { name, ok, detail };
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function auditResult(value: Record<string, unknown>): string | undefined {
+  const audit = value.audit;
+  if (!audit || typeof audit !== "object" || !("result" in audit)) return undefined;
+  return stringField((audit as { result?: unknown }).result);
+}
+
+function redactSmokeResult(result: SmokeValidationResult): SmokeValidationResult {
+  return JSON.parse(JSON.stringify(result).replace(/shpat_[A-Za-z0-9_]+|shpua_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|Bearer\s+[A-Za-z0-9._-]+/gi, "[redacted]")) as SmokeValidationResult;
 }
 
 function resolveSetupScopes(input: string | readonly string[] | undefined, readOnly: boolean): string[] {
@@ -411,7 +620,7 @@ function waitForOAuthCallback(port: number): Promise<Record<string, string>> {
   });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   main().catch((error) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);

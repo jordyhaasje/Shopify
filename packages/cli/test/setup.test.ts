@@ -5,7 +5,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createConfig } from "@shopify-store-agent/core";
-import { generateMcpConfigSnippets, runOAuthInstall, runSetup } from "../src/index.js";
+import { generateMcpConfigSnippets, runOAuthInstall, runSetup, runSmokeValidation } from "../src/index.js";
 
 describe("setup", () => {
   it("generates snippets without leaking tokens", () => {
@@ -263,6 +263,93 @@ describe("setup", () => {
     expect(output).not.toContain("mutation");
     expect(output).not.toContain("Admin API write");
     expect(output).not.toContain("productCreate");
+  });
+
+  it("runs smoke validation local-only by default without fetch calls or secret leaks", async () => {
+    let fetchCalls = 0;
+
+    const result = await runSmokeValidation({
+      storeUrl: "demo",
+      adminAccessToken: "shpat_smoke_secret",
+      fetcher: async () => {
+        fetchCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          async text() {
+            return "{}";
+          }
+        };
+      }
+    });
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "local",
+      readOnly: true,
+      fetchCalls: 0,
+      execute: {
+        invalidStatus: "blocked",
+        invalidAuditResult: "blocked",
+        validStatus: "not_implemented",
+        validAuditResult: "not_implemented",
+        anySuccessAudit: false
+      }
+    });
+    expect(result.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "preview_store_record", ok: true }),
+      expect.objectContaining({ name: "invalid_execute_blocked", ok: true }),
+      expect.objectContaining({ name: "valid_execute_not_implemented", ok: true })
+    ]));
+    expect(fetchCalls).toBe(0);
+    expect(output).not.toContain("shpat_smoke_secret");
+    expect(output).not.toContain("mutation");
+    expect(output).not.toContain("Admin API write");
+    expect(output).not.toContain("productCreate");
+  });
+
+  it("uses mocked capability check only when smoke live mode is explicit", async () => {
+    let fetchCalls = 0;
+
+    const result = await runSmokeValidation({
+      storeUrl: "demo",
+      live: true,
+      adminAccessToken: "shpat_smoke_live_secret",
+      fetcher: async () => {
+        fetchCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          async text() {
+            return JSON.stringify({
+              data: {
+                shop: {
+                  name: "Demo Shop",
+                  myshopifyDomain: "demo.myshopify.com",
+                  primaryDomain: { host: "example.com" }
+                }
+              }
+            });
+          }
+        };
+      }
+    });
+
+    expect(fetchCalls).toBe(1);
+    expect(result.mode).toBe("live");
+    expect(result.capabilityCheck.live).toMatchObject({ attempted: true, ok: true });
+    expect(JSON.stringify(result)).not.toContain("shpat_smoke_live_secret");
+  });
+
+  it("keeps dev-store validation checklist documented", async () => {
+    const checklist = await readFile("docs/dev-store-validation.md", "utf8");
+
+    expect(checklist).toContain("read-only");
+    expect(checklist).toContain("smoke");
+    expect(checklist).toContain("execute placeholder");
+    expect(checklist).toContain("no writes");
+    expect(checklist).not.toContain("shpat_");
   });
 });
 
