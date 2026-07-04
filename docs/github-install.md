@@ -7,7 +7,7 @@ git clone https://github.com/jordyhaasje/Shopify.git
 cd Shopify
 pnpm install
 pnpm run build
-pnpm --filter shopify-store-agent exec shopify-store-agent auth \
+pnpm --filter shopify-store-agent run auth -- \
   --store your-store.myshopify.com \
   --client-id your-client-id \
   --client-secret your-client-secret

@@ -10,6 +10,7 @@
   "scripts": {
     "build": "tsc -b",
     "lint": "node scripts/lint.mjs",
+    "smoke:local": "pnpm --filter shopify-store-agent run smoke",
     "test": "vitest run",
     "typecheck": "tsc -b --pretty false"
   },

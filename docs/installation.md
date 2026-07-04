@@ -11,7 +11,7 @@ git clone https://github.com/jordyhaasje/Shopify.git
 cd Shopify
 pnpm install
 pnpm run build
-pnpm --filter shopify-store-agent exec shopify-store-agent setup --store your-store.myshopify.com
+pnpm --filter shopify-store-agent run setup -- --store your-store.myshopify.com
 ```
 
 See [github-install.md](github-install.md) for the temporary GitHub install notes.
@@ -31,7 +31,7 @@ Capability checks are safe by default. Local mode reports config status, redacte
 The current setup foundation supports the same shape locally:
 
 ```bash
-pnpm --filter shopify-store-agent exec shopify-store-agent setup \
+pnpm --filter shopify-store-agent run setup -- \
   --store your-store.myshopify.com \
   --auth manual
 ```
@@ -39,6 +39,24 @@ pnpm --filter shopify-store-agent exec shopify-store-agent setup \
 Setup writes local config only when run as the CLI command. Programmatic dry runs do not write config. The generated MCP snippets use `SHOPIFY_STORE_AGENT_CONFIG` and other non-secret environment values instead of printing Admin API tokens or OAuth client secrets.
 
 Setup defaults to `readOnly: true`. It does not implement Shopify writes, does not enable execute tools, and does not require write scopes for read/preview setup. OAuth auth also defaults to read-only Admin API scopes. Explicit `write_` scopes are blocked unless write mode is explicitly requested, and even then the wizard only records configuration intent; execute tools remain fail-closed placeholders because no Shopify mutations or Admin API write calls exist in this phase.
+
+## Local Smoke Validation
+
+Run smoke validation after install/setup changes and before testing against a development store:
+
+```bash
+pnpm run smoke:local
+```
+
+The default smoke path is local/mocked only. It builds dry-run setup config, verifies read-only mode, runs local capability diagnostics, generates MCP snippets, creates a preview, checks the local preview store, and confirms execute placeholders return `blocked` for invalid binding and `not_implemented` for valid stored binding.
+
+Optional live mode is limited to the minimal capability check and must be explicitly requested:
+
+```bash
+pnpm --filter shopify-store-agent run smoke -- --live --admin-token "$SHOPIFY_ADMIN_TOKEN"
+```
+
+Smoke validation does not perform Shopify writes, does not run mutations, and does not fetch products, orders, or customers by default. Use [dev-store-validation.md](dev-store-validation.md) as the manual readiness checklist.
 
 ## Local OAuth Setup
 
@@ -53,7 +71,7 @@ http://127.0.0.1:3456/auth/callback
 Then run:
 
 ```bash
-pnpm --filter shopify-store-agent exec shopify-store-agent auth --store your-store.myshopify.com
+pnpm --filter shopify-store-agent run auth -- --store your-store.myshopify.com
 ```
 
 The CLI asks for the Shopify app client ID and client secret, opens or prints an install URL, validates the callback state/HMAC, exchanges the OAuth code, and stores the resulting Admin API token locally.
@@ -74,7 +92,7 @@ Manual config should provide:
 The setup wizard can create the same local config path with:
 
 ```bash
-pnpm --filter shopify-store-agent exec shopify-store-agent setup \
+pnpm --filter shopify-store-agent run setup -- \
   --store your-store.myshopify.com \
   --auth manual \
   --admin-token "$SHOPIFY_ADMIN_TOKEN"

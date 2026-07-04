@@ -8,10 +8,14 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
+    "auth": "node dist/index.js auth",
     "build": "tsc -b",
+    "setup": "node dist/index.js setup",
+    "smoke": "node dist/index.js smoke --dry-run",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@shopify-store-agent/core": "workspace:*"
+    "@shopify-store-agent/core": "workspace:*",
+    "shopify-store-agent-mcp": "workspace:*"
   }
 }

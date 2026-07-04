@@ -6,7 +6,8 @@
     "outDir": "dist"
   },
   "references": [
-    { "path": "../core" }
+    { "path": "../core" },
+    { "path": "../mcp" }
   ],
   "include": ["src/**/*.ts"]
 }
