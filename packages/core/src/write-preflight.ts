@@ -19,8 +19,9 @@ export interface WriteScopePreflightResult {
 export const pageCreateWriteScopes = ["write_content", "write_online_store_pages"] as const;
 export const productCreateWriteScopes = ["write_products"] as const;
 export const productUpdateWriteScopes = ["write_products"] as const;
+export const collectionCreateWriteScopes = ["write_products"] as const;
 
-type WriteExecuteTool = "page.create.execute" | "product.create.execute" | "product.update.execute";
+type WriteExecuteTool = "page.create.execute" | "product.create.execute" | "product.update.execute" | "collection.create.execute";
 
 export function checkWriteScopePreflight(config: StoreAgentConfig, tool: WriteExecuteTool): WriteScopePreflightResult {
   const requiredScopes = requiredWriteScopes(tool);
@@ -49,6 +50,7 @@ function requiredWriteScopes(tool: WriteExecuteTool): readonly string[] {
   if (tool === "page.create.execute") return pageCreateWriteScopes;
   if (tool === "product.create.execute") return productCreateWriteScopes;
   if (tool === "product.update.execute") return productUpdateWriteScopes;
+  if (tool === "collection.create.execute") return collectionCreateWriteScopes;
   return [];
 }
 

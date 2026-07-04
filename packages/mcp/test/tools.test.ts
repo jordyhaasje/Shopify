@@ -404,7 +404,7 @@ describe("MCP tools", () => {
           usesShopifyWriteOperation: false
         }
       });
-      if (tool !== "product.create.preview" && tool !== "page.create.preview") {
+      if (tool !== "product.create.preview" && tool !== "page.create.preview" && tool !== "collection.create.preview") {
         expect((result as Record<string, unknown>).executeRequest).toBeUndefined();
       }
     }
@@ -2243,6 +2243,198 @@ describe("MCP tools", () => {
     expect(context.audit.list()[1]).toMatchObject({ tool: "page.create.execute", result: "failed" });
   });
 
+  it("blocks collection.create.execute in read-only mode before fetch", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    });
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("collection.create.preview", {
+      title: "Summer Picks",
+      productIds: ["gid://shopify/Product/1"]
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("collection.create.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: [{ code: "read_only" }]
+    });
+    expect(context.audit.list()[1]).toMatchObject({ tool: "collection.create.execute", result: "blocked" });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("blocks collection.create.execute before fetch when write_products is missing", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["read_products", "shpat_scope_secret"];
+    const preview = await callTool("collection.create.preview", {
+      title: "Summer Picks",
+      productIds: ["gid://shopify/Product/1"]
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("collection.create.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "missing_write_scope" })])
+    });
+    expect(output).not.toContain("shpat_scope_secret");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "collection.create.execute", result: "blocked" });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("blocks rule-based collection.create.execute because smart collections are not implemented", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("collection.create.preview", {
+      title: "Tagged Products",
+      rules: [{ column: "TAG", relation: "EQUALS", condition: "summer" }]
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("collection.create.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "unsupported_collection_rules" })])
+    });
+    expect(context.audit.list()[1]).toMatchObject({ tool: "collection.create.execute", result: "blocked" });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("calls collectionCreate after valid stored preview binding and write_products preflight", async () => {
+    const requests: Array<{ body: string }> = [];
+    const context = baseContext(async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          collectionCreate: {
+            collection: {
+              id: "gid://shopify/Collection/1",
+              title: "Summer Picks",
+              handle: "summer-picks",
+              rawNodeOnly: "do not return"
+            },
+            userErrors: []
+          }
+        }
+      });
+    }, false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("collection.create.preview", {
+      title: "Summer Picks",
+      handle: "summer-picks",
+      productIds: ["gid://shopify/Product/1", "gid://shopify/Product/2"],
+      seo: { title: "ignored" },
+      publishPreference: "published"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("collection.create.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash,
+      title: "UNRELATED EXECUTE TITLE",
+      productIds: ["gid://shopify/Product/999"]
+    }, context);
+    expect(result).toMatchObject({ ok: true, diagnostics: [] });
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "execute",
+      implemented: true,
+      status: "ok",
+      createdCollection: {
+        id: "gid://shopify/Collection/1",
+        title: "Summer Picks",
+        handle: "summer-picks"
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentCollectionCreate");
+    expect(request.query).toContain("collectionCreate");
+    expect(request.query).not.toContain("productCreate");
+    expect(request.query).not.toContain("productUpdate");
+    expect(request.query).not.toContain("pageCreate");
+    expect(request.query).not.toContain("refundCreate");
+    expect(request.variables.collection).toEqual({
+      title: "Summer Picks",
+      handle: "summer-picks",
+      sources: [{
+        source: {
+          title: "Summer Picks product selections",
+          inclusion: {
+            selections: [
+              { productId: "gid://shopify/Product/1" },
+              { productId: "gid://shopify/Product/2" }
+            ]
+          }
+        }
+      }]
+    });
+    expect(request.variables.collection).not.toHaveProperty("seo");
+    expect(request.variables.collection).not.toHaveProperty("publishPreference");
+    expect(requests[0].body).not.toContain("UNRELATED EXECUTE TITLE");
+    expect(requests[0].body).not.toContain("gid://shopify/Product/999");
+    expect(output).not.toContain("rawNodeOnly");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "collection.create.execute", result: "success" });
+  });
+
   it("keeps catalog and content execute tools not implemented without calling fetchers", async () => {
     let fetchCalled = false;
     const context = baseContext(async () => {
@@ -2257,8 +2449,7 @@ describe("MCP tools", () => {
     }, false);
     const executeCalls: Array<[string, Record<string, unknown>]> = [
       ["product.media.update.execute", { ...executeBinding("product.media.update.preview", "gid://shopify/Product/1"), productId: "gid://shopify/Product/1", confirmed: true }],
-      ["product.importFromUserUrl.execute", { ...executeBinding("product.importFromUserUrl.preview", "https://example.com/products/shirt"), url: "https://example.com/products/shirt", confirmed: true }],
-      ["collection.create.execute", { ...executeBinding("collection.create.preview", "Summer"), title: "Summer", confirmed: true }]
+      ["product.importFromUserUrl.execute", { ...executeBinding("product.importFromUserUrl.preview", "https://example.com/products/shirt"), url: "https://example.com/products/shirt", confirmed: true }]
     ];
 
     for (const [tool, input] of executeCalls) {

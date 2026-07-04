@@ -128,6 +128,7 @@ Preview output includes `executeRequest` for:
 ```text
 page.create.preview -> page.create.execute
 product.create.preview -> product.create.execute
+collection.create.preview -> collection.create.execute
 ```
 
 ## Step 8 -- Approve and execute
@@ -154,7 +155,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --scopes "read_products,read_content,read_online_store_pages,write_products,write_content"
 ```
 
-Use only a development or disposable store. `write_products` is required for `product.create.execute` and the basic-field `product.update.execute`; `write_content` or `write_online_store_pages` is required for `page.create.execute`. All other execute tools are placeholders.
+Use only a development or disposable store. `write_products` is required for `product.create.execute`, the basic-field `product.update.execute`, and custom `collection.create.execute`; `write_content` or `write_online_store_pages` is required for `page.create.execute`. All other execute tools are placeholders.
 
 ## Safety rules
 
@@ -209,6 +210,7 @@ Real execute tools:
 page.create.execute
 product.create.execute
 product.update.execute
+collection.create.execute
 ```
 
 Placeholder execute tools:
@@ -216,7 +218,6 @@ Placeholder execute tools:
 ```text
 product.media.update.execute
 product.importFromUserUrl.execute
-collection.create.execute
 customer.updateAddress.execute
 tracking.update.execute
 refund.execute
@@ -230,6 +231,6 @@ theme.rollback
 - npm/npx package install as the primary route.
 - Product update execute beyond basic title, description/descriptionHtml, vendor, product type, status, and tags.
 - Production-store write automation.
-- Collection create, refund, tracking, customer, bulk, theme, variants, media, inventory, metafields, publications, translations, and other advanced execute implementations.
+- Rule-based/smart collection create, collection publishing, refund, tracking, customer, bulk, theme, variants, media, inventory, metafields, publications, translations, and other advanced execute implementations.
 - Automated live Shopify tests.
 - Persistent preview storage across MCP server restarts.

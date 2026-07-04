@@ -5,6 +5,7 @@ import {
   checkWriteScopePreflight,
   type CatalogPreviewResult,
   createBulkPreview,
+  createCollection,
   createConfig,
   createPage,
   createRefundPreview,
@@ -25,6 +26,8 @@ import {
   reviewedPayloadForPreviewRecord,
   type PageCreateInput,
   type PageCreateResult,
+  type CollectionCreateInput,
+  type CollectionCreateResult,
   type ProductCreateInput,
   type ProductCreateResult,
   type ProductUpdateInput,
@@ -151,6 +154,7 @@ function previewExecuteRequest(record: StoredPreviewRecord): Record<string, unkn
 function implementedExecuteToolForPreview(previewTool: string): string | undefined {
   if (previewTool === "product.create.preview") return "product.create.execute";
   if (previewTool === "page.create.preview") return "page.create.execute";
+  if (previewTool === "collection.create.preview") return "collection.create.execute";
   return undefined;
 }
 
@@ -428,6 +432,50 @@ async function productUpdateExecuteResult(input: Record<string, unknown>, contex
   return productUpdateWriteResult(tool, storedTarget, binding, write, context);
 }
 
+async function collectionCreateExecuteResult(input: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>> {
+  const tool = "collection.create.execute";
+  const target = collectionExecuteTarget(input, context);
+
+  if (context.config.readOnly) {
+    return blockedImplementedExecuteResult(tool, target, [diagnostic("read_only", "Execute is blocked because read-only mode is enabled.")], context, "collection.create.preview");
+  }
+
+  if (!context.previewStore) {
+    return blockedImplementedExecuteResult(tool, target, [diagnostic("stored_preview_missing", "Stored preview was not found; execute binding fails closed.")], context, "collection.create.preview");
+  }
+
+  const lookup = context.previewStore.getPreview(stringInput(input, "previewId"));
+  const storedTarget = lookup.record ? previewRecordBindingTarget(lookup.record) : target;
+  const binding = verifyStoredPreviewBinding(context.previewStore, input, {
+    executeTool: tool,
+    expectedPreviewTool: "collection.create.preview",
+    target: storedTarget
+  });
+  if (!stringInput(input, "target")) {
+    binding.ok = false;
+    binding.diagnostics = [
+      diagnostic("missing_target", "Execute requires the reviewed preview target."),
+      ...binding.diagnostics.filter((item) => item.code !== "missing_target")
+    ];
+  }
+  if (!binding.ok) return blockedImplementedExecuteResult(tool, storedTarget, binding.diagnostics, context, binding);
+  if (!lookup.ok || !lookup.record) {
+    return blockedImplementedExecuteResult(tool, storedTarget, [lookup.diagnostic ?? diagnostic("stored_preview_missing", "Stored preview was not found; execute binding fails closed.")], context, binding);
+  }
+  if (lookup.record.tool !== "collection.create.preview") {
+    return blockedImplementedExecuteResult(tool, storedTarget, [diagnostic("stored_preview_tool_mismatch", "Stored preview is not a collection creation preview.")], context, binding);
+  }
+
+  const extracted = collectionCreateInputFromStoredPreview(lookup.record);
+  if (!extracted.ok) return blockedImplementedExecuteResult(tool, storedTarget, extracted.diagnostics, context, binding);
+
+  const preflight = checkWriteScopePreflight(context.config, tool);
+  if (!preflight.ok) return blockedImplementedExecuteResult(tool, storedTarget, preflight.diagnostics, context, binding);
+
+  const write = await createCollection(context.config, extracted.input, { fetcher: context.fetcher });
+  return collectionCreateWriteResult(tool, storedTarget, binding, write, context);
+}
+
 function savePreviewRecord(context: ToolContext, record: Parameters<MemoryPreviewStore["savePreview"]>[0]): StoredPreviewRecord {
   return ensurePreviewStore(context).savePreview(record);
 }
@@ -635,6 +683,39 @@ function productUpdateWriteResult(
   };
 }
 
+function collectionCreateWriteResult(
+  tool: string,
+  target: string,
+  binding: ExecutePreviewBindingResult,
+  write: CollectionCreateResult,
+  context: ToolContext
+): Record<string, unknown> {
+  const result = collectionCreateAuditResult(write);
+  const audit = context.audit.record({
+    tool,
+    target: safeExecuteString(target),
+    mode: "execute",
+    summary: write.summary,
+    result
+  });
+  return {
+    ok: write.ok,
+    mode: "execute",
+    implemented: true,
+    status: write.status,
+    summary: write.summary,
+    audit,
+    createdCollection: write.collection,
+    userErrors: write.userErrors,
+    diagnostics: write.diagnostics,
+    previewBinding: {
+      previewId: binding.previewId,
+      expectedTool: binding.expectedPreviewTool,
+      target: binding.target
+    }
+  };
+}
+
 function productCreateAuditResult(write: ProductCreateResult): "success" | "blocked" | "failed" {
   if (write.status === "ok") return "success";
   if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
@@ -642,6 +723,12 @@ function productCreateAuditResult(write: ProductCreateResult): "success" | "bloc
 }
 
 function productUpdateAuditResult(write: ProductUpdateResult): "success" | "blocked" | "failed" {
+  if (write.status === "ok") return "success";
+  if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
+  return "failed";
+}
+
+function collectionCreateAuditResult(write: CollectionCreateResult): "success" | "blocked" | "failed" {
   if (write.status === "ok") return "success";
   if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
   return "failed";
@@ -732,6 +819,43 @@ function productUpdateInputFromStoredPreview(record: StoredPreviewRecord): { ok:
   }
 
   return { ok: true, input };
+}
+
+function collectionCreateInputFromStoredPreview(record: StoredPreviewRecord): { ok: true; input: CollectionCreateInput } | { ok: false; diagnostics: ExecutePreviewBindingDiagnostic[] } {
+  const title = safeContentText(changeValue(record, "title") ?? targetField(record, "title"), 255);
+  const handle = safeContentText(changeValue(record, "handle") ?? targetField(record, "handle"), 180);
+  const productIds = arraySummaryItems(changeValue(record, "productIds"))
+    .map((item) => safeContentText(item, 180))
+    .filter((item): item is string => Boolean(item));
+  const rules = arraySummaryItems(changeValue(record, "rules"));
+
+  if (!title) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_collection_title", "Stored collection preview did not include a safe title for execution.")]
+    };
+  }
+  if (rules.length > 0) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("unsupported_collection_rules", "collection.create.execute does not implement rule-based or smart collection creation yet.")]
+    };
+  }
+  if (productIds.length === 0) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_collection_products", "Stored collection preview did not include explicit product IDs supported by collection.create.execute.")]
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      title,
+      handle,
+      productIds
+    }
+  };
 }
 
 function changeValue(record: StoredPreviewRecord, field: string): unknown {
@@ -833,6 +957,13 @@ function productExecuteTarget(input: Record<string, unknown>, context: ToolConte
   const lookup = previewId && context.previewStore ? context.previewStore.getPreview(previewId) : undefined;
   if (lookup?.record) return previewRecordBindingTarget(lookup.record);
   return safeExecuteString(stringInput(input, "target") || stringInput(input, "title", "product"));
+}
+
+function collectionExecuteTarget(input: Record<string, unknown>, context: ToolContext): string {
+  const previewId = stringInput(input, "previewId");
+  const lookup = previewId && context.previewStore ? context.previewStore.getPreview(previewId) : undefined;
+  if (lookup?.record) return previewRecordBindingTarget(lookup.record);
+  return safeExecuteString(stringInput(input, "target") || stringInput(input, "title", "collection"));
 }
 
 function stringFromUnknown(value: unknown): string | undefined {
@@ -1120,9 +1251,9 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: "collection.create.execute",
-    description: "Placeholder for collection creation after preview and confirmation.",
+    description: "Create a minimal custom collection only after stored preview binding and confirmation.",
     inputSchema: { type: "object" },
-    handler: (input, context) => executePlaceholder("collection.create.execute", stringInput(input, "title", "collection"), "Collection create execution placeholder.", input, context)
+    handler: (input, context) => collectionCreateExecuteResult(input, context)
   },
   {
     name: "bulk.preview",
