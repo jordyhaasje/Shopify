@@ -23,7 +23,7 @@ pnpm --filter shopify-store-agent run smoke -- --live --admin-token "$SHOPIFY_AD
 - Use a development store or disposable test store.
 - Keep setup read-only by default.
 - Use read-only Admin API scopes for read and preview validation.
-- Do not request write scopes for read, preview, setup, or smoke validation. For the first limited write test, use only a development store and the minimum page-content write scope needed for `page.create.execute` (`write_content` or `write_online_store_pages`), with read-only mode explicitly disabled for that test.
+- Do not request write scopes for read, preview, setup, or smoke validation. For limited write tests, use only a development store and the minimum write scope needed for that execute path: `write_content` or `write_online_store_pages` for `page.create.execute`, and `write_products` for `product.create.execute`. Read-only mode must be explicitly disabled for each deliberate write test.
 - Run setup and review the generated MCP host snippet.
 - Confirm snippets point to a local config path and do not print raw tokens.
 
@@ -36,15 +36,17 @@ pnpm --filter shopify-store-agent run smoke -- --live --admin-token "$SHOPIFY_AD
 - Test an execute placeholder with invalid binding and confirm `blocked`.
 - Test an execute placeholder with valid stored binding and confirm `not_implemented`.
 - Confirm execute placeholders never audit `success`.
-- If testing the first real write path, create a `page.create.preview`, review the stored binding payload, then run `page.create.execute` only with `confirmed: true`, matching target/tool/hash values, local granted scopes showing `write_content` or `write_online_store_pages`, and read-only mode disabled.
+- If testing `page.create.execute`, create a `page.create.preview`, review the stored binding payload, then run execute only with `confirmed: true`, matching target/tool/hash values, local granted scopes showing `write_content` or `write_online_store_pages`, and read-only mode disabled.
+- If testing `product.create.execute`, create a `product.create.preview`, review the stored binding payload, then run execute only with `confirmed: true`, matching target/tool/hash values, local granted scopes showing `write_products`, and read-only mode disabled. Confirm the mutation is limited to product create with title, description/body HTML summary, vendor, product type, status, and tags only.
 - Confirm missing or unknown local write scopes block before any Shopify fetch.
 - Confirm successful page create performs only the page create mutation followed by verification of the created page ID.
-- Confirm all non-page execute tools still remain placeholders.
+- Confirm successful product create performs only the product create mutation and does not create variants, inventory, media, collections, metafields, publications, translations, updates, deletes, or bulk operations.
+- Confirm all execute tools except `page.create.execute` and `product.create.execute` still remain placeholders.
 - Review the audit log for safe targets and no raw payload dumps.
 
 ## Safety
 
 - Confirm local smoke, setup, read, preview, invalid execute binding, and placeholder execute checks perform no writes or mutations.
-- Confirm any deliberate write test is limited to `page.create.execute` in a development store.
+- Confirm any deliberate write test is limited to `page.create.execute` or `product.create.execute` in a development store.
 - Confirm no raw Admin API tokens, OAuth client secrets, Theme Access tokens, customer data, order data, or product dumps appear in logs.
-- Keep read-only mode enabled except for the explicit reviewed `page.create.execute` development-store test.
+- Keep read-only mode enabled except for explicit reviewed `page.create.execute` or `product.create.execute` development-store tests.

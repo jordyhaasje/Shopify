@@ -17,18 +17,19 @@ export interface WriteScopePreflightResult {
 }
 
 export const pageCreateWriteScopes = ["write_content", "write_online_store_pages"] as const;
+export const productCreateWriteScopes = ["write_products"] as const;
 
-export function checkWriteScopePreflight(config: StoreAgentConfig, tool: "page.create.execute"): WriteScopePreflightResult {
+export function checkWriteScopePreflight(config: StoreAgentConfig, tool: "page.create.execute" | "product.create.execute"): WriteScopePreflightResult {
   const requiredScopes = requiredWriteScopes(tool);
   const grantedScopes = Array.isArray(config.grantedScopes) ? normalizeScopes(config.grantedScopes).map((scope) => scope.toLowerCase()) : undefined;
 
   if (!grantedScopes) {
-    return blocked(tool, requiredScopes, false, "unknown_write_scopes", "Local granted scopes are unknown; page.create.execute fails closed before Shopify write execution.");
+    return blocked(tool, requiredScopes, false, "unknown_write_scopes", `${tool} fails closed before Shopify write execution because local granted scopes are unknown.`);
   }
 
   const hasScope = requiredScopes.some((scope) => grantedScopes.includes(scope.toLowerCase()));
   if (!hasScope) {
-    return blocked(tool, requiredScopes, true, "missing_write_scope", "page.create.execute requires write_content or write_online_store_pages in local granted scopes before Shopify write execution.");
+    return blocked(tool, requiredScopes, true, "missing_write_scope", `${tool} requires ${formatScopeList(requiredScopes)} in local granted scopes before Shopify write execution.`);
   }
 
   return {
@@ -41,9 +42,15 @@ export function checkWriteScopePreflight(config: StoreAgentConfig, tool: "page.c
   };
 }
 
-function requiredWriteScopes(tool: "page.create.execute"): readonly string[] {
+function requiredWriteScopes(tool: "page.create.execute" | "product.create.execute"): readonly string[] {
   if (tool === "page.create.execute") return pageCreateWriteScopes;
+  if (tool === "product.create.execute") return productCreateWriteScopes;
   return [];
+}
+
+function formatScopeList(scopes: readonly string[]): string {
+  if (scopes.length <= 1) return scopes[0] ?? "a write scope";
+  return `${scopes.slice(0, -1).join(", ")} or ${scopes[scopes.length - 1]}`;
 }
 
 function blocked(

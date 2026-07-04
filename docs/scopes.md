@@ -13,6 +13,8 @@ Protected customer/order data may require additional Shopify permissions or app 
 
 Use for product creation, updates, variants, collections, and product-level metadata where applicable.
 
+`product.create.execute` requires `write_products` in local granted-scope preflight. Shopify remains the ultimate scope enforcement layer, but the agent blocks locally before fetch when known granted scopes do not include `write_products`, or when local granted scopes are unknown. The current product create execute path is minimal: title, description/body HTML summary, vendor, product type, status, and tags only. Variants, inventory, media/files/images, collections, metafields, SEO bulk changes, publications, translations, updates, deletes, and bulk operations are outside this write path.
+
 ## Inventory
 
 - Read: `read_inventory`
