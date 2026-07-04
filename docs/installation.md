@@ -52,6 +52,18 @@ Setup writes local config only when run as the CLI command. Programmatic dry run
 
 Setup defaults to `readOnly: true`. The setup command itself does not perform Shopify writes, does not activate execute tools, and does not require write scopes for read/preview/smoke validation. OAuth auth also defaults to read-only Admin API scopes. Users can connect a normal store for read-only checks and previews; first write validation should happen on a development or disposable store. Explicit `write_` scopes are blocked unless write mode is explicitly requested; in this phase write mode is only for reviewed tests of `page.create.execute`, the minimal `product.create.execute` path, the basic-field `product.update.execute` path, or the custom explicit-product `collection.create.execute` path. Only `page.create.execute`, `product.create.execute`, `product.update.execute`, and `collection.create.execute` are implemented; all other execute tools remain fail-closed placeholders.
 
+## Local Setup Check
+
+After `setup` and `auth`, use `setup-check` to verify that the local onboarding state is ready before troubleshooting the MCP host:
+
+```bash
+pnpm --filter shopify-store-agent run setup-check -- --store your-store.myshopify.com
+```
+
+`setup-check` is local-only. It reads the configured local config file, confirms the expected store when `--store` is provided, reports whether an Admin API token is configured locally, verifies read-only mode is still enabled for normal-store onboarding, checks that generated MCP snippets do not include raw tokens, confirms the local MCP server build path exists, returns a compact list of supported snippet hosts, returns the safe starter prompts, and reports `fetchCalls: 0`. It does not print local paths or full MCP config snippets; use `setup` for the actual host snippets.
+
+If `setup-check` reports a missing local MCP server path, run `pnpm run build`. If it reports missing config or token state, rerun `setup` and then the real OAuth `auth` flow or manual token setup. Do not paste config files, tokens, OAuth client secrets, or raw local config contents into public issues or PRs.
+
 ## Local Smoke Validation
 
 Run smoke validation after install/setup changes and before testing against a development store:
@@ -157,6 +169,8 @@ The setup wizard prints MCP snippets for:
 It also prints "First AI prompts" for the connected host. These starter prompts avoid tool names and GraphQL IDs, but they do not weaken safety rules: the AI host still has to ask for missing exact targets, create previews for changes, and wait for explicit approval before execute.
 
 Snippets point to the local config path and non-secret setup values. They should not include raw Admin API tokens, OAuth client secrets, or Theme Access tokens.
+
+After copying the snippet, `setup-check` is the quickest local verification that local config, token presence, read-only mode, build path, and starter prompts are ready. It summarizes supported snippet hosts instead of reprinting full MCP config or local paths. It does not prove that a specific AI host has reloaded its MCP config; restart or reload the host after changing snippets.
 
 Current GitHub-only snippets use the local build:
 

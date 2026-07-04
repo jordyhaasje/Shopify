@@ -35,6 +35,7 @@
     "build": "tsc -b",
     "e2e-preflight": "node dist/index.js e2e-preflight",
     "setup": "node dist/index.js setup",
+    "setup-check": "node dist/index.js setup-check",
     "smoke": "node dist/index.js smoke --dry-run",
     "typecheck": "tsc -b --pretty false"
   },

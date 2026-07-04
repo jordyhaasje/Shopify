@@ -115,6 +115,14 @@ pnpm --filter shopify-store-agent run setup -- --store "$SHOPIFY_STORE" --auth o
 
 Setup also prints "First AI prompts". Encourage users to start from those prompts instead of requiring MCP tool names, Shopify handles, or GraphQL IDs. The prompts are examples; the host must still choose the correct tool, ask for missing exact targets, and keep preview-before-execute.
 
+After setup/auth, run the local setup check before debugging host behavior:
+
+```bash
+pnpm --filter shopify-store-agent run setup-check -- --store "$SHOPIFY_STORE"
+```
+
+`setup-check` verifies local config, token presence, read-only onboarding mode, safe MCP snippets, the local MCP server build path, safe starter prompts, and `fetchCalls: 0`. It does not call Shopify and does not prove that a host has reloaded config; restart or reload the MCP host after changing snippets.
+
 In the current GitHub-only route, MCP hosts should use a local node command:
 
 ```toml

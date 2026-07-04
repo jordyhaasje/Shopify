@@ -86,6 +86,14 @@ Future package publishing is covered by the [Release Runbook](docs/release-runbo
 
 The wizard guides users through store URL normalization, manual-token or local-OAuth setup guidance, read-only local config, capability checks, and MCP host snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts. Setup and OAuth auth default to read-only scopes and do not request or activate write mode for read/preview validation.
 
+After setup/auth, run a local setup check before opening the MCP host:
+
+```bash
+pnpm --filter shopify-store-agent run setup-check -- --store your-store.myshopify.com
+```
+
+`setup-check` verifies the local config, token presence, read-only onboarding mode, safe MCP snippets, local build path, starter prompts, and `fetchCalls: 0`. It does not call Shopify, perform writes, print local paths, or print full MCP config snippets.
+
 Local smoke validation is available before connecting a store:
 
 ```bash

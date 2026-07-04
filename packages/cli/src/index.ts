@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -80,6 +81,13 @@ export interface DevStoreE2ePreflightOptions {
   requireWriteEnabled?: boolean;
 }
 
+export interface SetupCheckOptions {
+  storeUrl?: string;
+  configPath?: string;
+  mcpCommandMode?: McpCommandMode;
+  localMcpServerPath?: string;
+}
+
 export interface SetupWarning {
   code: string;
   message: string;
@@ -139,6 +147,21 @@ export interface DevStoreE2ePreflightResult {
   adminApiTokenConfigured: boolean;
   requiredScopes: string[];
   checks: SmokeCheck[];
+}
+
+export interface SetupCheckResult {
+  ok: boolean;
+  mode: "local";
+  expectedStoreUrl?: string;
+  configuredStoreUrl?: string;
+  readOnly?: boolean;
+  adminApiTokenConfigured: boolean;
+  themeAccessTokenConfigured: boolean;
+  fetchCalls: 0;
+  checks: SmokeCheck[];
+  snippetHosts: Array<"codex" | "claude" | "cursor" | "generic">;
+  firstPrompts: string[];
+  nextSteps: string[];
 }
 
 export function resolveLocalMcpServerPath(): string {
@@ -400,6 +423,80 @@ export async function runDevStoreE2ePreflight(options: DevStoreE2ePreflightOptio
   };
 }
 
+export async function runSetupCheck(options: SetupCheckOptions = {}): Promise<SetupCheckResult> {
+  const configPath = options.configPath ?? defaultConfigPath();
+  const expectedStoreUrl = options.storeUrl ? createConfig({ storeUrl: options.storeUrl }).storeUrl : undefined;
+  const stored = await loadStoredConfig(configPath);
+  const checks: SmokeCheck[] = [];
+  const firstPrompts = setupFirstPrompts();
+  const nextSteps = [
+    "If config is missing, run setup and then auth before adding the MCP snippet to your AI host.",
+    "If the local MCP server build is missing, run pnpm run build from the Shopify Store Agent repo.",
+    "After the MCP host is configured, start with one of the safe First AI prompts and keep write mode disabled for normal-store onboarding."
+  ];
+
+  checks.push(check("config_exists", Boolean(stored), `Config ${stored ? "found" : "missing"}.`));
+
+  if (!stored) {
+    checks.push(check("no_fetch", true, "Setup check is local-only and made no Shopify fetch calls."));
+    return {
+      ok: false,
+      mode: "local",
+      expectedStoreUrl,
+      adminApiTokenConfigured: false,
+      themeAccessTokenConfigured: false,
+      fetchCalls: 0,
+      checks,
+      snippetHosts: [],
+      firstPrompts,
+      nextSteps
+    };
+  }
+
+  if (expectedStoreUrl) {
+    checks.push(check("store_matches", stored.storeUrl === expectedStoreUrl, `Config store is ${stored.storeUrl}; expected ${expectedStoreUrl}.`));
+  }
+  checks.push(check("admin_token_configured", Boolean(stored.adminAccessToken), "Admin API token is configured locally."));
+  checks.push(check("read_only_mode", stored.readOnly !== false, stored.readOnly === false ? "Read-only mode is disabled; use only for deliberate reviewed development-store write tests." : "Read-only mode is enabled for safe onboarding."));
+
+  const snippets = generateMcpConfigSnippets(stored, {
+    configPath,
+    mcpCommandMode: options.mcpCommandMode,
+    localMcpServerPath: options.localMcpServerPath
+  });
+  const snippetOutput = JSON.stringify(snippets);
+  const secrets = [stored.adminAccessToken, stored.themeAccessToken].filter((value): value is string => Boolean(value));
+  checks.push(check("mcp_snippets_safe", secrets.every((secret) => !snippetOutput.includes(secret)), "MCP snippets include only non-secret environment values."));
+  const snippetHosts = Object.keys(snippets) as Array<"codex" | "claude" | "cursor" | "generic">;
+
+  const mcpCommand = resolveMcpCommand({
+    mode: options.mcpCommandMode ?? "local",
+    localMcpServerPath: options.localMcpServerPath
+  });
+  const localServerPath = mcpCommand.command === "node" ? mcpCommand.args[0] : undefined;
+  if (localServerPath) {
+    checks.push(check("mcp_server_built", existsSync(localServerPath), `Local MCP server path ${existsSync(localServerPath) ? "exists" : "is missing"}.`));
+  }
+
+  checks.push(check("first_prompts_available", firstPrompts.length > 0 && firstPrompts.every((prompt) => !prompt.includes("gid://") && !prompt.includes("previewHash")), "Safe ordinary-language starter prompts are available."));
+  checks.push(check("no_fetch", true, "Setup check is local-only and made no Shopify fetch calls."));
+
+  return {
+    ok: checks.every((item) => item.ok),
+    mode: "local",
+    expectedStoreUrl,
+    configuredStoreUrl: stored.storeUrl,
+    readOnly: stored.readOnly,
+    adminApiTokenConfigured: Boolean(stored.adminAccessToken),
+    themeAccessTokenConfigured: Boolean(stored.themeAccessToken),
+    fetchCalls: 0,
+    checks,
+    snippetHosts,
+    firstPrompts,
+    nextSteps
+  };
+}
+
 export async function runOAuthInstall(options: AuthOptions): Promise<{
   configPath: string;
   storeUrl: string;
@@ -550,9 +647,9 @@ export async function runSetup(options: SetupOptions): Promise<{
   }
 }
 
-function parseArgs(argv: string[]): (SetupOptions & AuthOptions & SmokeOptions & DevStoreE2ePreflightOptions & { command: string }) {
+function parseArgs(argv: string[]): (SetupOptions & AuthOptions & SmokeOptions & DevStoreE2ePreflightOptions & SetupCheckOptions & { command: string }) {
   const [command = "help", ...rest] = argv;
-  const options: SetupOptions & AuthOptions & SmokeOptions & DevStoreE2ePreflightOptions & { command: string } = { command };
+  const options: SetupOptions & AuthOptions & SmokeOptions & DevStoreE2ePreflightOptions & SetupCheckOptions & { command: string } = { command };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     const next = rest[index + 1];
@@ -612,9 +709,10 @@ function parseArgs(argv: string[]): (SetupOptions & AuthOptions & SmokeOptions &
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
-  if (options.command !== "setup" && options.command !== "auth" && options.command !== "smoke" && options.command !== "e2e-preflight") {
+  if (options.command !== "setup" && options.command !== "setup-check" && options.command !== "auth" && options.command !== "smoke" && options.command !== "e2e-preflight") {
     console.log("Usage:");
     console.log("  shopify-store-agent setup --store example.myshopify.com [--auth manual|oauth] [--dry-run] [--mcp-command local|npx]");
+    console.log("  shopify-store-agent setup-check [--store example.myshopify.com] [--config /path/config.json]");
     console.log("  shopify-store-agent auth --store example.myshopify.com --client-id ... --client-secret ...");
     console.log("  shopify-store-agent smoke [--store example.myshopify.com] [--live]");
     console.log("  shopify-store-agent e2e-preflight --store example.myshopify.com --config /path/config.json --required-scopes read_products,write_products [--require-write-enabled]");
@@ -634,6 +732,18 @@ async function main(): Promise<void> {
       adminAccessToken: options.adminAccessToken
     });
     console.log(JSON.stringify(redactSmokeResult(result), null, 2));
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
+
+  if (options.command === "setup-check") {
+    const result = await runSetupCheck({
+      storeUrl: options.storeUrl,
+      configPath: options.configPath,
+      mcpCommandMode: options.mcpCommandMode,
+      localMcpServerPath: options.localMcpServerPath
+    });
+    console.log(JSON.stringify(result, null, 2));
     if (!result.ok) process.exitCode = 1;
     return;
   }
