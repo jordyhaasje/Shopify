@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createConfig, createProduct, updateProduct, type FetchLike } from "../src/index.js";
+import { createConfig, createProduct, updateProduct, updateProductVariantPrices, type FetchLike } from "../src/index.js";
 
 describe("product write helper", () => {
   it("creates a product through the productCreate mutation and returns a safe summary", async () => {
@@ -326,6 +326,127 @@ describe("product write helper", () => {
       diagnostics: [{ code: "read_only" }]
     });
     expect(fetchCalled).toBe(false);
+  });
+
+  it("updates explicit product variant prices through only productVariantsBulkUpdate", async () => {
+    const requests: Array<{ body: string }> = [];
+    const fetcher: FetchLike = async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          productVariantsBulkUpdate: {
+            productVariants: [
+              {
+                id: "gid://shopify/ProductVariant/1",
+                price: "39.00",
+                inventoryQuantity: 99,
+                rawNodeOnly: "do-not-return"
+              }
+            ],
+            userErrors: []
+          }
+        }
+      });
+    };
+
+    const result = await updateProductVariantPrices(config(), {
+      productId: "gid://shopify/Product/1",
+      variants: [
+        { id: "gid://shopify/ProductVariant/1", price: "39.00" }
+      ]
+    }, { fetcher });
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "ok",
+      variantPriceUpdate: {
+        productId: "gid://shopify/Product/1",
+        updatedVariantCount: 1,
+        variants: [{ id: "gid://shopify/ProductVariant/1", price: "39.00" }]
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentProductVariantPricesUpdate");
+    expect(request.query).toContain("productVariantsBulkUpdate");
+    expect(request.query).not.toContain("productUpdate");
+    expect(request.query).not.toContain("productCreate");
+    expect(request.query).not.toContain("inventory");
+    expect(request.variables).toEqual({
+      productId: "gid://shopify/Product/1",
+      variants: [{ id: "gid://shopify/ProductVariant/1", price: "39.00" }]
+    });
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("inventoryQuantity");
+    expect(output).not.toContain("shpat_product_secret");
+  });
+
+  it("blocks variant price update with missing price input before calling Shopify", async () => {
+    let fetchCalled = false;
+    const result = await updateProductVariantPrices(config(), {
+      productId: "gid://shopify/Product/1",
+      variants: [{ id: "gid://shopify/ProductVariant/1", price: "" }]
+    }, {
+      fetcher: async () => {
+        fetchCalled = true;
+        return jsonResponse({});
+      }
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "missing_input",
+      diagnostics: [{ code: "missing_input" }]
+    });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("blocks variant price update read-only config before calling Shopify", async () => {
+    let fetchCalled = false;
+    const result = await updateProductVariantPrices(createConfig({
+      storeUrl: "demo",
+      adminAccessToken: "shpat_product_secret",
+      readOnly: true
+    }), {
+      productId: "gid://shopify/Product/1",
+      variants: [{ id: "gid://shopify/ProductVariant/1", price: "39.00" }]
+    }, {
+      fetcher: async () => {
+        fetchCalled = true;
+        return jsonResponse({});
+      }
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "blocked",
+      diagnostics: [{ code: "read_only" }]
+    });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("returns variant price update user errors safely", async () => {
+    const result = await updateProductVariantPrices(config(), {
+      productId: "gid://shopify/Product/1",
+      variants: [{ id: "gid://shopify/ProductVariant/1", price: "39.00" }]
+    }, {
+      fetcher: async () => jsonResponse({
+        data: {
+          productVariantsBulkUpdate: {
+            productVariants: null,
+            userErrors: [{ field: ["variants", "0", "price"], message: "Price is invalid." }]
+          }
+        }
+      })
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "user_errors",
+      userErrors: [{ field: ["variants", "0", "price"], message: "Price is invalid." }],
+      diagnostics: [{ code: "shopify_user_errors" }]
+    });
   });
 });
 
