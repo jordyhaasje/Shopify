@@ -82,6 +82,8 @@ npx shopify-store-agent setup
 
 Package metadata is prepared and can be checked locally with `pnpm run pack:check`. The npm/npx path is not the primary working route until package publishing is explicitly approved and completed.
 
+Future package publishing is covered by the [Release Runbook](docs/release-runbook.md). It keeps publishing manual and explicitly approved, with local validation, dry-run package checks, and safe release evidence before any npm publish.
+
 The wizard guides users through store URL normalization, manual-token or local-OAuth setup guidance, read-only local config, capability checks, and MCP host snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts. Setup and OAuth auth default to read-only scopes and do not request or activate write mode for read/preview validation.
 
 Local smoke validation is available before connecting a store:

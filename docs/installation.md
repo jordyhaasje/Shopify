@@ -34,6 +34,8 @@ npx shopify-store-agent setup
 
 That path is reserved for after package publishing is explicitly approved and completed. Package metadata is prepared and can be checked locally with `pnpm run pack:check`, but do not treat `npx shopify-store-agent` or `npx shopify-store-agent-mcp` as the primary working install route while packages remain unpublished.
 
+Publishing itself is manual and gated by [release-runbook.md](release-runbook.md). Do not treat package metadata or `pack:check` as permission to publish.
+
 The future wizard should collect or create local Shopify credentials, run capability checks, and generate MCP configuration snippets for hosts such as Codex, Claude Code, and Cursor.
 
 Capability checks are safe by default. Local mode reports config status, redacted credential presence, read-only mode, local capability flags, diagnostics, and setup recommendations. Optional live mode uses the Admin API token only for a minimal shop identity check and must not return sensitive store data.
