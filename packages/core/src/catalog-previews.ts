@@ -117,7 +117,7 @@ export function previewProductUpdate(input: Record<string, unknown>): CatalogPre
     field,
     action: "update" as const,
     before: existing && field in existing ? summarizeValue(field, existing[field]) : "unknown",
-    after: summarizeValue(field, value)
+    after: summarizeUpdateValue(field, value)
   }));
 
   return okResult("product.update.preview", target, `Preview ${changes.length} product update${changes.length === 1 ? "" : "s"} for ${targetLabel(target)}.`, changes, warnings);
@@ -371,6 +371,50 @@ function tagSummary(value: unknown): unknown {
 
 function summarizeVariants(variants: unknown[]): unknown[] {
   return variants.slice(0, 10).map((variant) => summarizeValue("variant", variant));
+}
+
+function summarizeUpdateValue(field: string, value: unknown): unknown {
+  if (field === "variants" && Array.isArray(value)) return summarizeUpdateVariants(value);
+  return summarizeValue(field, value);
+}
+
+function summarizeUpdateVariants(variants: unknown[]): unknown {
+  return {
+    count: variants.length,
+    items: variants.slice(0, 10).map((variant) => {
+      const object = objectInput(variant);
+      if (!object) return summarizeValue("variant", variant);
+      const optionValues = summarizeVariantOptionValues(object.optionValues ?? object.options ?? object.selectedOptions);
+      const fields = Object.fromEntries(Object.entries({
+        id: summarizeValue("id", object.id),
+        variantId: summarizeValue("variantId", object.variantId),
+        price: summarizeValue("price", object.price),
+        sku: summarizeValue("sku", object.sku),
+        optionValues
+      }).filter(([, entryValue]) => entryValue !== undefined));
+      return {
+        fields,
+        omittedFieldCount: Math.max(0, Object.keys(object).length - Object.keys(fields).length)
+      };
+    })
+  };
+}
+
+function summarizeVariantOptionValues(value: unknown): unknown {
+  if (!Array.isArray(value)) return undefined;
+  const entries: string[] = [];
+  for (const item of value.slice(0, 3)) {
+    const fields = objectInput(item);
+    if (!fields) continue;
+    const explicitOptionName = stringValue(fields.optionName);
+    const optionName = explicitOptionName ?? stringValue(fields.name) ?? stringValue(fields.option);
+    const name = explicitOptionName
+      ? stringValue(fields.name) ?? stringValue(fields.value) ?? stringValue(fields.optionValue) ?? stringValue(fields.optionValueName)
+      : stringValue(fields.value) ?? stringValue(fields.optionValue) ?? stringValue(fields.optionValueName);
+    if (!optionName || !name) continue;
+    entries.push(`${safeString(optionName, 120)}=${safeString(name, 180)}`);
+  }
+  return entries.length > 0 ? entries : undefined;
 }
 
 function summarizeMedia(media: unknown[]): unknown[] {

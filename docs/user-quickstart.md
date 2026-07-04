@@ -190,7 +190,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --scopes "read_products,read_content,read_online_store_pages,write_products,write_content"
 ```
 
-Use only a development or disposable store. `write_products` is required for `product.create.execute`, `product.update.execute`, and custom `collection.create.execute`; `write_content` or `write_online_store_pages` is required for `page.create.execute`. `product.update.execute` supports either basic product fields or explicit variant price updates with product ID plus variant IDs and prices; do not mix those two update shapes in one preview. All other execute tools are placeholders.
+Use only a development or disposable store. `write_products` is required for `product.create.execute`, `product.update.execute`, and custom `collection.create.execute`; `write_content` or `write_online_store_pages` is required for `page.create.execute`. `product.update.execute` supports one update shape per preview: basic product fields, explicit variant price updates with product ID plus variant IDs and prices, or explicit variant creation with product ID plus option values and optional price/SKU. Do not mix update shapes in one preview. All other execute tools are placeholders.
 
 ## Safety rules
 
@@ -265,7 +265,7 @@ theme.rollback
 ## Not available yet
 
 - npm/npx package install as the primary route.
-- Product update execute beyond basic fields and explicit variant price updates.
+- Product update execute beyond basic fields, explicit variant price updates, and explicit variant creation.
 - Production-store write automation.
-- Rule-based/smart collection create, collection publishing, refund, tracking, customer, bulk, theme, general variant creation/options, media, inventory, metafields, publications, translations, and other advanced execute implementations.
+- Rule-based/smart collection create, collection publishing, refund, tracking, customer, bulk, theme, broader product option management, media, inventory, metafields, publications, translations, and other advanced execute implementations.
 - Automated live Shopify tests.

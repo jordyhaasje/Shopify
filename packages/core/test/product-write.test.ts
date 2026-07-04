@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createConfig, createProduct, updateProduct, updateProductVariantPrices, type FetchLike } from "../src/index.js";
+import { createConfig, createProduct, createProductVariants, updateProduct, updateProductVariantPrices, type FetchLike } from "../src/index.js";
 
 describe("product write helper", () => {
   it("creates a product through the productCreate mutation and returns a safe summary", async () => {
@@ -445,6 +445,139 @@ describe("product write helper", () => {
       ok: false,
       status: "user_errors",
       userErrors: [{ field: ["variants", "0", "price"], message: "Price is invalid." }],
+      diagnostics: [{ code: "shopify_user_errors" }]
+    });
+  });
+
+  it("creates explicit product variants through only productVariantsBulkCreate", async () => {
+    const requests: Array<{ body: string }> = [];
+    const fetcher: FetchLike = async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          productVariantsBulkCreate: {
+            productVariants: [
+              {
+                id: "gid://shopify/ProductVariant/2",
+                title: "Large",
+                price: "49.00",
+                sku: "LINEN-L",
+                inventoryQuantity: 99,
+                media: { nodes: [{ id: "do-not-return" }] },
+                rawNodeOnly: "do-not-return"
+              }
+            ],
+            userErrors: []
+          }
+        }
+      });
+    };
+
+    const result = await createProductVariants(config(), {
+      productId: "gid://shopify/Product/1",
+      variants: [{
+        optionValues: [{ optionName: "Size", name: "Large" }],
+        price: "49.00",
+        sku: "LINEN-L"
+      }]
+    }, { fetcher });
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "ok",
+      variantCreate: {
+        productId: "gid://shopify/Product/1",
+        createdVariantCount: 1,
+        variants: [{ id: "gid://shopify/ProductVariant/2", title: "Large", price: "49.00", sku: "LINEN-L" }]
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentProductVariantsCreate");
+    expect(request.query).toContain("productVariantsBulkCreate");
+    expect(request.query).not.toContain("productUpdate");
+    expect(request.query).not.toContain("productCreate");
+    expect(request.query).not.toContain("inventory");
+    expect(request.query).not.toContain("media");
+    expect(request.query).not.toContain("metafields");
+    expect(request.variables).toEqual({
+      productId: "gid://shopify/Product/1",
+      variants: [{
+        optionValues: [{ optionName: "Size", name: "Large" }],
+        price: "49.00",
+        sku: "LINEN-L"
+      }]
+    });
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("inventoryQuantity");
+    expect(output).not.toContain("media");
+    expect(output).not.toContain("shpat_product_secret");
+  });
+
+  it("blocks variant create without explicit option values before calling Shopify", async () => {
+    let fetchCalled = false;
+    const result = await createProductVariants(config(), {
+      productId: "gid://shopify/Product/1",
+      variants: [{ optionValues: [], price: "49.00" }]
+    }, {
+      fetcher: async () => {
+        fetchCalled = true;
+        return jsonResponse({});
+      }
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "missing_input",
+      diagnostics: [{ code: "missing_input" }]
+    });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("blocks variant create read-only config before calling Shopify", async () => {
+    let fetchCalled = false;
+    const result = await createProductVariants(createConfig({
+      storeUrl: "demo",
+      adminAccessToken: "shpat_product_secret",
+      readOnly: true
+    }), {
+      productId: "gid://shopify/Product/1",
+      variants: [{ optionValues: [{ optionName: "Size", name: "Large" }] }]
+    }, {
+      fetcher: async () => {
+        fetchCalled = true;
+        return jsonResponse({});
+      }
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "blocked",
+      diagnostics: [{ code: "read_only" }]
+    });
+    expect(fetchCalled).toBe(false);
+  });
+
+  it("returns variant create user errors safely", async () => {
+    const result = await createProductVariants(config(), {
+      productId: "gid://shopify/Product/1",
+      variants: [{ optionValues: [{ optionName: "Size", name: "Large" }] }]
+    }, {
+      fetcher: async () => jsonResponse({
+        data: {
+          productVariantsBulkCreate: {
+            productVariants: null,
+            userErrors: [{ field: ["variants", "0", "optionValues"], message: "Option value is invalid." }]
+          }
+        }
+      })
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "user_errors",
+      userErrors: [{ field: ["variants", "0", "optionValues"], message: "Option value is invalid." }],
       diagnostics: [{ code: "shopify_user_errors" }]
     });
   });

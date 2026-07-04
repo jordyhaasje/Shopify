@@ -68,6 +68,34 @@ describe("catalog and content previews", () => {
     ]));
   });
 
+  it("keeps product update variant option values compact for stored preview execution", () => {
+    const preview = previewProductUpdate({
+      productId: "gid://shopify/Product/1",
+      variants: [{
+        optionValues: [{ optionName: "Size", name: "Large" }],
+        price: "49.00",
+        sku: "LINEN-L",
+        inventoryQuantity: 10
+      }]
+    });
+    const variantChange = preview.proposedChanges.find((change) => change.field === "variants");
+
+    expect(variantChange).toMatchObject({
+      field: "variants",
+      after: {
+        count: 1,
+        items: [expect.objectContaining({
+          fields: expect.objectContaining({
+            price: "49.00",
+            sku: "LINEN-L",
+            optionValues: ["Size=Large"]
+          })
+        })]
+      }
+    });
+    expect(JSON.stringify(variantChange)).not.toContain("inventoryQuantity");
+  });
+
   it("requires an explicit product target for update previews", () => {
     const preview = previewProductUpdate({ changes: { title: "New Shirt" } });
 
