@@ -27,11 +27,15 @@ pnpm --filter shopify-store-agent run smoke -- --live --admin-token "$SHOPIFY_AD
 ## Setup
 
 - Use a development store or disposable test store.
+- Use the current GitHub clone + `pnpm install` + `pnpm run build` route while npm publishing is inactive.
+- Prefer local OAuth with the `auth` command when Shopify app client credentials are available; use manual Admin API token setup only as a fallback.
+- Treat `setup --auth oauth` as guidance/snippet generation only. It does not run the browser flow or exchange a token.
 - Keep setup read-only by default.
 - Use read-only Admin API scopes for read and preview validation.
 - Do not request write scopes for read, preview, setup, or smoke validation. For limited write tests, use only a development store and the minimum write scope needed for that execute path: `write_content` or `write_online_store_pages` for `page.create.execute`, and `write_products` for `product.create.execute`. Read-only mode must be explicitly disabled for each deliberate write test.
 - Run setup and review the generated MCP host snippet.
-- Confirm snippets point to a local config path and do not print raw tokens.
+- Confirm snippets point to a local config path, use the local `node /absolute/path/to/Shopify/packages/mcp/dist/server.js` command in the current GitHub-only phase, and do not print raw tokens.
+- Remember that npm/npx snippets are a future package-published route.
 
 ## Manual Validation
 

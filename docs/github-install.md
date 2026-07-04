@@ -7,6 +7,18 @@ git clone https://github.com/jordyhaasje/Shopify.git
 cd Shopify
 pnpm install
 pnpm run build
+pnpm --filter shopify-store-agent run setup -- --store your-store.myshopify.com
+```
+
+The generated MCP snippets should point to the local build:
+
+```text
+node /absolute/path/to/Shopify/packages/mcp/dist/server.js
+```
+
+Use `auth` for the real local OAuth browser flow:
+
+```bash
 pnpm --filter shopify-store-agent run auth -- \
   --store your-store.myshopify.com \
   --client-id your-client-id \
@@ -28,5 +40,7 @@ The CLI prints the Shopify install URL. After the user approves the app, Shopify
 ```
 
 The token must never be committed to GitHub or pasted into chat.
+
+Manual Admin API token setup remains supported as a fallback. The npm/npx MCP command is a future route and should not be treated as the primary working path while packages are unpublished.
 
 GitHub Actions is not used for validation in this phase. Run local validation commands from the repository root.

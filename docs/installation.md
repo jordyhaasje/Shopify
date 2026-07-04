@@ -4,7 +4,7 @@ Shopify Store Agent is a local-first MCP + CLI + bootstrap skill package for AI 
 
 ## Current GitHub-Only Setup
 
-This path is temporary while npm publishing is not active:
+This path is temporary while npm publishing is not active. It is the current primary working route:
 
 ```bash
 git clone https://github.com/jordyhaasje/Shopify.git
@@ -12,6 +12,12 @@ cd Shopify
 pnpm install
 pnpm run build
 pnpm --filter shopify-store-agent run setup -- --store your-store.myshopify.com
+```
+
+The setup command is for local config, MCP snippets, and guidance. It does not run the OAuth browser install flow. For the current GitHub-only install, generated MCP snippets default to a local node command that points at the built MCP server:
+
+```text
+node /absolute/path/to/Shopify/packages/mcp/dist/server.js
 ```
 
 See [github-install.md](github-install.md) for the temporary GitHub install notes.
@@ -24,11 +30,13 @@ The intended future user flow is:
 npx shopify-store-agent setup
 ```
 
-The wizard should collect or create local Shopify credentials, run capability checks, and generate MCP configuration snippets for hosts such as Codex, Claude Code, and Cursor.
+That path is reserved for after package publishing is active. Do not treat `npx shopify-store-agent` or `npx shopify-store-agent-mcp` as the primary working install route in the current GitHub-only phase.
+
+The future wizard should collect or create local Shopify credentials, run capability checks, and generate MCP configuration snippets for hosts such as Codex, Claude Code, and Cursor.
 
 Capability checks are safe by default. Local mode reports config status, redacted credential presence, read-only mode, local capability flags, diagnostics, and setup recommendations. Optional live mode uses the Admin API token only for a minimal shop identity check and must not return sensitive store data.
 
-The current setup foundation supports the same shape locally:
+The current setup foundation supports the same shape locally for manual token fallback:
 
 ```bash
 pnpm --filter shopify-store-agent run setup -- \
@@ -38,7 +46,7 @@ pnpm --filter shopify-store-agent run setup -- \
 
 Setup writes local config only when run as the CLI command. Programmatic dry runs do not write config. The generated MCP snippets use `SHOPIFY_STORE_AGENT_CONFIG` and other non-secret environment values instead of printing Admin API tokens or OAuth client secrets.
 
-Setup defaults to `readOnly: true`. The setup command itself does not perform Shopify writes, does not activate execute tools, and does not require write scopes for read/preview/smoke validation. OAuth auth also defaults to read-only Admin API scopes. Explicit `write_` scopes are blocked unless write mode is explicitly requested; in this phase write mode is only for reviewed development-store testing of `page.create.execute` or the minimal `product.create.execute` path. All other execute tools remain fail-closed placeholders.
+Setup defaults to `readOnly: true`. The setup command itself does not perform Shopify writes, does not activate execute tools, and does not require write scopes for read/preview/smoke validation. OAuth auth also defaults to read-only Admin API scopes. Explicit `write_` scopes are blocked unless write mode is explicitly requested; in this phase write mode is only for reviewed development-store testing of `page.create.execute` or the minimal `product.create.execute` path. Only `page.create.execute` and `product.create.execute` are implemented; all other execute tools remain fail-closed placeholders.
 
 ## Local Smoke Validation
 
@@ -60,7 +68,7 @@ Smoke validation does not perform Shopify writes, does not run mutations, and do
 
 ## Local OAuth Setup
 
-Local OAuth is only an install/auth mechanism for this MCP/CLI package.
+Local OAuth is only an install/auth mechanism for this MCP/CLI package. It is the recommended auth route when the user has Shopify app client credentials. Manual Admin API token setup remains supported as a fallback.
 
 Before running OAuth, add this redirect URL to the Shopify Dev Dashboard app:
 
@@ -68,13 +76,18 @@ Before running OAuth, add this redirect URL to the Shopify Dev Dashboard app:
 http://127.0.0.1:3456/auth/callback
 ```
 
-Then run:
+Then run the real OAuth browser flow with `auth`:
 
 ```bash
-pnpm --filter shopify-store-agent run auth -- --store your-store.myshopify.com
+pnpm --filter shopify-store-agent run auth -- \
+  --store your-store.myshopify.com \
+  --client-id "$SHOPIFY_CLIENT_ID" \
+  --client-secret "$SHOPIFY_CLIENT_SECRET"
 ```
 
-The CLI asks for the Shopify app client ID and client secret, opens or prints an install URL, validates the callback state/HMAC, exchanges the OAuth code, and stores the resulting Admin API token locally.
+The CLI opens or prints an install URL, validates the callback state/HMAC, exchanges the OAuth code, and stores the resulting Admin API token locally. The token, OAuth client secret, and local config contents must never be pasted into docs, PRs, screenshots, logs, or chat.
+
+`setup --auth oauth` is only guidance for local config and MCP snippets. It does not run the browser flow, does not exchange a token, and does not overwrite a working token-bearing OAuth config with incomplete tokenless config.
 
 V1 defaults to read-only mode unless writes are explicitly enabled. The default OAuth install URL uses read-only scopes only. Do not request write scopes for setup, smoke, reads, or previews; request `write_content` or `write_online_store_pages` only when intentionally testing the reviewed `page.create.execute` path in a development store, and request `write_products` only when intentionally testing the reviewed minimal `product.create.execute` path.
 
@@ -120,6 +133,22 @@ The setup wizard prints MCP snippets for:
 - Generic MCP-compatible hosts.
 
 Snippets point to the local config path and non-secret setup values. They should not include raw Admin API tokens, OAuth client secrets, or Theme Access tokens.
+
+Current GitHub-only snippets use the local build:
+
+```toml
+[mcp_servers.shopify-store-agent]
+command = "node"
+args = ["/absolute/path/to/Shopify/packages/mcp/dist/server.js"]
+
+[mcp_servers.shopify-store-agent.env]
+SHOPIFY_STORE_AGENT_CONFIG = "/Users/<user>/.shopify-store-agent/config.json"
+SHOPIFY_STORE_AGENT_STORE = "your-store.myshopify.com"
+SHOPIFY_STORE_AGENT_API_VERSION = "2026-07"
+SHOPIFY_STORE_AGENT_READ_ONLY = "true"
+```
+
+The future npm/npx route can be selected later once packages are published.
 
 Never paste or commit:
 

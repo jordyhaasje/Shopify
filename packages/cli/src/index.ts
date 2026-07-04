@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { fileURLToPath } from "node:url";
@@ -46,6 +46,8 @@ export interface SetupOptions {
   liveCapabilityCheck?: boolean;
   dryRun?: boolean;
   fetcher?: FetchLike;
+  mcpCommandMode?: McpCommandMode;
+  localMcpServerPath?: string;
 }
 
 export interface AuthOptions {
@@ -72,6 +74,8 @@ export interface SetupWarning {
   code: string;
   message: string;
 }
+
+export type McpCommandMode = "local" | "npx";
 
 export interface SetupResult {
   config: StoreAgentConfig;
@@ -114,7 +118,25 @@ export interface SmokeValidationResult {
   };
 }
 
-export function generateMcpConfigSnippets(config: StoreAgentConfig, options: { configPath?: string } = {}): Record<"codex" | "claude" | "cursor" | "generic", string> {
+export function resolveLocalMcpServerPath(): string {
+  return resolve(dirname(fileURLToPath(import.meta.url)), "../../mcp/dist/server.js");
+}
+
+export function resolveMcpCommand(options: { mode?: McpCommandMode; localMcpServerPath?: string } = {}): { command: string; args: string[] } {
+  if (options.mode === "npx") {
+    return { command: "npx", args: ["shopify-store-agent-mcp"] };
+  }
+  return {
+    command: "node",
+    args: [options.localMcpServerPath ?? resolveLocalMcpServerPath()]
+  };
+}
+
+export function generateMcpConfigSnippets(config: StoreAgentConfig, options: {
+  configPath?: string;
+  mcpCommandMode?: McpCommandMode;
+  localMcpServerPath?: string;
+} = {}): Record<"codex" | "claude" | "cursor" | "generic", string> {
   const env = {
     SHOPIFY_STORE_AGENT_CONFIG: options.configPath ?? defaultConfigPath(),
     SHOPIFY_STORE_AGENT_STORE: config.storeUrl,
@@ -122,8 +144,10 @@ export function generateMcpConfigSnippets(config: StoreAgentConfig, options: { c
     SHOPIFY_STORE_AGENT_READ_ONLY: String(config.readOnly)
   };
 
-  const command = "npx";
-  const args = ["shopify-store-agent-mcp"];
+  const { command, args } = resolveMcpCommand({
+    mode: options.mcpCommandMode ?? "local",
+    localMcpServerPath: options.localMcpServerPath
+  });
 
   return {
     codex: [
@@ -351,6 +375,7 @@ export async function runOAuthInstall(options: AuthOptions): Promise<{
     }, configPath);
 
     console.log(`\nSaved Shopify Store Agent config to ${configPath}`);
+    console.log("OAuth browser flow complete. The Admin API token was stored only in local config.");
     console.log("Granted scopes:");
     console.log(scopesToString(normalizeScopes(token.scope)));
 
@@ -406,7 +431,7 @@ export async function runSetup(options: SetupOptions): Promise<{
       fetcher: options.fetcher
     });
 
-    const shouldSave = options.saveConfig === true && !options.dryRun;
+    const shouldSave = options.saveConfig === true && !options.dryRun && authMethod !== "oauth";
     if (shouldSave) {
       await saveStoredConfig({
         ...config,
@@ -426,7 +451,11 @@ export async function runSetup(options: SetupOptions): Promise<{
       scopeSummary: scopesToString(scopes),
       capabilityCheck,
       warnings,
-      snippets: generateMcpConfigSnippets(config, { configPath }),
+      snippets: generateMcpConfigSnippets(config, {
+        configPath,
+        mcpCommandMode: options.mcpCommandMode,
+        localMcpServerPath: options.localMcpServerPath
+      }),
       nextSteps: setupNextSteps(authMethod, configPath)
     };
   } finally {
@@ -478,6 +507,12 @@ function parseArgs(argv: string[]): (SetupOptions & AuthOptions & SmokeOptions &
     } else if (arg === "--config" && next) {
       options.configPath = next;
       index += 1;
+    } else if (arg === "--mcp-command" && next) {
+      options.mcpCommandMode = next === "npx" ? "npx" : "local";
+      index += 1;
+    } else if (arg === "--local-mcp-server" && next) {
+      options.localMcpServerPath = next;
+      index += 1;
     }
   }
   return options;
@@ -487,7 +522,7 @@ async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   if (options.command !== "setup" && options.command !== "auth" && options.command !== "smoke") {
     console.log("Usage:");
-    console.log("  shopify-store-agent setup --store example.myshopify.com [--auth manual|oauth] [--dry-run]");
+    console.log("  shopify-store-agent setup --store example.myshopify.com [--auth manual|oauth] [--dry-run] [--mcp-command local|npx]");
     console.log("  shopify-store-agent auth --store example.myshopify.com --client-id ... --client-secret ...");
     console.log("  shopify-store-agent smoke [--store example.myshopify.com] [--live]");
     return;
@@ -568,7 +603,7 @@ function resolveSetupScopes(input: string | readonly string[] | undefined, readO
   const scopes = normalizeScopes(input ?? defaultReadOnlyAdminScopes);
   const writeScopes = scopes.filter((scope) => scope.toLowerCase().startsWith("write_"));
   if (readOnly && writeScopes.length > 0) {
-    throw new Error("write_scopes_blocked: Write scopes require --write-enabled, and Shopify write tools are not implemented yet.");
+    throw new Error("write_scopes_blocked: Write scopes require --write-enabled. Only page.create.execute and product.create.execute are implemented; all other execute tools remain fail-closed placeholders.");
   }
   return scopes;
 }
@@ -578,13 +613,13 @@ function setupWarnings(readOnly: boolean, scopes: readonly string[]): SetupWarni
   if (!readOnly) {
     warnings.push({
       code: "write_mode_requested",
-      message: "Write mode was requested in config, but setup does not implement or activate Shopify execute/write tools."
+      message: "Write mode was requested. Only page.create.execute and product.create.execute are implemented; all other execute tools remain fail-closed placeholders."
     });
   }
   if (scopes.some((scope) => scope.toLowerCase().startsWith("write_"))) {
     warnings.push({
       code: "write_scopes_requested",
-      message: "Write scopes were explicitly requested, but Shopify write tools are not implemented yet."
+      message: "Write scopes were requested. Use only the minimal scopes required for reviewed development-store tests of page.create.execute or product.create.execute."
     });
   }
   return warnings;
@@ -593,11 +628,14 @@ function setupWarnings(readOnly: boolean, scopes: readonly string[]): SetupWarni
 function setupNextSteps(authMethod: "manual" | "oauth", configPath: string): string[] {
   const common = [
     `Point your MCP host at the local config path: ${configPath}.`,
-    "Keep read-only mode enabled until you intentionally review future write capabilities."
+    "For the current GitHub-only install, use the generated local node MCP command after pnpm run build.",
+    "Keep read-only mode enabled except for explicit reviewed development-store tests of page.create.execute or product.create.execute."
   ];
   if (authMethod === "oauth") {
     return [
-      "Run the local OAuth auth command with your own Shopify app client credentials to store an Admin API token locally.",
+      "setup --auth oauth only prepares guidance and snippets; it does not run the OAuth browser flow or exchange a token.",
+      "Run shopify-store-agent auth with your own Shopify app client credentials to open the local OAuth browser flow and store the Admin API token locally.",
+      "Do not paste OAuth client secrets or generated tokens into docs, PRs, screenshots, logs, or chat.",
       ...common
     ];
   }
