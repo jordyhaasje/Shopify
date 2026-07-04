@@ -39,6 +39,8 @@ pnpm --filter shopify-store-agent run smoke -- --live --admin-token "$SHOPIFY_AD
 
 ## Manual Validation
 
+When documenting a manual run, use the evidence format in [dev-store-e2e-runbook.md](dev-store-e2e-runbook.md). Keep the record in the relevant PR or issue unless the result becomes durable product documentation. Record pass/fail/skipped status and safe summaries only; do not paste tokens, raw Shopify responses, raw reviewed payloads, config files, customer data, order data, or production product data.
+
 - Run `shopify.capabilities.check` in local mode first.
 - Test one read tool with explicit user-provided input.
 - Test one catalog/content preview tool.
