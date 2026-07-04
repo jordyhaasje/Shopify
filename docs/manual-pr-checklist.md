@@ -16,6 +16,7 @@ pnpm run build
 pnpm run smoke:local
 ```
 
+- For package metadata changes, run `pnpm run pack:check` and confirm it is dry-run only, creates no tarballs, and includes only intended package files.
 - Review changed docs for product-boundary drift.
 - For user-facing install/use docs, confirm [user-quickstart.md](user-quickstart.md) remains the compact first-run entry point and deeper docs link to it instead of duplicating the full flow.
 - Review read-tool audit behavior: successful read, not found, and multiple matches use `success`; missing input uses `blocked`; Shopify/API/invalid response uses `failed`.

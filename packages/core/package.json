@@ -1,9 +1,32 @@
 {
   "name": "@shopify-store-agent/core",
   "version": "0.1.0",
+  "description": "Core safety, config, preview, and Shopify Admin GraphQL helpers for Shopify Store Agent.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "package.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jordyhaasje/Shopify.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/jordyhaasje/Shopify/issues"
+  },
+  "homepage": "https://github.com/jordyhaasje/Shopify#readme",
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false"
