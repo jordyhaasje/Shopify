@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createConfig, hashPreviewContent, reviewedPayloadForPreviewRecord } from "@shopify-store-agent/core";
-import { callTool, listTools, type ToolContext } from "../src/tools.js";
+import { callTool, createDefaultContext, listTools, type ToolContext } from "../src/tools.js";
 import { MemoryAuditLog } from "@shopify-store-agent/core";
 
 const expectedToolNames = [
@@ -347,6 +350,38 @@ describe("MCP tools", () => {
     expect(first.previewHash).toBe(second.previewHash);
     expect(context.previewStore?.getPreview(first.previewId)).toMatchObject({ ok: true });
     expect(context.previewStore?.getPreview(second.previewId)).toMatchObject({ ok: true });
+  });
+
+  it("persists default-context preview records across MCP context restarts", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "shopify-mcp-preview-store-"));
+    const oldPreviewStore = process.env.SHOPIFY_STORE_AGENT_PREVIEW_STORE;
+    const oldConfig = process.env.SHOPIFY_STORE_AGENT_CONFIG;
+    const oldStore = process.env.SHOPIFY_STORE_AGENT_STORE;
+    try {
+      process.env.SHOPIFY_STORE_AGENT_PREVIEW_STORE = join(dir, "previews.json");
+      process.env.SHOPIFY_STORE_AGENT_CONFIG = join(dir, "missing-config.json");
+      process.env.SHOPIFY_STORE_AGENT_STORE = "preview-store-test.myshopify.com";
+
+      const firstContext = await createDefaultContext();
+      const preview = await callTool("product.create.preview", { title: "Persistent Preview Product" }, firstContext) as Record<string, unknown>;
+
+      const secondContext = await createDefaultContext();
+
+      expect(secondContext.previewStore?.getPreview(preview.previewId)).toMatchObject({
+        ok: true,
+        status: "active",
+        record: {
+          previewId: preview.previewId,
+          previewHash: preview.previewHash,
+          tool: "product.create.preview"
+        }
+      });
+    } finally {
+      restoreEnv("SHOPIFY_STORE_AGENT_PREVIEW_STORE", oldPreviewStore);
+      restoreEnv("SHOPIFY_STORE_AGENT_CONFIG", oldConfig);
+      restoreEnv("SHOPIFY_STORE_AGENT_STORE", oldStore);
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("records blocked audit entries for missing or invalid preview input", async () => {
@@ -2627,6 +2662,14 @@ function jsonResponse(body: unknown): ReturnType<NonNullable<ToolContext["fetche
       return JSON.stringify(body);
     }
   };
+}
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+  } else {
+    process.env[key] = value;
+  }
 }
 
 function changeFor(result: unknown, field: string): Record<string, unknown> | undefined {

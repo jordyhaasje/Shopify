@@ -19,6 +19,8 @@ import {
   getProduct,
   getTracking,
   loadStoredConfig,
+  defaultPreviewStorePath,
+  FilePreviewStore,
   MemoryPreviewStore,
   hashPreviewContent,
   planThemeSection,
@@ -48,6 +50,7 @@ import {
   previewProductUpdate,
   type StoreAgentConfig
 } from "@shopify-store-agent/core";
+import { dirname, join } from "node:path";
 
 export interface ToolDefinition {
   name: string;
@@ -1019,7 +1022,8 @@ function looksLikeSecret(value: string): boolean {
 }
 
 export async function createDefaultContext(): Promise<ToolContext> {
-  const stored = await loadStoredConfig(process.env.SHOPIFY_STORE_AGENT_CONFIG);
+  const configPath = process.env.SHOPIFY_STORE_AGENT_CONFIG;
+  const stored = await loadStoredConfig(configPath);
   return {
     config: stored ?? createConfig({
       storeUrl: process.env.SHOPIFY_STORE_AGENT_STORE ?? "example.myshopify.com",
@@ -1029,8 +1033,14 @@ export async function createDefaultContext(): Promise<ToolContext> {
       capabilities: emptyCapabilities()
     }),
     audit: new MemoryAuditLog(),
-    previewStore: new MemoryPreviewStore()
+    previewStore: new FilePreviewStore({ path: previewStorePath(configPath) })
   };
+}
+
+function previewStorePath(configPath: string | undefined): string {
+  if (process.env.SHOPIFY_STORE_AGENT_PREVIEW_STORE) return process.env.SHOPIFY_STORE_AGENT_PREVIEW_STORE;
+  if (configPath) return join(dirname(configPath), "previews.json");
+  return defaultPreviewStorePath();
 }
 
 export const tools: ToolDefinition[] = [

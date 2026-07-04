@@ -480,8 +480,8 @@ Confirm:
 
 - Read-only mode is still enabled: rerun setup or update local config for a development-store write test only.
 - Granted scopes are missing or unknown: rerun setup/auth with explicit minimal write scopes for the target execute path.
-- Preview expired or disappeared: the preview store is in-memory and process-local; create a new preview in the same MCP server process.
-- MCP server restarted: create a new preview because stored previews do not persist across restarts.
+- Preview expired or disappeared: create a new preview. Safe preview records persist locally by default, but missing, corrupt, expired, or mismatched records still fail closed.
+- MCP server restarted: confirm the same local preview store path is being used, or create a new preview before execute.
 - Wrong target, hash, or reviewed payload: rerun preview, review the stored preview content, and execute with matching binding values.
 - Shopify returns `userErrors`: inspect the safe user error summary and adjust the test input.
 - Token lacks scope: update the development-store app/token scopes, reinstall if needed, and refresh local config.

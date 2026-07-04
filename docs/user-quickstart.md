@@ -177,8 +177,8 @@ Use only a development or disposable store. `write_products` is required for `pr
 - MCP host cannot start: run `pnpm run build` and confirm the config path points to `packages/mcp/dist/server.js`.
 - Missing token diagnostics: rerun `auth`; do not paste the generated token anywhere.
 - Read tool returns missing input: provide a handle, Shopify ID, order number, email, or tracking reference.
-- Execute is blocked: confirm read-only mode is disabled only for a development-store test, required write scopes are granted, preview is from the same MCP server process, `confirmed: true` is present, and the `executeRequest` values were not changed.
-- Preview expired or disappeared: create a new preview in the same MCP server process.
+- Execute is blocked: confirm read-only mode is disabled only for a development-store test, required write scopes are granted, the stored preview record is available, `confirmed: true` is present, and the `executeRequest` values were not changed.
+- Preview expired or disappeared: create a new preview. MCP defaults persist safe preview records locally, but missing, corrupt, expired, or mismatched records still fail closed.
 
 ## Current capabilities
 
@@ -233,4 +233,3 @@ theme.rollback
 - Production-store write automation.
 - Rule-based/smart collection create, collection publishing, refund, tracking, customer, bulk, theme, variants, media, inventory, metafields, publications, translations, and other advanced execute implementations.
 - Automated live Shopify tests.
-- Persistent preview storage across MCP server restarts.

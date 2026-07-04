@@ -26,7 +26,7 @@ Structured preview tools are implemented for `product.create.preview`, `product.
 
 `product.update.preview` can optionally enrich before-values with the read-only `product.get` path when the caller supplies an explicit `productId`, `id`, or `handle` and sets `enrichExistingProduct: true`. It does not search for products, does not fetch when an existing product summary is already supplied, and falls back to `before: "unknown"` with a warning when enrichment is unavailable.
 
-Preview results are also saved to a local in-memory preview store. Stored records contain safe preview content, TTL metadata, unique per-preview `previewId` values, and deterministic `previewHash` values that can later be compared with hashes recomputed from the actual reviewed payload. The store is not file-backed yet, does not persist across process restarts, and never performs Shopify calls.
+Preview results are also saved to a local preview store. Stored records contain safe preview content, TTL metadata, unique per-preview `previewId` values, and deterministic `previewHash` values that can later be compared with hashes recomputed from the actual reviewed payload. The MCP default context persists these safe records to a local `previews.json` file beside the config path, or to `SHOPIFY_STORE_AGENT_PREVIEW_STORE` when that override is set. The store never performs Shopify calls and must not contain raw reviewed payloads or raw Shopify nodes.
 
 The `executeRequest` helper is not auto-execute. It still requires explicit user approval and `confirmed: true`, and the existing execute path still verifies the active stored preview, target, expected tool, `previewHash`, reviewed payload, and `reviewedChangesHash` before any write can happen.
 

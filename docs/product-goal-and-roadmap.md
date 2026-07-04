@@ -28,7 +28,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 7. The AI host executes only through the matching execute tool with strict stored preview binding and `confirmed: true`.
 8. Output and audit entries stay safe, compact, and free of secrets, raw Shopify nodes, raw reviewed payloads, and large dumps.
 
-## Current MVP Status After PR #24
+## Current MVP Status After PR #25
 
 - GitHub-local install is the primary working route.
 - Local OAuth-first setup is documented and implemented, with manual token fallback still supported.
@@ -40,6 +40,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 - Minimal `product.update.execute` is implemented for basic product fields only: title, description/descriptionHtml, vendor, product type, status, and tags.
 - Minimal `collection.create.execute` is implemented for custom collections with title, optional handle, and explicit product IDs only.
 - A product media/update execute expansion plan exists, with media execute still intentionally not implemented.
+- Safe preview records persist locally across MCP server restarts while preserving strict stored preview binding.
 - A compact user quickstart exists for AI coding harness users.
 - Manual development-store E2E validation has been run once against a development store with safe evidence recorded in the PR. The flow covered local validation, OAuth setup, live-safe capability check, preview-bound page create, preview-bound product create, preview-bound basic-field product update, negative execute checks, audit/output safety review, and read-only config restoration.
 - Local smoke validation exists and remains local/no-write with `fetchCalls: 0`.
@@ -47,7 +48,6 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 ## Near-Term Roadmap
 
 - Keep this product goal and roadmap document current as shipped capabilities change.
-- Add persistent preview storage while preserving strict stored preview binding.
 - Prepare npm/npx packaging so local GitHub install is no longer the only working route.
 
 ## Later Roadmap
