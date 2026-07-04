@@ -1,12 +1,35 @@
 {
   "name": "shopify-store-agent",
   "version": "0.1.0",
+  "description": "CLI setup, OAuth, smoke validation, and MCP snippets for Shopify Store Agent.",
   "type": "module",
   "bin": {
     "shopify-store-agent": "./dist/index.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "package.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jordyhaasje/Shopify.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/jordyhaasje/Shopify/issues"
+  },
+  "homepage": "https://github.com/jordyhaasje/Shopify#readme",
   "scripts": {
     "auth": "node dist/index.js auth",
     "build": "tsc -b",

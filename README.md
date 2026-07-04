@@ -78,7 +78,7 @@ The intended future setup is:
 npx shopify-store-agent setup
 ```
 
-That npm/npx path is not the primary working route until package publishing is active.
+Package metadata is prepared and can be checked locally with `pnpm run pack:check`. The npm/npx path is not the primary working route until package publishing is explicitly approved and completed.
 
 The wizard guides users through store URL normalization, manual-token or local-OAuth setup guidance, read-only local config, capability checks, and MCP host snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts. Setup and OAuth auth default to read-only scopes and do not request or activate write mode for read/preview validation.
 

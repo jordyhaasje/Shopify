@@ -1,12 +1,35 @@
 {
   "name": "shopify-store-agent-mcp",
   "version": "0.1.0",
+  "description": "MCP server for local-first Shopify Store Agent workflows.",
   "type": "module",
   "bin": {
     "shopify-store-agent-mcp": "./dist/server.js"
   },
   "main": "./dist/server.js",
   "types": "./dist/server.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    }
+  },
+  "files": [
+    "dist",
+    "package.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jordyhaasje/Shopify.git",
+    "directory": "packages/mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/jordyhaasje/Shopify/issues"
+  },
+  "homepage": "https://github.com/jordyhaasje/Shopify#readme",
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false"
