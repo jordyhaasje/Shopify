@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
+  FilePreviewStore,
   MemoryPreviewStore,
   hashPreviewContent,
   previewRecordBindingTarget,
@@ -311,6 +315,57 @@ describe("preview store", () => {
       ok: true,
       status: "active"
     });
+  });
+
+  it("persists only safe preview records and reloads binding material", () => {
+    const dir = mkdtempSync(join(tmpdir(), "shopify-preview-store-"));
+    const path = join(dir, "previews.json");
+    try {
+      const first = new FilePreviewStore({ path, now: () => new Date("2026-07-03T10:00:00.000Z") });
+      const record = first.savePreview(productPreview({
+        target: { type: "product", title: "Linen Shirt shpat_persist_secret" },
+        proposedChanges: [{ field: "title", action: "create", value: "Linen Shirt" }]
+      }));
+      const reviewedPayload = reviewedPayloadForPreviewRecord(record);
+      const reviewedChangesHash = hashPreviewContent(reviewedPayload);
+      first.markReviewed(record.previewId, reviewedPayload);
+
+      const disk = readFileSync(path, "utf8");
+      expect(disk).not.toContain("shpat_persist_secret");
+      expect(JSON.parse(disk)).toMatchObject({
+        version: 1,
+        records: [expect.objectContaining({ previewId: record.previewId, previewHash: record.previewHash })]
+      });
+
+      const second = new FilePreviewStore({ path, now: () => new Date("2026-07-03T10:00:01.000Z") });
+      const lookup = second.getPreview(record.previewId);
+      expect(lookup).toMatchObject({
+        ok: true,
+        status: "active",
+        record: {
+          previewId: record.previewId,
+          previewHash: record.previewHash,
+          reviewedChangesHash
+        }
+      });
+
+      const verified = verifyStoredPreviewBinding(second, {
+        previewId: record.previewId,
+        confirmed: true,
+        reviewedPayload,
+        expectedTool: record.tool,
+        target: previewRecordBindingTarget(record),
+        previewHash: record.previewHash,
+        reviewedChangesHash
+      }, {
+        executeTool: "product.create.execute",
+        expectedPreviewTool: record.tool,
+        target: previewRecordBindingTarget(record)
+      });
+      expect(verified).toMatchObject({ ok: true, diagnostics: [] });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -127,6 +127,14 @@ The OAuth flow stores local config here by default:
 
 That file is local machine state. It must not be committed, pasted into chat, or copied into docs/tests/logs.
 
+The MCP default context stores safe preview binding records here by default:
+
+```text
+~/.shopify-store-agent/previews.json
+```
+
+When `SHOPIFY_STORE_AGENT_CONFIG` points to a custom config path, preview records are stored as `previews.json` beside that config file. Set `SHOPIFY_STORE_AGENT_PREVIEW_STORE` to override the preview-store path. The preview store contains sanitized binding material only; it must not contain raw reviewed payloads, raw Shopify nodes, tokens, or customer/order data.
+
 The setup wizard prints MCP snippets for:
 
 - Codex.

@@ -1,4 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import {
   type ExecutePreviewBindingDiagnostic,
   type ExecutePreviewBindingInput,
@@ -61,6 +64,10 @@ export interface MemoryPreviewStoreOptions {
   now?: () => Date;
 }
 
+export interface FilePreviewStoreOptions extends MemoryPreviewStoreOptions {
+  path: string;
+}
+
 const defaultTtlMs = 24 * 60 * 60 * 1000;
 const redacted = "[redacted]";
 const omitted = "[omitted]";
@@ -113,6 +120,7 @@ export class MemoryPreviewStore {
     };
 
     this.records.set(previewId, record);
+    this.afterChange();
     return safeRecord(record);
   }
 
@@ -125,6 +133,7 @@ export class MemoryPreviewStore {
     if (record.status === "expired" || isExpired(record, this.now())) {
       const expired = { ...record, status: "expired" as const };
       this.records.set(record.previewId, expired);
+      this.afterChange();
       return expiredPreview(expired);
     }
     return { ok: true, status: "active", record: safeRecord(record) };
@@ -139,6 +148,7 @@ export class MemoryPreviewStore {
       reviewedChangesHash
     };
     this.records.set(updated.previewId, updated);
+    this.afterChange();
     return { ok: true, status: "active", record: safeRecord(updated), reviewedChangesHash };
   }
 
@@ -149,12 +159,96 @@ export class MemoryPreviewStore {
     if (!record) return missingPreview();
     const expired: StoredPreviewRecord = { ...record, status: "expired" };
     this.records.set(safeId, expired);
+    this.afterChange();
     return expiredPreview(expired);
   }
 
   listPreviews(): StoredPreviewRecord[] {
     return Array.from(this.records.keys()).map((previewId) => this.getPreview(previewId).record).filter((record): record is StoredPreviewRecord => Boolean(record));
   }
+
+  protected restorePreview(record: StoredPreviewRecord): void {
+    const safeId = safePreviewId(record.previewId);
+    const safeTool = safeString(record.tool);
+    if (!safeId || !safeTool) return;
+    const restored: StoredPreviewRecord = {
+      previewId: safeId,
+      tool: safeTool,
+      target: sanitizePreviewValue(record.target),
+      summary: sanitizePreviewValue(record.summary),
+      proposedChanges: sanitizePreviewValue(record.proposedChanges),
+      requiredConfirmationForExecute: sanitizePreviewValue(record.requiredConfirmationForExecute),
+      auditContext: sanitizePreviewValue(record.auditContext),
+      createdAt: parseDate(record.createdAt)?.toISOString() ?? new Date(0).toISOString(),
+      expiresAt: parseDate(record.expiresAt)?.toISOString() ?? new Date(0).toISOString(),
+      previewHash: hashPreviewContent({
+        tool: safeTool,
+        target: sanitizePreviewValue(record.target),
+        summary: sanitizePreviewValue(record.summary),
+        proposedChanges: sanitizePreviewValue(record.proposedChanges),
+        requiredConfirmationForExecute: sanitizePreviewValue(record.requiredConfirmationForExecute),
+        auditContext: sanitizePreviewValue(record.auditContext)
+      }),
+      reviewedChangesHash: safeString(record.reviewedChangesHash),
+      status: isPreviewRecordStatus(record.status) ? record.status : "invalid"
+    };
+    this.records.set(safeId, restored);
+  }
+
+  protected allRecords(): StoredPreviewRecord[] {
+    return Array.from(this.records.values()).map((record) => safeRecord(record));
+  }
+
+  protected afterChange(): void {
+    // Extension point for durable preview stores.
+  }
+}
+
+export class FilePreviewStore extends MemoryPreviewStore {
+  private readonly path: string;
+  private loading = true;
+
+  constructor(options: FilePreviewStoreOptions) {
+    super(options);
+    this.path = options.path;
+    this.loadFromDisk();
+    this.loading = false;
+  }
+
+  protected override afterChange(): void {
+    if (this.loading) return;
+    this.persist();
+  }
+
+  private loadFromDisk(): void {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(this.path, "utf8"));
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return;
+      return;
+    }
+
+    const records = Array.isArray(parsed) ? parsed : parsed && typeof parsed === "object" && Array.isArray((parsed as { records?: unknown }).records) ? (parsed as { records: unknown[] }).records : [];
+    for (const item of records) {
+      if (item && typeof item === "object") this.restorePreview(item as StoredPreviewRecord);
+    }
+  }
+
+  private persist(): void {
+    mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
+    const tempPath = `${this.path}.tmp`;
+    const payload = {
+      version: 1,
+      records: this.allRecords()
+    };
+    writeFileSync(tempPath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
+    renameSync(tempPath, this.path);
+  }
+}
+
+export function defaultPreviewStorePath(home = homedir()): string {
+  return join(home, ".shopify-store-agent", "previews.json");
 }
 
 export function hashPreviewContent(value: unknown): string {
@@ -343,6 +437,10 @@ function parseDate(value: unknown): Date | undefined {
   if (typeof value !== "string") return undefined;
   const parsed = new Date(value);
   return Number.isFinite(parsed.getTime()) ? parsed : undefined;
+}
+
+function isPreviewRecordStatus(value: unknown): value is PreviewRecordStatus {
+  return value === "active" || value === "expired" || value === "invalid";
 }
 
 function isExpired(record: StoredPreviewRecord, now: Date): boolean {

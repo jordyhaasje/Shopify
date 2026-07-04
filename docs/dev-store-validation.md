@@ -66,4 +66,4 @@ When documenting a manual run, use the evidence format in [dev-store-e2e-runbook
 - Confirm any deliberate write test is limited to `page.create.execute`, `product.create.execute`, basic-field `product.update.execute`, or custom explicit-product `collection.create.execute` in a development store.
 - Confirm no raw Admin API tokens, OAuth client secrets, Theme Access tokens, customer data, order data, or product dumps appear in logs.
 - Keep read-only mode enabled except for explicit reviewed `page.create.execute`, `product.create.execute`, basic-field `product.update.execute`, or custom explicit-product `collection.create.execute` development-store tests.
-- Remember that the preview store is in-memory and process-local. If the MCP server restarts, create a new preview before execute.
+- Remember that the MCP default context persists safe preview records locally. Missing, corrupt, expired, or mismatched preview records still fail closed; create a new preview when in doubt.
