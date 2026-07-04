@@ -154,6 +154,8 @@ The setup wizard prints MCP snippets for:
 - Cursor.
 - Generic MCP-compatible hosts.
 
+It also prints "First AI prompts" for the connected host. These starter prompts avoid tool names and GraphQL IDs, but they do not weaken safety rules: the AI host still has to ask for missing exact targets, create previews for changes, and wait for explicit approval before execute.
+
 Snippets point to the local config path and non-secret setup values. They should not include raw Admin API tokens, OAuth client secrets, or Theme Access tokens.
 
 Current GitHub-only snippets use the local build:

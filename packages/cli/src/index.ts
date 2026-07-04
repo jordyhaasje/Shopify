@@ -98,6 +98,7 @@ export interface SetupResult {
   capabilityCheck: CapabilityCheckResult;
   warnings: SetupWarning[];
   snippets: Record<"codex" | "claude" | "cursor" | "generic", string>;
+  firstPrompts: string[];
   nextSteps: string[];
 }
 
@@ -484,6 +485,7 @@ export async function runSetup(options: SetupOptions): Promise<{
   capabilityCheck: CapabilityCheckResult;
   warnings: SetupWarning[];
   snippets: Record<"codex" | "claude" | "cursor" | "generic", string>;
+  firstPrompts: string[];
   nextSteps: string[];
 }> {
   const interactive = !options.storeUrl;
@@ -540,6 +542,7 @@ export async function runSetup(options: SetupOptions): Promise<{
         mcpCommandMode: options.mcpCommandMode,
         localMcpServerPath: options.localMcpServerPath
       }),
+      firstPrompts: setupFirstPrompts(),
       nextSteps: setupNextSteps(authMethod, configPath)
     };
   } finally {
@@ -669,6 +672,10 @@ async function main(): Promise<void> {
   for (const step of result.nextSteps) {
     console.log(`- ${step}`);
   }
+  console.log("\nFirst AI prompts");
+  for (const prompt of result.firstPrompts) {
+    console.log(`- ${prompt}`);
+  }
   console.log("\nCodex MCP config");
   console.log(result.snippets.codex);
   console.log("\nClaude Code MCP config");
@@ -751,6 +758,15 @@ function setupNextSteps(authMethod: "manual" | "oauth", configPath: string): str
   return [
     "Create or use a Shopify custom app token with only the scopes needed for read and preview workflows.",
     ...common
+  ];
+}
+
+function setupFirstPrompts(): string[] {
+  return [
+    "Check my Shopify connection and tell me only whether the store is ready. Do not show secrets or raw config.",
+    "Create a draft page preview for our return policy. Ask me for any missing content first, and do not execute until I explicitly approve.",
+    "I want to update a product. Ask me for the product link, title, Shopify ID, or another exact target if you need it, then show me a preview before any change.",
+    "Look up the order or customer I provide and return only a minimal status summary. Do not show raw Shopify data."
   ];
 }
 
