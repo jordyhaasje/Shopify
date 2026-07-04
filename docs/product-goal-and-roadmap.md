@@ -28,7 +28,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 7. The AI host executes only through the matching execute tool with strict stored preview binding and `confirmed: true`.
 8. Output and audit entries stay safe, compact, and free of secrets, raw Shopify nodes, raw reviewed payloads, and large dumps.
 
-## Current MVP Status After PR #20
+## Current MVP Status After PR #22
 
 - GitHub-local install is the primary working route.
 - Local OAuth-first setup is documented and implemented, with manual token fallback still supported.
@@ -39,12 +39,11 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 - `product.create.execute` is implemented.
 - Minimal `product.update.execute` is implemented for basic product fields only: title, description/descriptionHtml, vendor, product type, status, and tags.
 - A compact user quickstart exists for AI coding harness users.
-- A manual development-store E2E runbook and PR-safe evidence format exist. Live development-store validation has not been claimed unless a future PR or issue records it with safe evidence.
+- Manual development-store E2E validation has been run once against a development store with safe evidence recorded in the PR. The flow covered local validation, OAuth setup, live-safe capability check, preview-bound page create, preview-bound product create, preview-bound basic-field product update, negative execute checks, audit/output safety review, and read-only config restoration.
 - Local smoke validation exists and remains local/no-write with `fetchCalls: 0`.
 
 ## Near-Term Roadmap
 
-- Run and document manual development-store E2E validation with safe evidence from a development or disposable test store.
 - Keep this product goal and roadmap document current as shipped capabilities change.
 - Implement minimal `collection.create.execute` only when explicitly scoped and reviewed.
 - Plan product media/update execute expansion without broadening the existing minimal update path silently.
