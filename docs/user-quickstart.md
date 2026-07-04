@@ -10,7 +10,7 @@ It is not a Shopify App Store app, embedded Admin app, SaaS dashboard, or email 
 
 - A local terminal in your AI coding harness.
 - Node.js and pnpm.
-- A Shopify development or disposable test store, for example `hazify-apps.myshopify.com`.
+- A Shopify store. Use a development or disposable test store for first write validation; normal stores can be connected for read-only checks and reviewed production use.
 - Shopify app client ID and client secret for local OAuth.
 - The redirect URL `http://127.0.0.1:3456/auth/callback` added to that Shopify app.
 
@@ -19,6 +19,7 @@ It is not a Shopify App Store app, embedded Admin app, SaaS dashboard, or email 
 - Clone the repo, install dependencies, build, and run local validation.
 - Run setup/auth commands when you provide local environment variables.
 - Help place the MCP config in Codex, OpenCode, Claude Code, Cursor, or another MCP host.
+- Translate ordinary store-language requests into safe read tools, previews, or follow-up questions.
 - Run read-only checks and previews from user-provided inputs.
 - Prepare an execute call from `executeRequest` for your review.
 
@@ -28,7 +29,25 @@ It is not a Shopify App Store app, embedded Admin app, SaaS dashboard, or email 
 - Open the Shopify install URL and approve the app.
 - Keep secrets out of chat, docs, PRs, screenshots, and logs.
 - Explicitly approve before any real write.
-- Use only development or disposable stores for write tests.
+- Use development or disposable stores for first write tests before enabling writes on a normal store.
+
+## How to talk to the AI
+
+You do not need to know technical handles, GraphQL IDs, or tool names for everyday use. Ask in normal store language:
+
+```text
+Maak een conceptpagina voor ons retourbeleid en laat mij eerst de preview zien.
+```
+
+```text
+Pas de titel en tags van het linnen overhemd aan, maar voer niets uit voordat ik akkoord geef.
+```
+
+```text
+Zoek de bestelling waar deze klant over mailt en geef alleen een korte status.
+```
+
+The AI host should translate your request into Shopify Store Agent tools. When the current tool needs an exact target, the AI should ask for a product link, product title, order number, customer email, Shopify ID, handle, or another user-confirmed identifier. It must not guess which product, order, or customer you meant.
 
 ## Step 1 -- Clone, install, build, smoke
 

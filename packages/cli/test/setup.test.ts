@@ -68,6 +68,15 @@ describe("setup", () => {
     expect(result.config.capabilities?.adminApi).toBe(false);
   });
 
+  it("guides AI hosts to accept ordinary store-language prompts safely", async () => {
+    const result = await runSetup({ storeUrl: "demo", dryRun: true });
+    const nextSteps = result.nextSteps.join(" ");
+
+    expect(nextSteps).toContain("ordinary store language");
+    expect(nextSteps).toContain("ask for missing exact targets");
+    expect(nextSteps).toContain("read-only mode enabled");
+  });
+
   it("validates setup input and normalizes store URLs", async () => {
     await expect(runSetup({ storeUrl: "   ", dryRun: true })).rejects.toThrow("Store URL is required.");
 

@@ -22,7 +22,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 1. The user installs from a GitHub clone today, or from a future npm/npx package after publishing exists.
 2. The user connects a Shopify store with local OAuth, with manual Admin API token setup as a fallback.
 3. The user adds the Shopify Store Agent MCP server to an AI host.
-4. The user asks the AI host to read Shopify data, create a preview, or prepare a reviewed change from explicit user-provided inputs.
+4. The user asks the AI host in ordinary store language to read Shopify data, create a preview, or prepare a reviewed change. The host maps that request to safe tools and asks for missing exact targets when needed.
 5. The AI host creates a safe preview.
 6. The user reviews and explicitly approves the preview.
 7. The AI host executes only through the matching execute tool with strict stored preview binding and `confirmed: true`.
@@ -33,6 +33,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 - GitHub-local install is the primary working route.
 - Local OAuth-first setup is documented and implemented, with hidden interactive client-secret entry and manual token fallback still supported.
 - Setup generates MCP snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts.
+- Setup guidance now tells AI hosts to support ordinary store-language prompts while still asking for exact targets before tool calls when needed.
 - Read tools are implemented for explicit inputs.
 - Preview tools are implemented for product, page, collection, import, media, and related planning surfaces.
 - `page.create.execute` is implemented.

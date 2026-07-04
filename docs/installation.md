@@ -36,7 +36,7 @@ That path is reserved for after package publishing is explicitly approved and co
 
 Publishing itself is manual and gated by [release-runbook.md](release-runbook.md). Do not treat package metadata or `pack:check` as permission to publish.
 
-The future wizard should collect or create local Shopify credentials, run capability checks, and generate MCP configuration snippets for hosts such as Codex, Claude Code, and Cursor.
+The future wizard should collect or create local Shopify credentials, run capability checks, and generate MCP configuration snippets for hosts such as Codex, Claude Code, and Cursor. It should also explain that users can ask the AI host in ordinary store language; the host should translate requests into safe tool calls and ask for missing exact targets instead of requiring technical prompts.
 
 Capability checks are safe by default. Local mode reports config status, redacted credential presence, read-only mode, local capability flags, diagnostics, and setup recommendations. Optional live mode uses the Admin API token only for a minimal shop identity check and must not return sensitive store data.
 
@@ -50,7 +50,7 @@ pnpm --filter shopify-store-agent run setup -- \
 
 Setup writes local config only when run as the CLI command. Programmatic dry runs do not write config. The generated MCP snippets use `SHOPIFY_STORE_AGENT_CONFIG` and other non-secret environment values instead of printing Admin API tokens or OAuth client secrets.
 
-Setup defaults to `readOnly: true`. The setup command itself does not perform Shopify writes, does not activate execute tools, and does not require write scopes for read/preview/smoke validation. OAuth auth also defaults to read-only Admin API scopes. Explicit `write_` scopes are blocked unless write mode is explicitly requested; in this phase write mode is only for reviewed development-store testing of `page.create.execute`, the minimal `product.create.execute` path, the basic-field `product.update.execute` path, or the custom explicit-product `collection.create.execute` path. Only `page.create.execute`, `product.create.execute`, `product.update.execute`, and `collection.create.execute` are implemented; all other execute tools remain fail-closed placeholders.
+Setup defaults to `readOnly: true`. The setup command itself does not perform Shopify writes, does not activate execute tools, and does not require write scopes for read/preview/smoke validation. OAuth auth also defaults to read-only Admin API scopes. Users can connect a normal store for read-only checks and previews; first write validation should happen on a development or disposable store. Explicit `write_` scopes are blocked unless write mode is explicitly requested; in this phase write mode is only for reviewed tests of `page.create.execute`, the minimal `product.create.execute` path, the basic-field `product.update.execute` path, or the custom explicit-product `collection.create.execute` path. Only `page.create.execute`, `product.create.execute`, `product.update.execute`, and `collection.create.execute` are implemented; all other execute tools remain fail-closed placeholders.
 
 ## Local Smoke Validation
 

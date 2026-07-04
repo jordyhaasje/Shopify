@@ -12,6 +12,7 @@ For the shortest first-run path, start with [user-quickstart.md](user-quickstart
 - Run setup/auth commands when the user provides local environment variables.
 - Help place the generated MCP snippet in the host config.
 - Inspect available MCP tools and explain their safety model.
+- Accept ordinary store-language requests from the user, map them to safe Shopify Store Agent tools, and ask concise follow-up questions when exact targets are missing.
 - Create read-only checks and previews from user-provided inputs.
 - Prepare execute payloads from the preview `executeRequest` helper for user review.
 - Guide negative tests for read-only mode, missing confirmation, missing preview IDs, mismatched hashes, and missing write scopes.
@@ -23,7 +24,20 @@ For the shortest first-run path, start with [user-quickstart.md](user-quickstart
 - Open the OAuth install URL and approve the app in the browser.
 - Keep Admin API tokens, OAuth client secrets, Theme Access tokens, screenshots, and local config contents out of chat, docs, PRs, logs, and issue comments.
 - Give explicit approval before any real write.
-- Use only a development store or disposable test store for write tests.
+- Use a development store or disposable test store for first write validation before enabling writes on a normal store.
+
+## Natural-Language Operating Model
+
+Users should not need to know MCP tool names, GraphQL IDs, or Shopify handles before asking for help. They can ask for outcomes like "make a draft return-policy page", "update the summer collection", or "check this customer's order". The AI host is responsible for translating that request into tool calls, previews, and follow-up questions.
+
+Keep the distinction sharp:
+
+- Good: ask the user for the missing product link, title, order number, customer email, Shopify ID, handle, CSV, image, or other explicit target before calling a tool.
+- Good: use read-only tools to confirm a user-provided target and summarize possible matches.
+- Bad: autonomously search or guess which product/customer/order the user meant.
+- Bad: execute from loose natural-language instructions without a stored preview, reviewed payload, matching hashes, and explicit approval.
+
+For normal production stores, start with read-only checks and previews. For first write validation, use a development or disposable store. After the user deliberately enables write mode on a normal store, keep the same preview-before-execute and explicit-confirmation rules.
 
 ## Current Install Route
 

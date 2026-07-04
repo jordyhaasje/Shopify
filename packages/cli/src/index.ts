@@ -737,6 +737,7 @@ function setupNextSteps(authMethod: "manual" | "oauth", configPath: string): str
   const common = [
     `Point your MCP host at the local config path: ${configPath}.`,
     "For the current GitHub-only install, use the generated local node MCP command after pnpm run build.",
+    "Users can ask the AI host in ordinary store language; the host should map requests to Shopify Store Agent tools and ask for missing exact targets before calling tools.",
     "Keep read-only mode enabled except for explicit reviewed development-store tests of page.create.execute, product.create.execute, product.update.execute, or collection.create.execute."
   ];
   if (authMethod === "oauth") {
