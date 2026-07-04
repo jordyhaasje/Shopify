@@ -30,6 +30,22 @@ export interface ProductVariantPriceUpdateInput {
   variants: ProductVariantPriceInput[];
 }
 
+export interface ProductVariantOptionValueInput {
+  optionName: string;
+  name: string;
+}
+
+export interface ProductVariantCreateInput {
+  optionValues: ProductVariantOptionValueInput[];
+  price?: string;
+  sku?: string;
+}
+
+export interface ProductVariantBulkCreateInput {
+  productId: string;
+  variants: ProductVariantCreateInput[];
+}
+
 export interface ProductCreateSummary {
   id: string;
   title?: string;
@@ -46,6 +62,19 @@ export interface ProductVariantPriceUpdateSummary {
   productId: string;
   updatedVariantCount: number;
   variants: ProductVariantPriceSummary[];
+}
+
+export interface ProductVariantCreateSummary {
+  id: string;
+  title?: string;
+  price?: string;
+  sku?: string;
+}
+
+export interface ProductVariantBulkCreateSummary {
+  productId: string;
+  createdVariantCount: number;
+  variants: ProductVariantCreateSummary[];
 }
 
 export interface ProductWriteDiagnostic {
@@ -71,6 +100,10 @@ export interface ProductUpdateResult extends ProductWriteResultBase {}
 
 export interface ProductVariantPriceUpdateResult extends ProductWriteResultBase {
   variantPriceUpdate?: ProductVariantPriceUpdateSummary;
+}
+
+export interface ProductVariantBulkCreateResult extends ProductWriteResultBase {
+  variantCreate?: ProductVariantBulkCreateSummary;
 }
 
 export interface ProductWriteOptions {
@@ -106,6 +139,18 @@ interface ProductVariantsBulkUpdateData {
     productVariants?: Array<{
       id?: unknown;
       price?: unknown;
+    } | null> | null;
+    userErrors?: GraphqlUserError[];
+  } | null;
+}
+
+interface ProductVariantsBulkCreateData {
+  productVariantsBulkCreate?: {
+    productVariants?: Array<{
+      id?: unknown;
+      title?: unknown;
+      price?: unknown;
+      sku?: unknown;
     } | null> | null;
     userErrors?: GraphqlUserError[];
   } | null;
@@ -332,6 +377,80 @@ export async function updateProductVariantPrices(
   };
 }
 
+export async function createProductVariants(
+  config: StoreAgentConfig,
+  input: ProductVariantBulkCreateInput,
+  options: ProductWriteOptions = {}
+): Promise<ProductVariantBulkCreateResult> {
+  if (config.readOnly) return blocked("Product variant create is blocked because read-only mode is enabled.");
+
+  const productId = safeText(input.productId, 180);
+  if (!productId) return missingInput("Provide a product ID.");
+
+  const variants = safeVariantCreateInputs(input.variants);
+  if (variants.length === 0) return missingInput("Provide at least one variant with explicit option values.");
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  let result: ShopifyGraphqlResult<ProductVariantsBulkCreateData>;
+  try {
+    result = await client.request<ProductVariantsBulkCreateData>({
+      query: productVariantsBulkCreateMutation,
+      variables: { productId, variants }
+    });
+  } catch {
+    return shopifyFailure("Shopify product variant create request failed before a safe response was available.");
+  }
+
+  if (!result.ok) return mapGraphqlFailure(result);
+
+  const userErrors = result.data.productVariantsBulkCreate?.userErrors ?? result.userErrors;
+  if (userErrors.length > 0) {
+    return {
+      ok: false,
+      status: "user_errors",
+      summary: "Shopify rejected the product variant create request.",
+      userErrors: sanitizeUserErrors(userErrors),
+      diagnostics: [{ severity: "warning", code: "shopify_user_errors", message: "Shopify returned product variant create user errors." }]
+    };
+  }
+
+  const createdVariants: ProductVariantCreateSummary[] = [];
+  for (const variant of result.data.productVariantsBulkCreate?.productVariants ?? []) {
+    const id = safeText(variant?.id, 180);
+    if (!id) continue;
+    createdVariants.push({
+      id,
+      title: safeText(variant?.title, 255),
+      price: safePrice(variant?.price),
+      sku: safeText(variant?.sku, 120)
+    });
+    if (createdVariants.length >= variants.length) break;
+  }
+
+  if (createdVariants.length === 0) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product variant create response did not include created variant IDs.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product variant create response did not include created variant IDs." }]
+    };
+  }
+
+  return {
+    ok: true,
+    status: "ok",
+    summary: `Created ${createdVariants.length} Shopify product variant${createdVariants.length === 1 ? "" : "s"}.`,
+    variantCreate: {
+      productId,
+      createdVariantCount: createdVariants.length,
+      variants: createdVariants
+    },
+    userErrors: [],
+    diagnostics: []
+  };
+}
+
 const productCreateMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentProductCreate($product: ProductCreateInput!) {
     productCreate(product: $product) {
@@ -381,7 +500,24 @@ const productVariantsBulkUpdateMutation = /* GraphQL */ `
   }
 `;
 
-function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<ProductCreateData | ProductUpdateData | ProductVariantsBulkUpdateData>, { ok: false }>): ProductWriteResultBase {
+const productVariantsBulkCreateMutation = /* GraphQL */ `
+  mutation ShopifyStoreAgentProductVariantsCreate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+    productVariantsBulkCreate(productId: $productId, variants: $variants) {
+      productVariants {
+        id
+        title
+        price
+        sku
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
+function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<ProductCreateData | ProductUpdateData | ProductVariantsBulkUpdateData | ProductVariantsBulkCreateData>, { ok: false }>): ProductWriteResultBase {
   return {
     ok: false,
     status: "shopify_error",
@@ -449,6 +585,40 @@ function safeVariantPriceInputs(value: ProductVariantPriceInput[] | undefined): 
   return results;
 }
 
+function safeVariantCreateInputs(value: ProductVariantCreateInput[] | undefined): ProductVariantCreateInput[] {
+  if (!Array.isArray(value)) return [];
+  const results: ProductVariantCreateInput[] = [];
+  for (const item of value) {
+    const optionValues = safeVariantOptionValues(item?.optionValues);
+    if (optionValues.length === 0) continue;
+    const variant: ProductVariantCreateInput = { optionValues };
+    const price = safePrice(item?.price);
+    if (price !== undefined) variant.price = price;
+    const sku = safeNonSecretText(item?.sku, 120);
+    if (sku) variant.sku = sku;
+    results.push(variant);
+    if (results.length >= 25) break;
+  }
+  return results;
+}
+
+function safeVariantOptionValues(value: ProductVariantOptionValueInput[] | undefined): ProductVariantOptionValueInput[] {
+  if (!Array.isArray(value)) return [];
+  const results: ProductVariantOptionValueInput[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const optionName = safeNonSecretText(item?.optionName, 120);
+    const name = safeNonSecretText(item?.name, 180);
+    if (!optionName || !name) continue;
+    const key = `${optionName}\u0000${name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    results.push({ optionName, name });
+    if (results.length >= 3) break;
+  }
+  return results;
+}
+
 function safePrice(value: unknown): string | undefined {
   if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value.toFixed(2);
   if (typeof value !== "string" || !value.trim()) return undefined;
@@ -456,6 +626,13 @@ function safePrice(value: unknown): string | undefined {
   const normalized = value.trim();
   if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return undefined;
   return normalized;
+}
+
+function safeNonSecretText(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  if (looksLikeSecret(value)) return undefined;
+  const normalized = value.trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
 }
 
 function safeProductStatus(value: unknown): string | undefined {

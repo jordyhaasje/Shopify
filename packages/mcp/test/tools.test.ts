@@ -1741,6 +1741,89 @@ describe("MCP tools", () => {
     expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "success" });
   });
 
+  it("creates explicit variants from stored product update preview via productVariantsBulkCreate", async () => {
+    const requests: Array<{ body: string }> = [];
+    const context = baseContext(async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          productVariantsBulkCreate: {
+            productVariants: [
+              {
+                id: "gid://shopify/ProductVariant/2",
+                title: "Large",
+                price: "49.00",
+                sku: "LINEN-L",
+                rawNodeOnly: "do-not-return",
+                inventoryQuantity: 10,
+                metafields: { nodes: [{ id: "do-not-return" }] }
+              }
+            ],
+            userErrors: []
+          }
+        }
+      });
+    }, false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      variants: [{
+        optionValues: [{ optionName: "Size", name: "Large" }],
+        price: "49.00",
+        sku: "LINEN-L",
+        inventoryQuantity: 10,
+        metafields: [{ key: "ignored" }]
+      }]
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash,
+      variants: [{ optionValues: [{ optionName: "Size", name: "Small" }], price: "1.00" }]
+    }, context);
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "execute",
+      implemented: true,
+      status: "ok",
+      createdVariants: {
+        productId: "gid://shopify/Product/1",
+        createdVariantCount: 1,
+        variants: [{ id: "gid://shopify/ProductVariant/2", title: "Large", price: "49.00", sku: "LINEN-L" }]
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentProductVariantsCreate");
+    expect(request.query).toContain("productVariantsBulkCreate");
+    expect(request.query).not.toContain("productUpdate");
+    expect(request.query).not.toContain("productVariantsBulkUpdate");
+    expect(request.query).not.toContain("inventory");
+    expect(request.query).not.toContain("metafields");
+    expect(request.variables).toEqual({
+      productId: "gid://shopify/Product/1",
+      variants: [{
+        optionValues: [{ optionName: "Size", name: "Large" }],
+        price: "49.00",
+        sku: "LINEN-L"
+      }]
+    });
+    expect(requests[0].body).not.toContain("Small");
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("inventoryQuantity");
+    expect(output).not.toContain("metafields");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "success" });
+  });
+
   it("blocks mixed basic product and variant price update preview before fetch", async () => {
     let fetchCalled = false;
     const context = baseContext(async () => {
@@ -1752,6 +1835,42 @@ describe("MCP tools", () => {
       productId: "gid://shopify/Product/1",
       title: "Mixed Update",
       variants: [{ id: "gid://shopify/ProductVariant/1", price: "39.00" }]
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "mixed_product_update_fields" })])
+    });
+    expect(fetchCalled).toBe(false);
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.update.execute", result: "blocked" });
+  });
+
+  it("blocks mixed basic product and variant create preview before fetch", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("product.update.preview", {
+      productId: "gid://shopify/Product/1",
+      title: "Mixed Variant Create",
+      variants: [{ optionValues: [{ optionName: "Size", name: "Large" }] }]
     }, context) as Record<string, unknown>;
     const binding = preview.binding as Record<string, unknown>;
     const reviewed = reviewedBindingFor(context, preview);
