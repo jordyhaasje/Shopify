@@ -7,7 +7,12 @@ export interface AuditEntry {
   result: "success" | "blocked" | "failed" | "not_implemented";
 }
 
-export class MemoryAuditLog {
+export interface AuditLog {
+  record(entry: Omit<AuditEntry, "timestamp">): AuditEntry;
+  list(): AuditEntry[];
+}
+
+export class MemoryAuditLog implements AuditLog {
   private readonly entries: AuditEntry[] = [];
 
   record(entry: Omit<AuditEntry, "timestamp">): AuditEntry {

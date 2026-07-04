@@ -16,6 +16,7 @@ Durable project constraints:
 - Generated MCP snippets should use `node /absolute/path/to/Shopify/packages/mcp/dist/server.js` for the GitHub-local route and must use `SHOPIFY_STORE_AGENT_CONFIG` without secrets.
 - Local OAuth is the recommended auth route when Shopify app client credentials exist. `auth` runs the browser flow and stores the token locally; `setup --auth oauth` only provides guidance/snippets. Manual Admin API token setup remains a fallback.
 - Execute paths must require stored preview binding, reviewed payload hashing, matching target/tool/hash values, and explicit confirmation.
+- MCP runtime audit entries persist locally to append-only JSONL and must remain compact/safe.
 - Do not trust loose execute input when a stored preview exists.
 - Current real write tools are `page.create.execute`, `product.create.execute`, minimal basic-field `product.update.execute`, and custom explicit-product `collection.create.execute`.
 - All other execute tools remain fail-closed placeholders unless a future task explicitly implements one.

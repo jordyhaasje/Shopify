@@ -24,4 +24,6 @@ Every tool call should record:
 - summary
 - result
 
-The v1 implementation includes an in-memory audit log and reserves config for a local file-backed audit log.
+The MCP default context persists audit entries to a local append-only JSONL file. By default the file is `audit.jsonl` beside the configured local config file, or `~/.shopify-store-agent/audit.jsonl` when no config path is set. `SHOPIFY_STORE_AGENT_AUDIT_LOG` or config `auditLogPath` can point it elsewhere.
+
+Audit entries must stay compact and safe. They must not include secrets, raw Shopify response nodes, raw reviewed payloads, full customer/order data, or large dumps.

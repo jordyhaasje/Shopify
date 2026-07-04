@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConfig, hashPreviewContent, reviewedPayloadForPreviewRecord } from "@shopify-store-agent/core";
@@ -378,6 +378,43 @@ describe("MCP tools", () => {
       });
     } finally {
       restoreEnv("SHOPIFY_STORE_AGENT_PREVIEW_STORE", oldPreviewStore);
+      restoreEnv("SHOPIFY_STORE_AGENT_CONFIG", oldConfig);
+      restoreEnv("SHOPIFY_STORE_AGENT_STORE", oldStore);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("persists default-context audit entries across MCP context restarts", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "shopify-mcp-audit-log-"));
+    const auditPath = join(dir, "audit.jsonl");
+    const oldAuditLog = process.env.SHOPIFY_STORE_AGENT_AUDIT_LOG;
+    const oldConfig = process.env.SHOPIFY_STORE_AGENT_CONFIG;
+    const oldStore = process.env.SHOPIFY_STORE_AGENT_STORE;
+    try {
+      process.env.SHOPIFY_STORE_AGENT_AUDIT_LOG = auditPath;
+      process.env.SHOPIFY_STORE_AGENT_CONFIG = join(dir, "missing-config.json");
+      process.env.SHOPIFY_STORE_AGENT_STORE = "audit-log-test.myshopify.com";
+
+      const firstContext = await createDefaultContext();
+      const result = await callTool("shopify.capabilities.check", {}, firstContext) as Record<string, unknown>;
+
+      const secondContext = await createDefaultContext();
+
+      expect(result.audit).toMatchObject({
+        tool: "shopify.capabilities.check",
+        target: "audit-log-test.myshopify.com",
+        mode: "read",
+        result: "success"
+      });
+      expect(secondContext.audit.list()).toMatchObject([{
+        tool: "shopify.capabilities.check",
+        target: "audit-log-test.myshopify.com",
+        mode: "read",
+        result: "success"
+      }]);
+      expect(readFileSync(auditPath, "utf8")).not.toContain("shpat_");
+    } finally {
+      restoreEnv("SHOPIFY_STORE_AGENT_AUDIT_LOG", oldAuditLog);
       restoreEnv("SHOPIFY_STORE_AGENT_CONFIG", oldConfig);
       restoreEnv("SHOPIFY_STORE_AGENT_STORE", oldStore);
       rmSync(dir, { recursive: true, force: true });
