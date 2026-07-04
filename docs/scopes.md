@@ -20,11 +20,14 @@ Use for product creation, updates, variants, collections, and product-level meta
 ## Inventory
 
 - Read: `read_inventory`
+- Related location read: `read_locations`
 - Write: `write_inventory`
 
 Use only when inventory quantities, locations, or inventory item data are part of the enabled workflow.
 
-`inventory.setQuantity.execute` requires `write_inventory` in local granted-scope preflight. The first inventory execute path is limited to one stored `inventory.setQuantity.preview` at a time with an explicit inventory item ID, explicit location ID, quantity name `available`, a non-negative integer quantity, an explicit reason, and compare-and-set via `compareQuantity` unless `ignoreCompareQuantity: true` was explicitly reviewed. It does not discover inventory items or locations from products, SKUs, handles, or names, and it does not implement bulk inventory, inventory moves, generic adjustments, or location management.
+`inventory.lookup` is read-only and uses explicit inventory item ID, product variant ID, or SKU input to return compact inventory item, variant, location, and quantity summaries. It may require Shopify read permissions for inventory, products, and locations. It does not require write scopes and must not be used as hidden execute-time discovery.
+
+`inventory.setQuantity.execute` requires `write_inventory` in local granted-scope preflight. The first inventory execute path is limited to one stored `inventory.setQuantity.preview` at a time with an explicit inventory item ID, explicit location ID, quantity name `available`, a non-negative integer quantity, an explicit reason, and compare-and-set via `compareQuantity` unless `ignoreCompareQuantity: true` was explicitly reviewed. It uses only the stored preview as the source of truth; it does not perform lookup/discovery during execute and it does not implement bulk inventory, inventory moves, generic adjustments, or location management.
 
 ## Orders
 

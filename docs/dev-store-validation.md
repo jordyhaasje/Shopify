@@ -36,14 +36,14 @@ pnpm --filter shopify-store-agent run smoke -- --live --admin-token "$SHOPIFY_AD
 - Run setup and review the generated MCP host snippet.
 - Confirm snippets point to a local config path, use the local `node /absolute/path/to/Shopify/packages/mcp/dist/server.js` command in the current GitHub-only phase, and do not print raw tokens.
 - Remember that npm/npx snippets are a future package-published route.
-- Before live write E2E, run `pnpm --filter shopify-store-agent run e2e-preflight -- --store your-store.myshopify.com --config /absolute/path/to/config.json --required-scopes "read_products,read_content,read_online_store_pages,write_products,write_content,write_inventory" --require-write-enabled` and confirm the local-only preflight passes with `no_fetch: true`.
+- Before live write E2E, run `pnpm --filter shopify-store-agent run e2e-preflight -- --store your-store.myshopify.com --config /absolute/path/to/config.json --required-scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory" --require-write-enabled` and confirm the local-only preflight passes with `no_fetch: true`.
 
 ## Manual Validation
 
 When documenting a manual run, use the evidence format in [dev-store-e2e-runbook.md](dev-store-e2e-runbook.md). Keep the record in the relevant PR or issue unless the result becomes durable product documentation. Record pass/fail/skipped status and safe summaries only; do not paste tokens, raw Shopify responses, raw reviewed payloads, config files, customer data, order data, or production product data.
 
 - Run `shopify.capabilities.check` in local mode first.
-- Test one read tool with explicit user-provided input.
+- Test one read tool with explicit user-provided input. `inventory.lookup` may be used read-only with an explicit inventory item ID, variant ID, or SKU to collect test inventory IDs before a reviewed inventory preview.
 - Test one catalog/content preview tool.
 - Confirm the preview store receives a record.
 - Test an execute placeholder with invalid binding and confirm `blocked`.
@@ -59,7 +59,7 @@ When documenting a manual run, use the evidence format in [dev-store-e2e-runbook
 - Confirm successful product create performs only the product create mutation and does not create variants, inventory, media, collections, metafields, publications, translations, updates, deletes, or bulk operations.
 - Confirm successful product update performs only the expected narrow mutation: `productUpdate` for basic fields, `productVariantsBulkUpdate` for explicit variant price updates, `productVariantsBulkCreate` for explicit variant creation, `productOptionsCreate` for explicit option creation with `LEAVE_AS_IS`, `productOptionsDelete` for explicit option delete with `NON_DESTRUCTIVE`, `productOptionsReorder` for explicit option reorder, `productOptionUpdate` for explicit option rename with `LEAVE_AS_IS`, `productOptionUpdate` for explicit option value rename with `LEAVE_AS_IS`, `productOptionUpdate` for explicit option value add with `LEAVE_AS_IS`, or `productOptionUpdate` for explicit option value delete with `LEAVE_AS_IS`. Confirm it does not update inventory, media, collections, metafields, SEO, publications, translations, deletes, or bulk operations. Confirm handle-only previews fail closed unless a safe product ID is present in the stored preview.
 - Confirm successful collection create performs only the collection create mutation and does not create smart/rule-based collections, publish the collection, update SEO, update metafields, upload media/images, update navigation, discover products, or run bulk operations. Confirm rule-based collection previews fail closed at execute.
-- Confirm successful inventory set quantity performs only `inventorySetQuantities`, uses explicit inventory item and location IDs from the stored preview, and does not discover products/SKUs/locations, perform bulk inventory, move inventory, update product fields, or return raw location/product dumps.
+- Confirm successful inventory set quantity performs only `inventorySetQuantities`, uses explicit inventory item and location IDs from the stored preview, does not run lookup/discovery during execute, does not perform bulk inventory, move inventory, or product field updates, and does not return raw location/product dumps.
 - Confirm all execute tools except `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, and `inventory.setQuantity.execute` still remain placeholders.
 - Review the audit log for safe targets and no raw payload dumps.
 

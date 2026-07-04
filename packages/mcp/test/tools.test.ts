@@ -17,6 +17,7 @@ const expectedToolNames = [
   "product.importFromUserUrl.preview",
   "product.importFromUserUrl.execute",
   "product.get",
+  "inventory.lookup",
   "inventory.setQuantity.preview",
   "inventory.setQuantity.execute",
   "order.find",
@@ -221,6 +222,56 @@ describe("MCP tools", () => {
         }
       }
     });
+    expect(JSON.stringify(result)).not.toContain("rawNodeOnly");
+  });
+
+  it("runs inventory.lookup as a real read tool", async () => {
+    const context = readContext({
+      data: {
+        inventoryItem: {
+          id: "gid://shopify/InventoryItem/1",
+          sku: "SKU-1",
+          tracked: true,
+          rawNodeOnly: true,
+          variants: {
+            nodes: [{
+              id: "gid://shopify/ProductVariant/1",
+              title: "Small",
+              sku: "SKU-1",
+              product: { id: "gid://shopify/Product/1", title: "Shirt", handle: "shirt" },
+              rawNodeOnly: true
+            }]
+          },
+          inventoryLevels: {
+            nodes: [{
+              id: "gid://shopify/InventoryLevel/1?inventory_item_id=1",
+              location: { id: "gid://shopify/Location/1", name: "Main" },
+              quantities: [{ name: "available", quantity: 7 }],
+              rawNodeOnly: true
+            }]
+          }
+        }
+      }
+    });
+
+    const result = await callTool("inventory.lookup", {
+      inventoryItemId: "gid://shopify/InventoryItem/1"
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "read",
+      result: {
+        item: {
+          inventoryItemId: "gid://shopify/InventoryItem/1",
+          levels: [{
+            locationId: "gid://shopify/Location/1",
+            availableQuantity: 7
+          }]
+        }
+      }
+    });
+    expect(context.audit.list()[0]).toMatchObject({ tool: "inventory.lookup", mode: "read", result: "success" });
     expect(JSON.stringify(result)).not.toContain("rawNodeOnly");
   });
 

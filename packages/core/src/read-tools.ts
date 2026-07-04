@@ -63,6 +63,38 @@ export interface ProductSummary {
   productType?: string;
 }
 
+export interface InventoryQuantitySummary {
+  name: string;
+  quantity: number;
+}
+
+export interface InventoryLevelSummary {
+  id?: string;
+  locationId?: string;
+  locationName?: string;
+  availableQuantity?: number;
+  quantities: InventoryQuantitySummary[];
+}
+
+export interface InventoryVariantSummary {
+  id: string;
+  title?: string;
+  sku?: string;
+  product?: {
+    id?: string;
+    title?: string;
+    handle?: string;
+  };
+}
+
+export interface InventoryLookupSummary {
+  inventoryItemId: string;
+  sku?: string;
+  tracked?: boolean;
+  variants: InventoryVariantSummary[];
+  levels: InventoryLevelSummary[];
+}
+
 export interface ReadToolOptions {
   fetcher?: FetchLike;
 }
@@ -187,6 +219,57 @@ export async function getProduct(
   return okItem(product, `Found product ${product.title ?? product.id}.`);
 }
 
+export async function lookupInventory(
+  config: StoreAgentConfig,
+  input: { inventoryItemId?: string; variantId?: string; sku?: string; first?: number; levelsFirst?: number },
+  options: ReadToolOptions = {}
+): Promise<ReadResult<InventoryLookupSummary>> {
+  const inventoryItemId = firstString(input.inventoryItemId);
+  const variantId = firstString(input.variantId);
+  const sku = firstString(input.sku);
+  const inputCount = [inventoryItemId, variantId, sku].filter(Boolean).length;
+  if (inputCount === 0) return missingInput("Provide one explicit inventory item ID, product variant ID, or SKU.");
+  if (inputCount > 1) return missingInput("Provide only one inventory lookup input at a time: inventory item ID, product variant ID, or SKU.");
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  const levelsFirst = clampFirst(input.levelsFirst);
+  if (inventoryItemId) {
+    const result = await client.request<InventoryItemLookupData>({
+      query: inventoryLookupByItemQuery,
+      variables: { id: inventoryItemId, levelsFirst }
+    });
+    if (!result.ok) return mapGraphqlFailure<InventoryLookupSummary>(result);
+    const item = toInventoryLookupSummary(result.data.inventoryItem);
+    if (!item) return okItem<InventoryLookupSummary>(undefined, "Inventory item was not found.", "not_found");
+    return okItem(item, `Found inventory item ${item.inventoryItemId}.`);
+  }
+
+  if (variantId) {
+    const result = await client.request<InventoryVariantLookupData>({
+      query: inventoryLookupByVariantQuery,
+      variables: { id: variantId, levelsFirst }
+    });
+    if (!result.ok) return mapGraphqlFailure<InventoryLookupSummary>(result);
+    const variant = result.data.node?.__typename === "ProductVariant" ? result.data.node : undefined;
+    const item = toInventoryLookupSummary(variant?.inventoryItem, variant ? [variant] : []);
+    if (!item) return okItem<InventoryLookupSummary>(undefined, "Product variant or inventory item was not found.", "not_found");
+    return okItem(item, `Found inventory item ${item.inventoryItemId} for variant ${variant?.id ?? variantId}.`);
+  }
+
+  const result = await client.request<InventorySkuLookupData>({
+    query: inventoryLookupBySkuQuery,
+    variables: { query: `sku:${escapeSearchValue(sku)}`, first: clampFirst(input.first), levelsFirst }
+  });
+  if (!result.ok) return mapGraphqlFailure<InventoryLookupSummary>(result);
+  if (!Array.isArray(result.data.productVariants?.nodes)) return invalidResponse("Shopify inventory lookup response did not include variant nodes.");
+
+  const matches = result.data.productVariants.nodes
+    .map((variant) => toInventoryLookupSummary(variant.inventoryItem, [variant]))
+    .filter(isDefined);
+  if (matches.length === 0) return okMatches([], "No matching inventory items found.", "not_found");
+  return okMatches(matches, matches.length === 1 ? "Found 1 inventory item match." : `Found ${matches.length} inventory item matches.`, matches.length > 1 ? "multiple_matches" : "ok");
+}
+
 function mapGraphqlFailure<T>(result: Extract<ShopifyGraphqlResult<unknown>, { ok: false }>): ReadResult<T> {
   return {
     ok: false,
@@ -260,6 +343,11 @@ function firstString(...values: unknown[]): string {
   return "";
 }
 
+function escapeSearchValue(value: string): string {
+  if (/^[A-Za-z0-9_.:-]+$/.test(value)) return value;
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
+}
+
 function isDefined<T>(value: T | undefined): value is T {
   return value !== undefined;
 }
@@ -312,6 +400,46 @@ function toProductSummary(node: ProductNode | undefined): ProductSummary | undef
     status: node.status,
     vendor: node.vendor,
     productType: node.productType
+  };
+}
+
+function toInventoryLookupSummary(item: InventoryItemNode | undefined, variantOverride?: InventoryVariantNode[]): InventoryLookupSummary | undefined {
+  if (!item?.id) return undefined;
+  const variants = (variantOverride ?? item.variants?.nodes ?? []).map(toInventoryVariantSummary).filter(isDefined);
+  return {
+    inventoryItemId: item.id,
+    sku: item.sku,
+    tracked: item.tracked,
+    variants,
+    levels: (item.inventoryLevels?.nodes ?? []).map(toInventoryLevelSummary).filter(isDefined)
+  };
+}
+
+function toInventoryVariantSummary(node: InventoryVariantNode | undefined): InventoryVariantSummary | undefined {
+  if (!node?.id) return undefined;
+  return {
+    id: node.id,
+    title: node.title,
+    sku: node.sku,
+    product: node.product ? {
+      id: node.product.id,
+      title: node.product.title,
+      handle: node.product.handle
+    } : undefined
+  };
+}
+
+function toInventoryLevelSummary(node: InventoryLevelNode | undefined): InventoryLevelSummary | undefined {
+  if (!node?.id && !node?.location?.id) return undefined;
+  const quantities = (node.quantities ?? [])
+    .filter((quantity): quantity is InventoryQuantitySummary => typeof quantity?.name === "string" && typeof quantity.quantity === "number")
+    .map((quantity) => ({ name: quantity.name, quantity: quantity.quantity }));
+  return {
+    id: node.id,
+    locationId: node.location?.id,
+    locationName: node.location?.name,
+    availableQuantity: quantities.find((quantity) => quantity.name === "available")?.quantity,
+    quantities
   };
 }
 
@@ -383,6 +511,41 @@ interface ProductNode {
   productType?: string;
 }
 
+interface InventoryQuantityNode {
+  name?: string;
+  quantity?: number;
+}
+
+interface InventoryLevelNode {
+  id?: string;
+  location?: {
+    id?: string;
+    name?: string;
+  };
+  quantities?: InventoryQuantityNode[];
+}
+
+interface InventoryVariantNode {
+  __typename?: string;
+  id?: string;
+  title?: string;
+  sku?: string;
+  product?: {
+    id?: string;
+    title?: string;
+    handle?: string;
+  };
+  inventoryItem?: InventoryItemNode;
+}
+
+interface InventoryItemNode {
+  id?: string;
+  sku?: string;
+  tracked?: boolean;
+  variants?: { nodes?: InventoryVariantNode[] };
+  inventoryLevels?: { nodes?: InventoryLevelNode[] };
+}
+
 interface OrderFindData {
   orders?: { nodes?: OrderNode[] };
 }
@@ -412,6 +575,18 @@ interface FulfillmentGetData {
 interface ProductGetData {
   node?: ProductNode;
   productByHandle?: ProductNode;
+}
+
+interface InventoryItemLookupData {
+  inventoryItem?: InventoryItemNode;
+}
+
+interface InventoryVariantLookupData {
+  node?: InventoryVariantNode;
+}
+
+interface InventorySkuLookupData {
+  productVariants?: { nodes?: InventoryVariantNode[] };
 }
 
 const orderFields = `
@@ -530,5 +705,90 @@ const productGetByHandleQuery = `#graphql
 query ShopifyStoreAgentProductGetByHandle($handle: String!) {
   productByHandle(handle: $handle) {
     ${productFields}
+  }
+}`;
+
+const inventoryLevelFields = `
+  id
+  location {
+    id
+    name
+  }
+  quantities(names: ["available", "on_hand", "committed", "reserved", "incoming"]) {
+    name
+    quantity
+  }
+`;
+
+const inventoryVariantFields = `
+  id
+  title
+  sku
+  product {
+    id
+    title
+    handle
+  }
+`;
+
+const inventoryItemFields = `
+  id
+  tracked
+  sku
+  variants(first: 5) {
+    nodes {
+      ${inventoryVariantFields}
+    }
+  }
+  inventoryLevels(first: $levelsFirst) {
+    nodes {
+      ${inventoryLevelFields}
+    }
+  }
+`;
+
+const inventoryLookupByItemQuery = `#graphql
+query ShopifyStoreAgentInventoryLookupByItem($id: ID!, $levelsFirst: Int!) {
+  inventoryItem(id: $id) {
+    ${inventoryItemFields}
+  }
+}`;
+
+const inventoryLookupByVariantQuery = `#graphql
+query ShopifyStoreAgentInventoryLookupByVariant($id: ID!, $levelsFirst: Int!) {
+  node(id: $id) {
+    __typename
+    ... on ProductVariant {
+      ${inventoryVariantFields}
+      inventoryItem {
+        id
+        tracked
+        sku
+        inventoryLevels(first: $levelsFirst) {
+          nodes {
+            ${inventoryLevelFields}
+          }
+        }
+      }
+    }
+  }
+}`;
+
+const inventoryLookupBySkuQuery = `#graphql
+query ShopifyStoreAgentInventoryLookupBySku($query: String!, $first: Int!, $levelsFirst: Int!) {
+  productVariants(first: $first, query: $query) {
+    nodes {
+      ${inventoryVariantFields}
+      inventoryItem {
+        id
+        tracked
+        sku
+        inventoryLevels(first: $levelsFirst) {
+          nodes {
+            ${inventoryLevelFields}
+          }
+        }
+      }
+    }
   }
 }`;

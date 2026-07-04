@@ -19,6 +19,7 @@ import {
   getOrder,
   getProduct,
   getTracking,
+  lookupInventory,
   type InventorySetQuantityInput,
   type InventorySetQuantityResult,
   loadStoredConfig,
@@ -2259,6 +2260,24 @@ export const tools: ToolDefinition[] = [
         id: stringInput(input, "id") || undefined,
         productId: stringInput(input, "productId") || undefined,
         handle: stringInput(input, "handle") || undefined
+      }, { fetcher: context.fetcher })
+    )
+  },
+  {
+    name: "inventory.lookup",
+    description: "Read inventory item, variant, location, and quantity IDs from an explicit inventory item ID, variant ID, or SKU.",
+    inputSchema: { type: "object" },
+    handler: (input, context) => shopifyReadResult(
+      "inventory.lookup",
+      stringInput(input, "inventoryItemId") || stringInput(input, "variantId") || stringInput(input, "sku", "inventory"),
+      "Inventory lookup request completed.",
+      context,
+      lookupInventory(context.config, {
+        inventoryItemId: stringInput(input, "inventoryItemId") || undefined,
+        variantId: stringInput(input, "variantId") || undefined,
+        sku: stringInput(input, "sku") || undefined,
+        first: typeof input.first === "number" ? input.first : undefined,
+        levelsFirst: typeof input.levelsFirst === "number" ? input.levelsFirst : undefined
       }, { fetcher: context.fetcher })
     )
   },

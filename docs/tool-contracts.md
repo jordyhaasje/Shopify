@@ -117,7 +117,17 @@ Execute requirements: `write_inventory`, read-only mode disabled, explicit confi
 
 Output: safe status, inventory item ID, location ID, quantity, compare quantity settings, safe adjustment changes, safe Shopify `userErrors` or diagnostics on failure, and an audit entry. Output must not return raw reviewed payloads, raw Shopify response nodes, tokens, product/variant/location dumps, or unrelated execute input.
 
-Not implemented here: inventory lookup from SKU/product/location names, inventory moves, generic adjustments, bulk inventory, location management, or product update inventory fields.
+Not implemented here: execute-time lookup/discovery, location search by name, inventory moves, generic adjustments, bulk inventory, location management, or product update inventory fields.
+
+### `inventory.lookup`
+
+Required input: exactly one explicit inventory item ID, product variant ID, or SKU. Optional pagination limits may bound SKU matches and inventory levels.
+
+Output: compact inventory item summaries with inventory item ID, SKU, tracked flag, related variant/product identifiers, location IDs/names, available quantity, and other named inventory quantities needed for review. This is read-only and must not return raw Shopify nodes, raw product/variant/location dumps, secrets, or customer/order data.
+
+Behavior: this helper exists to help a user or AI host prepare the exact `inventoryItemId`, `locationId`, and `compareQuantity` needed for `inventory.setQuantity.preview`. It must not perform writes, must not guess products, and must not run during execute as a hidden discovery step. Multiple SKU matches are returned as candidates for user review.
+
+Not implemented here: location search by name, product/handle browsing, inventory adjustments, inventory moves, bulk inventory, or location management.
 
 ### `product.media.update.preview`
 
