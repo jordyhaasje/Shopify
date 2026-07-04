@@ -442,7 +442,11 @@ function summarizeOptionValues(value: unknown): unknown {
     .map((item) => {
       if (typeof item === "string") return safeString(item, 120);
       const fields = objectInput(item);
-      return fields ? summarizeValue("name", fields.name ?? fields.value) : undefined;
+      if (!fields) return undefined;
+      const id = stringValue(fields.id ?? fields.optionValueId);
+      const name = stringValue(fields.name ?? fields.value);
+      if (id && name) return `${safeString(id, 180)}=${safeString(name, 120)}`;
+      return name ? safeString(name, 120) : undefined;
     })
     .filter(Boolean);
   return values.length > 0 ? values : undefined;

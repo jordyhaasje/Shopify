@@ -66,6 +66,17 @@ export interface ProductOptionRenameInput {
   option: ProductOptionUpdateInput;
 }
 
+export interface ProductOptionValueUpdateInput {
+  id: string;
+  name: string;
+}
+
+export interface ProductOptionValueRenameInput {
+  productId: string;
+  optionId: string;
+  value: ProductOptionValueUpdateInput;
+}
+
 export interface ProductCreateSummary {
   id: string;
   title?: string;
@@ -117,6 +128,18 @@ export interface ProductOptionRenameSummary {
   variantStrategy: "LEAVE_AS_IS";
 }
 
+export interface ProductOptionValueSummary {
+  id: string;
+  name: string;
+}
+
+export interface ProductOptionValueRenameSummary {
+  productId: string;
+  optionId: string;
+  value: ProductOptionValueSummary;
+  variantStrategy: "LEAVE_AS_IS";
+}
+
 export interface ProductWriteDiagnostic {
   severity: "warning" | "error";
   code: string;
@@ -152,6 +175,10 @@ export interface ProductOptionsCreateResult extends ProductWriteResultBase {
 
 export interface ProductOptionRenameResult extends ProductWriteResultBase {
   optionRename?: ProductOptionRenameSummary;
+}
+
+export interface ProductOptionValueRenameResult extends ProductWriteResultBase {
+  optionValueRename?: ProductOptionValueRenameSummary;
 }
 
 export interface ProductWriteOptions {
@@ -705,6 +732,89 @@ export async function renameProductOption(
   };
 }
 
+export async function renameProductOptionValue(
+  config: StoreAgentConfig,
+  input: ProductOptionValueRenameInput,
+  options: ProductWriteOptions = {}
+): Promise<ProductOptionValueRenameResult> {
+  if (config.readOnly) return blocked("Product option value rename is blocked because read-only mode is enabled.");
+
+  const productId = safeText(input.productId, 180);
+  if (!productId) return missingInput("Provide a product ID.");
+
+  const optionId = safeText(input.optionId, 180);
+  const value = safeOptionValueUpdateInput(input.value);
+  if (!optionId || !value) return missingInput("Provide an option ID, option value ID, and new option value name.");
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  let result: ShopifyGraphqlResult<ProductOptionUpdateData>;
+  try {
+    result = await client.request<ProductOptionUpdateData>({
+      query: productOptionUpdateMutation,
+      variables: {
+        productId,
+        option: { id: optionId },
+        optionValuesToUpdate: [value],
+        variantStrategy: "LEAVE_AS_IS"
+      }
+    });
+  } catch {
+    return shopifyFailure("Shopify product option value rename request failed before a safe response was available.");
+  }
+
+  if (!result.ok) return mapGraphqlFailure(result);
+
+  const userErrors = result.data.productOptionUpdate?.userErrors ?? result.userErrors;
+  if (userErrors.length > 0) {
+    return {
+      ok: false,
+      status: "user_errors",
+      summary: "Shopify rejected the product option value rename request.",
+      userErrors: sanitizeUserErrors(userErrors),
+      diagnostics: [{ severity: "warning", code: "shopify_user_errors", message: "Shopify returned product option value rename user errors." }]
+    };
+  }
+
+  const productNode = result.data.productOptionUpdate?.product;
+  const updatedProductId = safeText(productNode?.id, 180);
+  if (!updatedProductId) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product option value rename response did not include a product ID.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product option value rename response did not include a product ID." }]
+    };
+  }
+
+  const optionNode = productNode?.options?.find((candidate) => safeText(candidate?.id, 180) === optionId);
+  const valueNode = optionNode?.optionValues?.find((candidate) => safeText(candidate?.id, 180) === value.id);
+  const valueSummary = optionValueSummaryFromNode(valueNode);
+  if (!valueSummary) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product option value rename response did not include the renamed option value summary.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product option value rename response did not include the renamed option value summary." }]
+    };
+  }
+
+  return {
+    ok: true,
+    status: "ok",
+    summary: "Renamed 1 Shopify product option value.",
+    optionValueRename: {
+      productId: updatedProductId,
+      optionId,
+      value: valueSummary,
+      variantStrategy: "LEAVE_AS_IS"
+    },
+    userErrors: [],
+    diagnostics: []
+  };
+}
+
 const productCreateMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentProductCreate($product: ProductCreateInput!) {
     productCreate(product: $product) {
@@ -797,8 +907,8 @@ const productOptionsCreateMutation = /* GraphQL */ `
 `;
 
 const productOptionUpdateMutation = /* GraphQL */ `
-  mutation ShopifyStoreAgentProductOptionUpdate($productId: ID!, $option: OptionUpdateInput!, $variantStrategy: ProductOptionUpdateVariantStrategy) {
-    productOptionUpdate(productId: $productId, option: $option, variantStrategy: $variantStrategy) {
+  mutation ShopifyStoreAgentProductOptionUpdate($productId: ID!, $option: OptionUpdateInput!, $optionValuesToUpdate: [OptionValueUpdateInput!], $variantStrategy: ProductOptionUpdateVariantStrategy) {
+    productOptionUpdate(productId: $productId, option: $option, optionValuesToUpdate: $optionValuesToUpdate, variantStrategy: $variantStrategy) {
       product {
         id
         options {
@@ -944,6 +1054,12 @@ function safeOptionUpdateInput(value: ProductOptionUpdateInput | undefined): Pro
   return id && name ? { id, name } : undefined;
 }
 
+function safeOptionValueUpdateInput(value: ProductOptionValueUpdateInput | undefined): ProductOptionValueUpdateInput | undefined {
+  const id = safeText(value?.id, 180);
+  const name = safeNonSecretText(value?.name, 120);
+  return id && name ? { id, name } : undefined;
+}
+
 function optionSummaryFromNode(option: ProductOptionSummaryNode | null | undefined): ProductOptionSummary | undefined {
   const id = safeText(option?.id, 180);
   const name = safeNonSecretText(option?.name, 120);
@@ -954,6 +1070,12 @@ function optionSummaryFromNode(option: ProductOptionSummaryNode | null | undefin
     position: safePosition(option?.position),
     values: safeOptionValueNames((option?.optionValues ?? []).map((value) => value?.name))
   };
+}
+
+function optionValueSummaryFromNode(value: { id?: unknown; name?: unknown } | null | undefined): ProductOptionValueSummary | undefined {
+  const id = safeText(value?.id, 180);
+  const name = safeNonSecretText(value?.name, 120);
+  return id && name ? { id, name } : undefined;
 }
 
 function safeOptionValueNames(value: unknown): string[] {

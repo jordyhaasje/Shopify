@@ -19,7 +19,7 @@ Durable project constraints:
 - Execute paths must require stored preview binding, reviewed payload hashing, matching target/tool/hash values, and explicit confirmation.
 - MCP runtime audit entries persist locally to append-only JSONL and must remain compact/safe.
 - Do not trust loose execute input when a stored preview exists.
-- Current real write tools are `page.create.execute`, `product.create.execute`, minimal basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, or explicit-option-rename `product.update.execute`, and custom explicit-product `collection.create.execute`.
+- Current real write tools are `page.create.execute`, `product.create.execute`, minimal basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-rename, or explicit-option-value-rename `product.update.execute`, and custom explicit-product `collection.create.execute`.
 - All other execute tools remain fail-closed placeholders unless a future task explicitly implements one.
 - Do not return raw Shopify response nodes, raw reviewed payloads, or large customer/order/product dumps.
 - Users must provide explicit products, URLs, CSV files, images, customer emails, order numbers, Shopify IDs, handles, or tracking refs. Do not add autonomous product search.
