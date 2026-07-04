@@ -92,4 +92,49 @@ describe("write scope preflight", () => {
       requiredScopes: ["write_products"]
     });
   });
+
+  it("blocks product update when granted scopes are unknown", () => {
+    const result = checkWriteScopePreflight(createConfig({
+      storeUrl: "demo",
+      readOnly: false
+    }), "product.update.execute");
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "blocked",
+      grantedScopesKnown: false,
+      requiredScopes: ["write_products"],
+      diagnostics: [{ code: "unknown_write_scopes" }]
+    });
+  });
+
+  it("blocks product update when known scopes miss write_products", () => {
+    const result = checkWriteScopePreflight(createConfig({
+      storeUrl: "demo",
+      readOnly: false,
+      grantedScopes: ["read_products", "shpat_scope_secret"]
+    }), "product.update.execute");
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "blocked",
+      grantedScopesKnown: true,
+      requiredScopes: ["write_products"],
+      diagnostics: [{ code: "missing_write_scope" }]
+    });
+    expect(output).not.toContain("shpat_scope_secret");
+  });
+
+  it("allows product update when write_products is known", () => {
+    expect(checkWriteScopePreflight(createConfig({
+      storeUrl: "demo",
+      readOnly: false,
+      grantedScopes: ["write_products"]
+    }), "product.update.execute")).toMatchObject({
+      ok: true,
+      status: "ok",
+      requiredScopes: ["write_products"]
+    });
+  });
 });

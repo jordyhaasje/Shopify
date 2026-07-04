@@ -12,6 +12,7 @@ The goal is to test the current local-first flow end to end:
 - Preview tools and local preview storage.
 - `page.create.execute`.
 - `product.create.execute`.
+- `product.update.execute` for basic fields only.
 - Audit and output safety.
 
 ## Requirements
@@ -49,7 +50,7 @@ or:
 write_online_store_pages
 ```
 
-For `product.create.execute`, add:
+For `product.create.execute` or basic-field `product.update.execute`, add:
 
 ```text
 write_products
@@ -129,7 +130,7 @@ pnpm --filter shopify-store-agent run setup -- \
   --scopes "read_products,read_content,read_online_store_pages,write_products,write_content"
 ```
 
-Use only the write scope needed for the specific test. For page-only validation, `write_content` or `write_online_store_pages` is enough. For product-create validation, `write_products` is required.
+Use only the write scope needed for the specific test. For page-only validation, `write_content` or `write_online_store_pages` is enough. For product create or basic-field product update validation, `write_products` is required.
 
 For deliberate OAuth write testing on a development store, run `auth` with write mode and the minimal reviewed scope set:
 
@@ -142,7 +143,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --scopes "read_products,read_content,read_online_store_pages,write_products,write_content"
 ```
 
-Write mode is only for reviewed development-store tests of `page.create.execute` or `product.create.execute`. All other execute tools remain fail-closed placeholders.
+Write mode is only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, or basic-field `product.update.execute`. All other execute tools remain fail-closed placeholders.
 
 ## MCP Host Connection
 
@@ -277,26 +278,82 @@ Use the stored/reviewed preview content as the source of truth. Unrelated loose 
 
 - The Shopify product is created in the development store.
 - Output contains only a safe product summary: `id`, `title`, `handle`, and `status`.
-- No variants, inventory, media/files/images, collections, metafields, SEO bulk fields, publications/channels, translations, product update/delete, or bulk operations are performed.
+- No variants, inventory, media/files/images, collections, metafields, SEO bulk fields, publications/channels, translations, delete, or bulk operations are performed.
 - Output and audit contain no secrets, raw reviewed payload, or full Shopify node.
+
+## Product Update E2E
+
+Use only a disposable/development product that can be safely changed.
+
+1. Run `product.update.preview` with a safe product ID and basic fields only:
+
+```json
+{
+  "productId": "gid://shopify/Product/<test-product-id>",
+  "title": "Store Agent Updated Test Product",
+  "description": "Temporary development-store validation update.",
+  "vendor": "Store Agent Test",
+  "productType": "Validation",
+  "status": "draft",
+  "tags": ["store-agent-test", "temporary"]
+}
+```
+
+2. Review the preview binding values:
+
+- `previewId`
+- `previewHash`
+- `binding`
+- `target`
+- `proposedChanges`
+- `warnings`
+
+`product.update.preview` does not currently return `executeRequest`; assemble the execute call from the stored binding values after explicit user approval.
+
+3. Confirm read-only mode is explicitly off only for this development-store test.
+
+4. Confirm local granted scopes include `write_products`.
+
+5. Run `product.update.execute` with the reviewed binding values:
+
+```json
+{
+  "previewId": "<previewId from product.update.preview>",
+  "confirmed": true,
+  "reviewedPayload": "<safe reviewed preview payload>",
+  "expectedTool": "product.update.preview",
+  "target": "<binding target>",
+  "previewHash": "<previewHash>",
+  "reviewedChangesHash": "<hash of the actual reviewed payload>"
+}
+```
+
+Use the stored preview content as the source of truth. Unrelated loose execute input must be ignored. Handle-only previews must fail closed unless the stored preview contains a safe product ID.
+
+6. Confirm:
+
+- The Shopify product basic fields are updated in the development store.
+- Output contains only a safe updated product summary: `id`, `title`, `handle`, and `status`.
+- No variants, inventory, media/files/images, collections, metafields, SEO, publications/channels, translations, delete, or bulk operations are performed.
+- Output and audit contain no secrets, raw reviewed payload, raw descriptions, or full Shopify node.
 
 ## Negative Tests
 
 Run these manually against the development-store setup:
 
-- Read-only mode on: `page.create.execute` and `product.create.execute` return `blocked`.
+- Read-only mode on: `page.create.execute`, `product.create.execute`, and `product.update.execute` return `blocked`.
 - Missing `confirmed: true`: execute returns `blocked`.
 - Missing `previewId`: execute returns `blocked`.
 - Expired preview: execute returns `blocked`.
 - Mismatched target, preview hash, reviewed payload, or reviewed changes hash: execute returns `blocked`.
 - Missing or unknown write scope: execute returns `blocked` before fetch.
 - Unrelated loose execute input is ignored after a valid stored preview binding.
-- Non-page and non-product execute tools remain placeholders and return `not_implemented` after valid binding.
+- Product update with handle-only target and no safe product ID returns `blocked`.
+- Remaining placeholder execute tools return `not_implemented` after valid binding.
 
 Placeholder execute tools are:
 
 ```text
-product.update.execute
 product.media.update.execute
 product.importFromUserUrl.execute
 collection.create.execute
@@ -320,7 +377,7 @@ Confirm:
 - No order/customer dump.
 - Blocked cases audit `blocked`.
 - Placeholder cases audit `not_implemented`.
-- Successful `page.create.execute` and `product.create.execute` audit `success` only after Shopify create success.
+- Successful `page.create.execute`, `product.create.execute`, and `product.update.execute` audit `success` only after Shopify write success.
 
 ## Troubleshooting
 

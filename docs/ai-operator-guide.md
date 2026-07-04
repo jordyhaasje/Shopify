@@ -85,7 +85,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --scopes "read_products,read_content,read_online_store_pages,write_products,write_content"
 ```
 
-Use write mode only for reviewed development-store tests of `page.create.execute` or `product.create.execute`. All other execute tools remain fail-closed placeholders.
+Use write mode only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, or basic-field `product.update.execute`. All other execute tools remain fail-closed placeholders.
 
 `auth` is the real local OAuth browser flow and stores the resulting Admin API token locally. `setup --auth oauth` only prints setup guidance and MCP snippets; it does not exchange a token.
 
@@ -123,6 +123,7 @@ Current real write tools:
 
 - `page.create.execute`
 - `product.create.execute`
+- `product.update.execute` for basic product fields only
 
 All other execute tools are placeholders. A real write still requires preview output, stored preview binding, matching target/tool/hash values, matching reviewed payload hash, read-only mode disabled, required local granted scopes, and explicit user confirmation.
 

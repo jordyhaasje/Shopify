@@ -16,7 +16,7 @@ Durable project constraints:
 - Local OAuth is the recommended auth route when Shopify app client credentials exist. `auth` runs the browser flow and stores the token locally; `setup --auth oauth` only provides guidance/snippets. Manual Admin API token setup remains a fallback.
 - Execute paths must require stored preview binding, reviewed payload hashing, matching target/tool/hash values, and explicit confirmation.
 - Do not trust loose execute input when a stored preview exists.
-- Current real write tools are `page.create.execute` and `product.create.execute`.
+- Current real write tools are `page.create.execute`, `product.create.execute`, and minimal basic-field `product.update.execute`.
 - All other execute tools remain fail-closed placeholders unless a future task explicitly implements one.
 - Do not return raw Shopify response nodes, raw reviewed payloads, or large customer/order/product dumps.
 - Users must provide explicit products, URLs, CSV files, images, customer emails, order numbers, Shopify IDs, handles, or tracking refs. Do not add autonomous product search.
