@@ -36,6 +36,8 @@ import {
   type ProductCreateResult,
   type ProductOptionsCreateInput,
   type ProductOptionsCreateResult,
+  type ProductOptionRenameInput,
+  type ProductOptionRenameResult,
   type ProductUpdateInput,
   type ProductUpdateResult,
   type ProductVariantBulkCreateInput,
@@ -51,6 +53,7 @@ import {
   createProduct,
   createProductOptions,
   createProductVariants,
+  renameProductOption,
   updateProduct,
   updateProductVariantPrices,
   previewCollectionCreate,
@@ -440,16 +443,19 @@ async function productUpdateExecuteResult(input: Record<string, unknown>, contex
   const variantPriceExtracted = productVariantPriceUpdateInputFromStoredPreview(lookup.record);
   const variantCreateExtracted = productVariantCreateInputFromStoredPreview(lookup.record);
   const optionCreateExtracted = productOptionsCreateInputFromStoredPreview(lookup.record);
-  const extractedShapeCount = [extracted, variantPriceExtracted, variantCreateExtracted, optionCreateExtracted].filter((item) => item.ok).length;
+  const optionRenameExtracted = productOptionRenameInputFromStoredPreview(lookup.record);
+  const extractedShapeCount = [extracted, variantPriceExtracted, variantCreateExtracted, optionCreateExtracted, optionRenameExtracted].filter((item) => item.ok).length;
   if (extractedShapeCount > 1) {
     return blockedImplementedExecuteResult(tool, storedTarget, [diagnostic("mixed_product_update_fields", "Stored product update preview mixes multiple product update shapes; create separate previews to avoid partial writes.")], context, binding);
   }
   if (extractedShapeCount === 0) {
     const diagnostics: ExecutePreviewBindingDiagnostic[] = [];
+    if (!optionRenameExtracted.ok && hasDiagnostic(optionRenameExtracted.diagnostics, "multiple_option_renames")) diagnostics.push(...optionRenameExtracted.diagnostics);
     if (!extracted.ok) diagnostics.push(...extracted.diagnostics);
     if (!variantPriceExtracted.ok && diagnostics.length === 0) diagnostics.push(...variantPriceExtracted.diagnostics);
     if (!variantCreateExtracted.ok && diagnostics.length === 0) diagnostics.push(...variantCreateExtracted.diagnostics);
     if (!optionCreateExtracted.ok && diagnostics.length === 0) diagnostics.push(...optionCreateExtracted.diagnostics);
+    if (!optionRenameExtracted.ok && diagnostics.length === 0) diagnostics.push(...optionRenameExtracted.diagnostics);
     return blockedImplementedExecuteResult(tool, storedTarget, diagnostics, context, binding);
   }
 
@@ -469,6 +475,11 @@ async function productUpdateExecuteResult(input: Record<string, unknown>, contex
   if (optionCreateExtracted.ok) {
     const write = await createProductOptions(context.config, optionCreateExtracted.input, { fetcher: context.fetcher });
     return productOptionCreateWriteResult(tool, storedTarget, binding, write, context);
+  }
+
+  if (optionRenameExtracted.ok) {
+    const write = await renameProductOption(context.config, optionRenameExtracted.input, { fetcher: context.fetcher });
+    return productOptionRenameWriteResult(tool, storedTarget, binding, write, context);
   }
 
   if (!extracted.ok) return blockedImplementedExecuteResult(tool, storedTarget, extracted.diagnostics, context, binding);
@@ -826,6 +837,39 @@ function productOptionCreateWriteResult(
   };
 }
 
+function productOptionRenameWriteResult(
+  tool: string,
+  target: string,
+  binding: ExecutePreviewBindingResult,
+  write: ProductOptionRenameResult,
+  context: ToolContext
+): Record<string, unknown> {
+  const result = productUpdateAuditResult(write);
+  const audit = context.audit.record({
+    tool,
+    target: safeExecuteString(target),
+    mode: "execute",
+    summary: write.summary,
+    result
+  });
+  return {
+    ok: write.ok,
+    mode: "execute",
+    implemented: true,
+    status: write.status,
+    summary: write.summary,
+    audit,
+    renamedOption: write.optionRename,
+    userErrors: write.userErrors,
+    diagnostics: write.diagnostics,
+    previewBinding: {
+      previewId: binding.previewId,
+      expectedTool: binding.expectedPreviewTool,
+      target: binding.target
+    }
+  };
+}
+
 function collectionCreateWriteResult(
   tool: string,
   target: string,
@@ -865,7 +909,7 @@ function productCreateAuditResult(write: ProductCreateResult): "success" | "bloc
   return "failed";
 }
 
-function productUpdateAuditResult(write: ProductUpdateResult | ProductVariantPriceUpdateResult | ProductVariantBulkCreateResult | ProductOptionsCreateResult): "success" | "blocked" | "failed" {
+function productUpdateAuditResult(write: ProductUpdateResult | ProductVariantPriceUpdateResult | ProductVariantBulkCreateResult | ProductOptionsCreateResult | ProductOptionRenameResult): "success" | "blocked" | "failed" {
   if (write.status === "ok") return "success";
   if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
   return "failed";
@@ -1024,6 +1068,33 @@ function productOptionsCreateInputFromStoredPreview(record: StoredPreviewRecord)
   };
 }
 
+function productOptionRenameInputFromStoredPreview(record: StoredPreviewRecord): { ok: true; input: ProductOptionRenameInput } | { ok: false; diagnostics: ExecutePreviewBindingDiagnostic[] } {
+  const productId = safeContentText(targetField(record, "id") ?? targetField(record, "productId") ?? changeAfterValue(record, "id") ?? changeAfterValue(record, "productId"), 180);
+  const options = optionRenamesFromStoredPreview(record);
+
+  if (!productId || options.length === 0) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_product_update_fields", "Stored product update preview did not include supported basic product fields, explicit variant fields, explicit option create fields, or explicit option rename fields for execution.")]
+    };
+  }
+
+  if (options.length > 1) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("multiple_option_renames", "Stored product update preview includes multiple option renames; create separate previews to avoid partial writes.")]
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      productId,
+      option: options[0]
+    }
+  };
+}
+
 function variantPriceUpdatesFromStoredPreview(record: StoredPreviewRecord): Array<{ id: string; price: string }> {
   const result: Array<{ id: string; price: string }> = [];
   const seen = new Set<string>();
@@ -1144,6 +1215,21 @@ function optionCreatesFromStoredPreview(record: StoredPreviewRecord): ProductOpt
     seen.add(name);
     result.push({ name, values });
     if (result.length >= 3) break;
+  }
+  return result;
+}
+
+function optionRenamesFromStoredPreview(record: StoredPreviewRecord): Array<ProductOptionRenameInput["option"]> {
+  const result: Array<ProductOptionRenameInput["option"]> = [];
+  const seen = new Set<string>();
+  for (const item of storedChangeArray(record, "options", "after")) {
+    const fields = objectFields(item);
+    const id = safeVariantText(fields.id ?? fields.optionId, 180);
+    const name = safeVariantText(fields.name ?? fields.optionName, 120);
+    if (!id || !name || seen.has(id)) continue;
+    seen.add(id);
+    result.push({ id, name });
+    if (result.length > 1) break;
   }
   return result;
 }
@@ -1323,6 +1409,10 @@ function diagnostic(code: string, message: string): ExecutePreviewBindingDiagnos
   return { code, message };
 }
 
+function hasDiagnostic(diagnostics: ExecutePreviewBindingDiagnostic[], code: string): boolean {
+  return diagnostics.some((item) => item.code === code);
+}
+
 function expectedPreviewTool(tool: string): string {
   if (tool === "theme.apply") return "theme.preview";
   return tool.replace(/\.execute$/, ".preview");
@@ -1443,7 +1533,7 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: "product.update.execute",
-    description: "Update basic Shopify product fields, explicit variant prices, explicit variants, or explicit options after stored product update preview binding and explicit confirmation.",
+    description: "Update basic Shopify product fields, explicit variant prices, explicit variants, explicit options, or explicit option names after stored product update preview binding and explicit confirmation.",
     inputSchema: { type: "object" },
     handler: (input, context) => productUpdateExecuteResult(input, context)
   },

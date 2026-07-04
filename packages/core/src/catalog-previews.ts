@@ -424,9 +424,10 @@ function summarizeUpdateOptions(options: unknown[]): unknown {
     items: options.slice(0, 3).map((option) => {
       const object = objectInput(option);
       if (!object) return summarizeValue("option", option);
+      const id = summarizeValue("id", object.id ?? object.optionId);
       const name = summarizeValue("name", object.name ?? object.optionName);
       const values = summarizeOptionValues(object.values ?? object.optionValues);
-      const fields = Object.fromEntries(Object.entries({ name, values }).filter(([, entryValue]) => entryValue !== undefined));
+      const fields = Object.fromEntries(Object.entries({ id, name, values }).filter(([, entryValue]) => entryValue !== undefined));
       return {
         fields,
         omittedFieldCount: Math.max(0, Object.keys(object).length - Object.keys(fields).length)

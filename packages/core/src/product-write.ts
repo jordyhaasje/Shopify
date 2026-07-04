@@ -56,6 +56,16 @@ export interface ProductOptionsCreateInput {
   options: ProductOptionCreateInput[];
 }
 
+export interface ProductOptionUpdateInput {
+  id: string;
+  name: string;
+}
+
+export interface ProductOptionRenameInput {
+  productId: string;
+  option: ProductOptionUpdateInput;
+}
+
 export interface ProductCreateSummary {
   id: string;
   title?: string;
@@ -101,6 +111,12 @@ export interface ProductOptionsCreateSummary {
   variantStrategy: "LEAVE_AS_IS";
 }
 
+export interface ProductOptionRenameSummary {
+  productId: string;
+  option: ProductOptionSummary;
+  variantStrategy: "LEAVE_AS_IS";
+}
+
 export interface ProductWriteDiagnostic {
   severity: "warning" | "error";
   code: string;
@@ -132,6 +148,10 @@ export interface ProductVariantBulkCreateResult extends ProductWriteResultBase {
 
 export interface ProductOptionsCreateResult extends ProductWriteResultBase {
   optionCreate?: ProductOptionsCreateSummary;
+}
+
+export interface ProductOptionRenameResult extends ProductWriteResultBase {
+  optionRename?: ProductOptionRenameSummary;
 }
 
 export interface ProductWriteOptions {
@@ -184,20 +204,32 @@ interface ProductVariantsBulkCreateData {
   } | null;
 }
 
+type ProductOptionSummaryNode = {
+  id?: unknown;
+  name?: unknown;
+  position?: unknown;
+  optionValues?: Array<{
+    id?: unknown;
+    name?: unknown;
+    hasVariants?: unknown;
+  } | null> | null;
+};
+
 interface ProductOptionsCreateData {
   productOptionsCreate?: {
     product?: {
       id?: unknown;
-      options?: Array<{
-        id?: unknown;
-        name?: unknown;
-        position?: unknown;
-        optionValues?: Array<{
-          id?: unknown;
-          name?: unknown;
-          hasVariants?: unknown;
-        } | null> | null;
-      } | null> | null;
+      options?: Array<ProductOptionSummaryNode | null> | null;
+    } | null;
+    userErrors?: GraphqlUserError[];
+  } | null;
+}
+
+interface ProductOptionUpdateData {
+  productOptionUpdate?: {
+    product?: {
+      id?: unknown;
+      options?: Array<ProductOptionSummaryNode | null> | null;
     } | null;
     userErrors?: GraphqlUserError[];
   } | null;
@@ -594,6 +626,85 @@ export async function createProductOptions(
   };
 }
 
+export async function renameProductOption(
+  config: StoreAgentConfig,
+  input: ProductOptionRenameInput,
+  options: ProductWriteOptions = {}
+): Promise<ProductOptionRenameResult> {
+  if (config.readOnly) return blocked("Product option rename is blocked because read-only mode is enabled.");
+
+  const productId = safeText(input.productId, 180);
+  if (!productId) return missingInput("Provide a product ID.");
+
+  const option = safeOptionUpdateInput(input.option);
+  if (!option) return missingInput("Provide an option ID and new option name.");
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  let result: ShopifyGraphqlResult<ProductOptionUpdateData>;
+  try {
+    result = await client.request<ProductOptionUpdateData>({
+      query: productOptionUpdateMutation,
+      variables: {
+        productId,
+        option,
+        variantStrategy: "LEAVE_AS_IS"
+      }
+    });
+  } catch {
+    return shopifyFailure("Shopify product option rename request failed before a safe response was available.");
+  }
+
+  if (!result.ok) return mapGraphqlFailure(result);
+
+  const userErrors = result.data.productOptionUpdate?.userErrors ?? result.userErrors;
+  if (userErrors.length > 0) {
+    return {
+      ok: false,
+      status: "user_errors",
+      summary: "Shopify rejected the product option rename request.",
+      userErrors: sanitizeUserErrors(userErrors),
+      diagnostics: [{ severity: "warning", code: "shopify_user_errors", message: "Shopify returned product option rename user errors." }]
+    };
+  }
+
+  const productNode = result.data.productOptionUpdate?.product;
+  const updatedProductId = safeText(productNode?.id, 180);
+  if (!updatedProductId) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product option rename response did not include a product ID.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product option rename response did not include a product ID." }]
+    };
+  }
+
+  const renamedOption = productNode?.options?.find((candidate) => safeText(candidate?.id, 180) === option.id);
+  const optionSummary = optionSummaryFromNode(renamedOption);
+  if (!optionSummary) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product option rename response did not include the renamed option summary.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product option rename response did not include the renamed option summary." }]
+    };
+  }
+
+  return {
+    ok: true,
+    status: "ok",
+    summary: "Renamed 1 Shopify product option.",
+    optionRename: {
+      productId: updatedProductId,
+      option: optionSummary,
+      variantStrategy: "LEAVE_AS_IS"
+    },
+    userErrors: [],
+    diagnostics: []
+  };
+}
+
 const productCreateMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentProductCreate($product: ProductCreateInput!) {
     productCreate(product: $product) {
@@ -685,7 +796,32 @@ const productOptionsCreateMutation = /* GraphQL */ `
   }
 `;
 
-function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<ProductCreateData | ProductUpdateData | ProductVariantsBulkUpdateData | ProductVariantsBulkCreateData | ProductOptionsCreateData>, { ok: false }>): ProductWriteResultBase {
+const productOptionUpdateMutation = /* GraphQL */ `
+  mutation ShopifyStoreAgentProductOptionUpdate($productId: ID!, $option: OptionUpdateInput!, $variantStrategy: ProductOptionUpdateVariantStrategy) {
+    productOptionUpdate(productId: $productId, option: $option, variantStrategy: $variantStrategy) {
+      product {
+        id
+        options {
+          id
+          name
+          position
+          optionValues {
+            id
+            name
+            hasVariants
+          }
+        }
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
+function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<ProductCreateData | ProductUpdateData | ProductVariantsBulkUpdateData | ProductVariantsBulkCreateData | ProductOptionsCreateData | ProductOptionUpdateData>, { ok: false }>): ProductWriteResultBase {
   return {
     ok: false,
     status: "shopify_error",
@@ -800,6 +936,24 @@ function safeOptionCreateInputs(value: ProductOptionCreateInput[] | undefined): 
     if (results.length >= 3) break;
   }
   return results;
+}
+
+function safeOptionUpdateInput(value: ProductOptionUpdateInput | undefined): ProductOptionUpdateInput | undefined {
+  const id = safeText(value?.id, 180);
+  const name = safeNonSecretText(value?.name, 120);
+  return id && name ? { id, name } : undefined;
+}
+
+function optionSummaryFromNode(option: ProductOptionSummaryNode | null | undefined): ProductOptionSummary | undefined {
+  const id = safeText(option?.id, 180);
+  const name = safeNonSecretText(option?.name, 120);
+  if (!id || !name) return undefined;
+  return {
+    id,
+    name,
+    position: safePosition(option?.position),
+    values: safeOptionValueNames((option?.optionValues ?? []).map((value) => value?.name))
+  };
 }
 
 function safeOptionValueNames(value: unknown): string[] {

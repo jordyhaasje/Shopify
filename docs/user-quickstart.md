@@ -190,7 +190,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --scopes "read_products,read_content,read_online_store_pages,write_products,write_content"
 ```
 
-Use only a development or disposable store. `write_products` is required for `product.create.execute`, `product.update.execute`, and custom `collection.create.execute`; `write_content` or `write_online_store_pages` is required for `page.create.execute`. `product.update.execute` supports one update shape per preview: basic product fields, explicit variant price updates with product ID plus variant IDs and prices, explicit variant creation with product ID plus option values and optional price/SKU, or explicit option creation with product ID plus option names and values. Option creation uses `LEAVE_AS_IS` to avoid automatic variant expansion. Do not mix update shapes in one preview. All other execute tools are placeholders.
+Use only a development or disposable store. `write_products` is required for `product.create.execute`, `product.update.execute`, and custom `collection.create.execute`; `write_content` or `write_online_store_pages` is required for `page.create.execute`. `product.update.execute` supports one update shape per preview: basic product fields, explicit variant price updates with product ID plus variant IDs and prices, explicit variant creation with product ID plus option values and optional price/SKU, explicit option creation with product ID plus option names and values, or explicit option rename with product ID, option ID, and new option name. Option creation and rename use `LEAVE_AS_IS` to avoid automatic variant expansion. Do not mix update shapes in one preview. All other execute tools are placeholders.
 
 ## Safety rules
 
@@ -265,7 +265,7 @@ theme.rollback
 ## Not available yet
 
 - npm/npx package install as the primary route.
-- Product update execute beyond basic fields, explicit variant price updates, explicit variant creation, and explicit option creation.
+- Product update execute beyond basic fields, explicit variant price updates, explicit variant creation, explicit option creation, and explicit option rename.
 - Production-store write automation.
-- Rule-based/smart collection create, collection publishing, refund, tracking, customer, bulk, theme, option update/reorder/delete, media, inventory, metafields, publications, translations, and other advanced execute implementations.
+- Rule-based/smart collection create, collection publishing, refund, tracking, customer, bulk, theme, option value add/update/delete, option reorder/delete, media, inventory, metafields, publications, translations, and other advanced execute implementations.
 - Automated live Shopify tests.
