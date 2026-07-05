@@ -22,6 +22,7 @@ pnpm run smoke:local
 - For user-facing install/use docs, confirm [user-quickstart.md](user-quickstart.md) remains the compact first-run entry point and deeper docs link to it instead of duplicating the full flow.
 - Review read-tool audit behavior: successful read, not found, and multiple matches use `success`; missing input uses `blocked`; Shopify/API/invalid response uses `failed`.
 - For `inventory.lookup` changes, confirm it remains read-only, accepts exactly one explicit inventory item ID, variant ID, or SKU, returns only compact inventory item/variant/location/quantity summaries, does not write, does not run as hidden execute-time discovery, and does not return raw Shopify nodes or product/location dumps.
+- For `inventory.locationLookup` changes, confirm it remains read-only, accepts exactly one explicit location ID, name, or query, returns only compact location summaries, does not write, does not run as hidden execute-time discovery, and does not return raw Shopify nodes, address dumps, or product/location dumps.
 - Review preview-tool audit behavior: successful previews use `success`; missing input and validation errors use `blocked`.
 - Confirm preview output summarizes large payloads, redacts secret-looking values, and does not autonomously fetch products or call Shopify write APIs.
 - If preview execute helpers change, confirm they are review-only, appear only for implemented write previews, contain safe bounded reviewed payloads, require explicit `confirmed: true`, and do not make placeholder execute tools look like real writes.

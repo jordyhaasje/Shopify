@@ -18,6 +18,7 @@ const expectedToolNames = [
   "product.importFromUserUrl.execute",
   "product.get",
   "inventory.lookup",
+  "inventory.locationLookup",
   "inventory.setQuantity.preview",
   "inventory.setQuantity.execute",
   "inventory.adjustQuantity.preview",
@@ -276,6 +277,40 @@ describe("MCP tools", () => {
       }
     });
     expect(context.audit.list()[0]).toMatchObject({ tool: "inventory.lookup", mode: "read", result: "success" });
+    expect(JSON.stringify(result)).not.toContain("rawNodeOnly");
+  });
+
+  it("runs inventory.locationLookup as a real read tool", async () => {
+    const context = readContext({
+      data: {
+        locations: {
+          nodes: [{
+            id: "gid://shopify/Location/1",
+            name: "Main",
+            isActive: true,
+            fulfillsOnlineOrders: true,
+            rawNodeOnly: true
+          }]
+        }
+      }
+    });
+
+    const result = await callTool("inventory.locationLookup", {
+      name: "Main"
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "read",
+      result: {
+        matches: [{
+          id: "gid://shopify/Location/1",
+          name: "Main",
+          isActive: true
+        }]
+      }
+    });
+    expect(context.audit.list()[0]).toMatchObject({ tool: "inventory.locationLookup", mode: "read", result: "success" });
     expect(JSON.stringify(result)).not.toContain("rawNodeOnly");
   });
 

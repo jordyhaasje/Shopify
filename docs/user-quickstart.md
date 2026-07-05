@@ -156,6 +156,12 @@ Inventory lookup example:
 Use this SKU to find the inventory item and location IDs I need for a reviewed inventory quantity preview. Do not write anything.
 ```
 
+Inventory location lookup example:
+
+```text
+Use this location name to find the Shopify location ID I need for a reviewed inventory preview. Do not write anything.
+```
+
 ## Step 8 -- Create a preview
 
 Ask your AI host:
@@ -237,6 +243,7 @@ customer.find
 tracking.get
 product.get
 inventory.lookup
+inventory.locationLookup
 ```
 
 Preview tools:

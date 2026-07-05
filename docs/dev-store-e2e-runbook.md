@@ -237,12 +237,14 @@ Then test read tools only with explicit user-provided identifiers:
 
 ```text
 product.get
+inventory.lookup
+inventory.locationLookup
 order.find
 customer.find
 tracking.get
 ```
 
-Use explicit product IDs or handles, order numbers, customer emails, order IDs, fulfillment IDs, or tracking numbers. Do not ask the agent to autonomously search for products. Do not use production customer data. Outputs should be minimal summaries, not raw Shopify dumps.
+Use explicit product IDs or handles, inventory item IDs, variant IDs, SKUs, location IDs, location names, location queries, order numbers, customer emails, order IDs, fulfillment IDs, or tracking numbers. Do not ask the agent to autonomously search for products or guess locations. Do not use production customer data. Outputs should be minimal summaries, not raw Shopify dumps.
 
 ## Page Create E2E
 

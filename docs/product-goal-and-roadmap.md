@@ -36,7 +36,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 - Setup guidance now tells AI hosts to support ordinary store-language prompts while still asking for exact targets before tool calls when needed.
 - Setup output includes safe starter prompts that users can paste into an AI host after MCP configuration.
 - A local `setup-check` command verifies config presence, local token presence, read-only onboarding mode, safe MCP snippets, local build path, starter prompts, and `fetchCalls: 0` before users troubleshoot an AI host connection.
-- Read tools are implemented for explicit inputs, including a read-only inventory lookup helper for explicit inventory item IDs, variant IDs, or SKUs.
+- Read tools are implemented for explicit inputs, including read-only inventory lookup helpers for explicit inventory item IDs, variant IDs, SKUs, location IDs, location names, or location queries.
 - Preview tools are implemented for product, page, collection, import, media, and related planning surfaces.
 - `page.create.execute` is implemented.
 - `product.create.execute` is implemented.
@@ -46,6 +46,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 - Minimal `inventory.adjustQuantity.execute` is implemented for one explicit inventory item ID, one explicit location ID, quantity name `available`, a non-zero integer delta, an explicit reason, stored preview binding, and `write_inventory` preflight.
 - Minimal `inventory.moveQuantity.execute` is implemented for one explicit inventory item ID, one explicit location ID, one positive integer quantity, supported source and destination quantity names, an explicit reason, stored preview binding, and `write_inventory` preflight.
 - Minimal `inventory.lookup` is implemented as a read-only helper for explicit inventory item ID, variant ID, or SKU lookups. It returns compact inventory item, variant, location, and quantity summaries to help users prepare reviewed inventory previews.
+- Minimal `inventory.locationLookup` is implemented as a read-only helper for explicit location ID, location name, or location query lookups. It returns compact location summaries to help users prepare reviewed inventory previews and future location workflows.
 - A product media/update execute expansion plan exists, with media execute still intentionally not implemented.
 - Safe preview records persist locally across MCP server restarts while preserving strict stored preview binding.
 - Safe audit entries persist locally across MCP server restarts in an append-only JSONL file.
@@ -63,7 +64,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 
 ## Later Roadmap
 
-- Inventory beyond explicit single-item quantity set, single-item adjustment, single-location state move, and basic lookup, including bulk inventory, inter-location transfers, and richer location workflows.
+- Inventory beyond explicit single-item quantity set, single-item adjustment, single-location state move, basic inventory lookup, and basic location lookup, including bulk inventory, inter-location transfers, and richer location workflows.
 - Metafields.
 - Publications.
 - Translations.

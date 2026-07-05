@@ -1,6 +1,6 @@
 # Tool Contracts
 
-These are the intended V1 Shopify Store Agent MCP tool contracts. The current implementation includes real read-only Admin GraphQL tools, structured catalog/content preview tools, a local preview store, and seven limited real write tools: `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, and `inventory.moveQuantity.execute`. All other execute/write tools remain fail-closed placeholders.
+These are the intended V1 Shopify Store Agent MCP tool contracts. The current implementation includes real read-only Admin GraphQL tools, including inventory item and location lookup helpers, structured catalog/content preview tools, a local preview store, and seven limited real write tools: `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, and `inventory.moveQuantity.execute`. All other execute/write tools remain fail-closed placeholders.
 
 ## Global Write Contract
 
@@ -167,7 +167,17 @@ Output: compact inventory item summaries with inventory item ID, SKU, tracked fl
 
 Behavior: this helper exists to help a user or AI host prepare the exact `inventoryItemId`, `locationId`, `compareQuantity`, or current quantity context needed for reviewed inventory previews. It must not perform writes, must not guess products, and must not run during execute as a hidden discovery step. Multiple SKU matches are returned as candidates for user review.
 
-Not implemented here: location search by name, product/handle browsing, inter-location transfers, bulk inventory, or location management.
+Not implemented here: product/handle browsing, inter-location transfers, bulk inventory, or location management.
+
+### `inventory.locationLookup`
+
+Required input: exactly one explicit location ID, location name, or location query. Optional pagination and inactive/legacy flags may bound or widen location matching for user review.
+
+Output: compact location summaries with location ID, name, active status, and online-fulfillment status where available. This is read-only and must not return raw Shopify nodes, raw address dumps, secrets, customer/order data, or production data.
+
+Behavior: this helper exists to help a user or AI host prepare exact `locationId` values needed for reviewed inventory previews and future location workflows. It must not perform writes, must not guess locations without a user-provided ID/name/query, and must not run during execute as a hidden discovery step. Multiple location matches are returned as candidates for user review.
+
+Not implemented here: inventory transfers, location create/update/delete, full address management, bulk inventory, or product update inventory fields.
 
 ### `product.media.update.preview`
 

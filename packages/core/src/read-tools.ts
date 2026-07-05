@@ -95,6 +95,13 @@ export interface InventoryLookupSummary {
   levels: InventoryLevelSummary[];
 }
 
+export interface InventoryLocationSummary {
+  id: string;
+  name?: string;
+  isActive?: boolean;
+  fulfillsOnlineOrders?: boolean;
+}
+
 export interface ReadToolOptions {
   fetcher?: FetchLike;
 }
@@ -270,6 +277,45 @@ export async function lookupInventory(
   return okMatches(matches, matches.length === 1 ? "Found 1 inventory item match." : `Found ${matches.length} inventory item matches.`, matches.length > 1 ? "multiple_matches" : "ok");
 }
 
+export async function lookupInventoryLocations(
+  config: StoreAgentConfig,
+  input: { locationId?: string; id?: string; name?: string; query?: string; first?: number; includeInactive?: boolean; includeLegacy?: boolean },
+  options: ReadToolOptions = {}
+): Promise<ReadResult<InventoryLocationSummary>> {
+  const locationId = firstString(input.locationId, input.id);
+  const query = firstString(input.query) || locationNameQuery(input.name);
+  if (!locationId && !query) return missingInput("Provide an explicit location ID, location name, or location query.");
+  if (locationId && query) return missingInput("Provide only one inventory location lookup input at a time: location ID, name, or query.");
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  if (locationId) {
+    const result = await client.request<InventoryLocationGetData>({
+      query: inventoryLocationGetQuery,
+      variables: { id: locationId }
+    });
+    if (!result.ok) return mapGraphqlFailure<InventoryLocationSummary>(result);
+    const location = result.data.node?.__typename === "Location" ? toInventoryLocationSummary(result.data.node) : undefined;
+    if (!location) return okItem<InventoryLocationSummary>(undefined, "Inventory location was not found.", "not_found");
+    return okItem(location, `Found inventory location ${location.name ?? location.id}.`);
+  }
+
+  const result = await client.request<InventoryLocationLookupData>({
+    query: inventoryLocationLookupQuery,
+    variables: {
+      query,
+      first: clampFirst(input.first),
+      includeInactive: input.includeInactive === true,
+      includeLegacy: input.includeLegacy === true
+    }
+  });
+  if (!result.ok) return mapGraphqlFailure<InventoryLocationSummary>(result);
+  if (!Array.isArray(result.data.locations?.nodes)) return invalidResponse("Shopify location lookup response did not include location nodes.");
+
+  const matches = result.data.locations.nodes.map(toInventoryLocationSummary).filter(isDefined);
+  if (matches.length === 0) return okMatches([], "No matching inventory locations found.", "not_found");
+  return okMatches(matches, matches.length === 1 ? "Found 1 inventory location match." : `Found ${matches.length} inventory location matches.`, matches.length > 1 ? "multiple_matches" : "ok");
+}
+
 function mapGraphqlFailure<T>(result: Extract<ShopifyGraphqlResult<unknown>, { ok: false }>): ReadResult<T> {
   return {
     ok: false,
@@ -346,6 +392,11 @@ function firstString(...values: unknown[]): string {
 function escapeSearchValue(value: string): string {
   if (/^[A-Za-z0-9_.:-]+$/.test(value)) return value;
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
+}
+
+function locationNameQuery(value: unknown): string {
+  const name = firstString(value);
+  return name ? `name:${escapeSearchValue(name)}` : "";
 }
 
 function isDefined<T>(value: T | undefined): value is T {
@@ -440,6 +491,16 @@ function toInventoryLevelSummary(node: InventoryLevelNode | undefined): Inventor
     locationName: node.location?.name,
     availableQuantity: quantities.find((quantity) => quantity.name === "available")?.quantity,
     quantities
+  };
+}
+
+function toInventoryLocationSummary(node: InventoryLocationNode | undefined): InventoryLocationSummary | undefined {
+  if (!node?.id) return undefined;
+  return {
+    id: node.id,
+    name: node.name,
+    isActive: node.isActive,
+    fulfillsOnlineOrders: node.fulfillsOnlineOrders
   };
 }
 
@@ -546,6 +607,14 @@ interface InventoryItemNode {
   inventoryLevels?: { nodes?: InventoryLevelNode[] };
 }
 
+interface InventoryLocationNode {
+  __typename?: string;
+  id?: string;
+  name?: string;
+  isActive?: boolean;
+  fulfillsOnlineOrders?: boolean;
+}
+
 interface OrderFindData {
   orders?: { nodes?: OrderNode[] };
 }
@@ -587,6 +656,14 @@ interface InventoryVariantLookupData {
 
 interface InventorySkuLookupData {
   productVariants?: { nodes?: InventoryVariantNode[] };
+}
+
+interface InventoryLocationGetData {
+  node?: InventoryLocationNode;
+}
+
+interface InventoryLocationLookupData {
+  locations?: { nodes?: InventoryLocationNode[] };
 }
 
 const orderFields = `
@@ -789,6 +866,32 @@ query ShopifyStoreAgentInventoryLookupBySku($query: String!, $first: Int!, $leve
           }
         }
       }
+    }
+  }
+}`;
+
+const inventoryLocationFields = `
+  id
+  name
+  isActive
+  fulfillsOnlineOrders
+`;
+
+const inventoryLocationGetQuery = `#graphql
+query ShopifyStoreAgentLocationGet($id: ID!) {
+  node(id: $id) {
+    __typename
+    ... on Location {
+      ${inventoryLocationFields}
+    }
+  }
+}`;
+
+const inventoryLocationLookupQuery = `#graphql
+query ShopifyStoreAgentLocationLookup($first: Int!, $query: String, $includeInactive: Boolean!, $includeLegacy: Boolean!) {
+  locations(first: $first, query: $query, includeInactive: $includeInactive, includeLegacy: $includeLegacy) {
+    nodes {
+      ${inventoryLocationFields}
     }
   }
 }`;

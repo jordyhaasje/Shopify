@@ -19,7 +19,7 @@ Durable project constraints:
 - Execute paths must require stored preview binding, reviewed payload hashing, matching target/tool/hash values, and explicit confirmation.
 - MCP runtime audit entries persist locally to append-only JSONL and must remain compact/safe.
 - Do not trust loose execute input when a stored preview exists.
-- Current real read tools include `shopify.capabilities.check`, `order.find`, `order.get`, `customer.find`, `tracking.get`, `product.get`, and read-only `inventory.lookup` for explicit inventory item ID, variant ID, or SKU inputs.
+- Current real read tools include `shopify.capabilities.check`, `order.find`, `order.get`, `customer.find`, `tracking.get`, `product.get`, read-only `inventory.lookup` for explicit inventory item ID, variant ID, or SKU inputs, and read-only `inventory.locationLookup` for explicit location ID, name, or query inputs.
 - Current real write tools are `page.create.execute`, `product.create.execute`, minimal basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-delete, explicit-option-reorder, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, or explicit-option-value-delete `product.update.execute`, custom explicit-product `collection.create.execute`, explicit single-item `inventory.setQuantity.execute`, explicit single-item `inventory.adjustQuantity.execute`, and explicit single-item same-location state `inventory.moveQuantity.execute`.
 - All other execute tools remain fail-closed placeholders unless a future task explicitly implements one.
 - Do not return raw Shopify response nodes, raw reviewed payloads, or large customer/order/product dumps.
