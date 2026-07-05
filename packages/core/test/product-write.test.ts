@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addProductOptionValues, createConfig, createProduct, createProductOptions, createProductVariants, deleteProductOptions, deleteProductOptionValues, renameProductOption, renameProductOptionValue, reorderProductOptions, updateProduct, updateProductVariantPrices, type FetchLike } from "../src/index.js";
+import { addProductMedia, addProductOptionValues, createConfig, createProduct, createProductOptions, createProductVariants, deleteProductOptions, deleteProductOptionValues, renameProductOption, renameProductOptionValue, reorderProductOptions, updateProduct, updateProductVariantPrices, type FetchLike } from "../src/index.js";
 
 describe("product write helper", () => {
   it("creates a product through the productCreate mutation and returns a safe summary", async () => {
@@ -326,6 +326,99 @@ describe("product write helper", () => {
       diagnostics: [{ code: "read_only" }]
     });
     expect(fetchCalled).toBe(false);
+  });
+
+  it("adds product media through productUpdate media without returning raw media nodes", async () => {
+    const requests: Array<{ body: string }> = [];
+    const fetcher: FetchLike = async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          productUpdate: {
+            product: {
+              id: "gid://shopify/Product/1",
+              title: "Linen Shirt",
+              handle: "linen-shirt",
+              status: "ACTIVE",
+              media: { nodes: [{ id: "do-not-return", preview: "rawNodeOnly" }] }
+            },
+            userErrors: []
+          }
+        }
+      });
+    };
+
+    const result = await addProductMedia(config(), {
+      productId: "gid://shopify/Product/1",
+      media: [{
+        originalSource: "https://cdn.example.com/new.jpg",
+        mediaContentType: "IMAGE",
+        alt: "Front view"
+      }]
+    }, { fetcher });
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "ok",
+      product: {
+        id: "gid://shopify/Product/1",
+        title: "Linen Shirt",
+        handle: "linen-shirt",
+        status: "ACTIVE"
+      },
+      mediaAdd: {
+        productId: "gid://shopify/Product/1",
+        addedMediaCount: 1,
+        media: [{
+          originalSource: "https://cdn.example.com/new.jpg",
+          mediaContentType: "IMAGE",
+          alt: "Front view"
+        }]
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentProductMediaAdd");
+    expect(request.query).toContain("productUpdate");
+    expect(request.query).toContain("media: $media");
+    expect(request.query).not.toContain("productCreateMedia");
+    expect(request.query).not.toContain("productUpdateMedia");
+    expect(request.variables).toEqual({
+      product: { id: "gid://shopify/Product/1" },
+      media: [{
+        originalSource: "https://cdn.example.com/new.jpg",
+        mediaContentType: "IMAGE",
+        alt: "Front view"
+      }]
+    });
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("shpat_product_secret");
+  });
+
+  it("rejects unsafe product media URLs before calling Shopify", async () => {
+    let fetchCalled = false;
+    const result = await addProductMedia(config(), {
+      productId: "gid://shopify/Product/1",
+      media: [{
+        originalSource: "https://cdn.example.com/new.jpg?token=shpat_media_secret",
+        mediaContentType: "IMAGE"
+      }]
+    }, {
+      fetcher: async () => {
+        fetchCalled = true;
+        return jsonResponse({});
+      }
+    });
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "missing_input",
+      diagnostics: [{ code: "missing_input" }]
+    });
+    expect(fetchCalled).toBe(false);
+    expect(output).not.toContain("shpat_media_secret");
   });
 
   it("updates explicit product variant prices through only productVariantsBulkUpdate", async () => {

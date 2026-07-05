@@ -60,6 +60,9 @@ import {
   type CollectionCreateResult,
   type ProductCreateInput,
   type ProductCreateResult,
+  type ProductMediaAddInput,
+  type ProductMediaAddResult,
+  type ProductMediaCreateInput,
   type ProductOptionsCreateInput,
   type ProductOptionsCreateResult,
   type ProductOptionsDeleteInput,
@@ -86,6 +89,7 @@ import {
   type StoredPreviewRecord,
   validateExecutePreviewBinding,
   verifyStoredPreviewBinding,
+  addProductMedia,
   addProductOptionValues,
   createProduct,
   createProductOptions,
@@ -253,7 +257,7 @@ function bulkPreviewResult(input: Record<string, unknown>, context: ToolContext)
 }
 
 function previewExecuteRequest(record: StoredPreviewRecord): Record<string, unknown> | undefined {
-  const executeTool = implementedExecuteToolForPreview(record.tool);
+  const executeTool = implementedExecuteToolForPreview(record);
   if (!executeTool) return undefined;
   const reviewedPayload = reviewedPayloadForPreviewRecord(record);
   const reviewedChangesHash = hashPreviewContent(reviewedPayload);
@@ -272,20 +276,32 @@ function previewExecuteRequest(record: StoredPreviewRecord): Record<string, unkn
   };
 }
 
-function implementedExecuteToolForPreview(previewTool: string): string | undefined {
-  if (previewTool === "product.create.preview") return "product.create.execute";
-  if (previewTool === "page.create.preview") return "page.create.execute";
-  if (previewTool === "collection.create.preview") return "collection.create.execute";
-  if (previewTool === "inventory.setQuantity.preview") return "inventory.setQuantity.execute";
-  if (previewTool === "inventory.adjustQuantity.preview") return "inventory.adjustQuantity.execute";
-  if (previewTool === "inventory.moveQuantity.preview") return "inventory.moveQuantity.execute";
-  if (previewTool === "inventory.transfer.preview") return "inventory.transfer.execute";
-  if (previewTool === "inventory.transfer.addItems.preview") return "inventory.transfer.addItems.execute";
-  if (previewTool === "inventory.transfer.markReady.preview") return "inventory.transfer.markReady.execute";
-  if (previewTool === "inventory.transfer.cancel.preview") return "inventory.transfer.cancel.execute";
-  if (previewTool === "inventory.transfer.ship.preview") return "inventory.transfer.ship.execute";
-  if (previewTool === "inventory.transfer.receive.preview") return "inventory.transfer.receive.execute";
+function implementedExecuteToolForPreview(record: StoredPreviewRecord): string | undefined {
+  if (record.tool === "product.create.preview") return "product.create.execute";
+  if (record.tool === "product.media.update.preview" && storedProductMediaPreviewIsAddOnly(record)) return "product.media.update.execute";
+  if (record.tool === "page.create.preview") return "page.create.execute";
+  if (record.tool === "collection.create.preview") return "collection.create.execute";
+  if (record.tool === "inventory.setQuantity.preview") return "inventory.setQuantity.execute";
+  if (record.tool === "inventory.adjustQuantity.preview") return "inventory.adjustQuantity.execute";
+  if (record.tool === "inventory.moveQuantity.preview") return "inventory.moveQuantity.execute";
+  if (record.tool === "inventory.transfer.preview") return "inventory.transfer.execute";
+  if (record.tool === "inventory.transfer.addItems.preview") return "inventory.transfer.addItems.execute";
+  if (record.tool === "inventory.transfer.markReady.preview") return "inventory.transfer.markReady.execute";
+  if (record.tool === "inventory.transfer.cancel.preview") return "inventory.transfer.cancel.execute";
+  if (record.tool === "inventory.transfer.ship.preview") return "inventory.transfer.ship.execute";
+  if (record.tool === "inventory.transfer.receive.preview") return "inventory.transfer.receive.execute";
   return undefined;
+}
+
+function storedProductMediaPreviewIsAddOnly(record: StoredPreviewRecord): boolean {
+  let hasAdd = false;
+  for (const item of arrayItems(record.proposedChanges)) {
+    const change = objectFields(item);
+    if (stringFromUnknown(change.field) !== "media") continue;
+    if (stringFromUnknown(change.action) !== "add") return false;
+    hasAdd = true;
+  }
+  return hasAdd;
 }
 
 async function productUpdatePreviewResult(input: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>> {
@@ -636,6 +652,50 @@ async function productUpdateExecuteResult(input: Record<string, unknown>, contex
   if (!extracted.ok) return blockedImplementedExecuteResult(tool, storedTarget, extracted.diagnostics, context, binding);
   const write = await updateProduct(context.config, extracted.input, { fetcher: context.fetcher });
   return productUpdateWriteResult(tool, storedTarget, binding, write, context);
+}
+
+async function productMediaUpdateExecuteResult(input: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>> {
+  const tool = "product.media.update.execute";
+  const target = productExecuteTarget(input, context);
+
+  if (context.config.readOnly) {
+    return blockedImplementedExecuteResult(tool, target, [diagnostic("read_only", "Execute is blocked because read-only mode is enabled.")], context, "product.media.update.preview");
+  }
+
+  if (!context.previewStore) {
+    return blockedImplementedExecuteResult(tool, target, [diagnostic("stored_preview_missing", "Stored preview was not found; execute binding fails closed.")], context, "product.media.update.preview");
+  }
+
+  const lookup = context.previewStore.getPreview(stringInput(input, "previewId"));
+  const storedTarget = lookup.record ? previewRecordBindingTarget(lookup.record) : target;
+  const binding = verifyStoredPreviewBinding(context.previewStore, input, {
+    executeTool: tool,
+    expectedPreviewTool: "product.media.update.preview",
+    target: storedTarget
+  });
+  if (!stringInput(input, "target")) {
+    binding.ok = false;
+    binding.diagnostics = [
+      diagnostic("missing_target", "Execute requires the reviewed preview target."),
+      ...binding.diagnostics.filter((item) => item.code !== "missing_target")
+    ];
+  }
+  if (!binding.ok) return blockedImplementedExecuteResult(tool, storedTarget, binding.diagnostics, context, binding);
+  if (!lookup.ok || !lookup.record) {
+    return blockedImplementedExecuteResult(tool, storedTarget, [lookup.diagnostic ?? diagnostic("stored_preview_missing", "Stored preview was not found; execute binding fails closed.")], context, binding);
+  }
+  if (lookup.record.tool !== "product.media.update.preview") {
+    return blockedImplementedExecuteResult(tool, storedTarget, [diagnostic("stored_preview_tool_mismatch", "Stored preview is not a product media update preview.")], context, binding);
+  }
+
+  const extracted = productMediaAddInputFromStoredPreview(lookup.record);
+  if (!extracted.ok) return blockedImplementedExecuteResult(tool, storedTarget, extracted.diagnostics, context, binding);
+
+  const preflight = checkWriteScopePreflight(context.config, tool);
+  if (!preflight.ok) return blockedImplementedExecuteResult(tool, storedTarget, preflight.diagnostics, context, binding);
+
+  const write = await addProductMedia(context.config, extracted.input, { fetcher: context.fetcher });
+  return productMediaAddWriteResult(tool, storedTarget, binding, write, context);
 }
 
 async function collectionCreateExecuteResult(input: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>> {
@@ -1285,6 +1345,40 @@ function productUpdateWriteResult(
   };
 }
 
+function productMediaAddWriteResult(
+  tool: string,
+  target: string,
+  binding: ExecutePreviewBindingResult,
+  write: ProductMediaAddResult,
+  context: ToolContext
+): Record<string, unknown> {
+  const result = productUpdateAuditResult(write);
+  const audit = context.audit.record({
+    tool,
+    target: safeExecuteString(target),
+    mode: "execute",
+    summary: write.summary,
+    result
+  });
+  return {
+    ok: write.ok,
+    mode: "execute",
+    implemented: true,
+    status: write.status,
+    summary: write.summary,
+    audit,
+    updatedProduct: write.product,
+    addedMedia: write.mediaAdd,
+    userErrors: write.userErrors,
+    diagnostics: write.diagnostics,
+    previewBinding: {
+      previewId: binding.previewId,
+      expectedTool: binding.expectedPreviewTool,
+      target: binding.target
+    }
+  };
+}
+
 function productVariantPriceUpdateWriteResult(
   tool: string,
   target: string,
@@ -1918,7 +2012,7 @@ function productCreateAuditResult(write: ProductCreateResult): "success" | "bloc
   return "failed";
 }
 
-function productUpdateAuditResult(write: ProductUpdateResult | ProductVariantPriceUpdateResult | ProductVariantBulkCreateResult | ProductOptionsCreateResult | ProductOptionsDeleteResult | ProductOptionsReorderResult | ProductOptionRenameResult | ProductOptionValueRenameResult | ProductOptionValueAddResult | ProductOptionValueDeleteResult): "success" | "blocked" | "failed" {
+function productUpdateAuditResult(write: ProductUpdateResult | ProductMediaAddResult | ProductVariantPriceUpdateResult | ProductVariantBulkCreateResult | ProductOptionsCreateResult | ProductOptionsDeleteResult | ProductOptionsReorderResult | ProductOptionRenameResult | ProductOptionValueRenameResult | ProductOptionValueAddResult | ProductOptionValueDeleteResult): "success" | "blocked" | "failed" {
   if (write.status === "ok") return "success";
   if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
   return "failed";
@@ -2021,6 +2115,76 @@ function productUpdateInputFromStoredPreview(record: StoredPreviewRecord): { ok:
   }
 
   return { ok: true, input };
+}
+
+function productMediaAddInputFromStoredPreview(record: StoredPreviewRecord): { ok: true; input: ProductMediaAddInput } | { ok: false; diagnostics: ExecutePreviewBindingDiagnostic[] } {
+  const productId = safeContentText(targetField(record, "id") ?? targetField(record, "productId") ?? changeValue(record, "productId"), 180);
+  if (!productId) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_product_media_update_id", "Stored product media preview did not include a safe product ID; handle-only execute is blocked.")]
+    };
+  }
+
+  for (const item of arrayItems(record.proposedChanges)) {
+    const change = objectFields(item);
+    if (stringFromUnknown(change.field) !== "media") continue;
+    if (stringFromUnknown(change.action) !== "add") {
+      return {
+        ok: false,
+        diagnostics: [diagnostic("unsupported_product_media_update_shape", "Only add-only product media previews can be executed in this release; media updates, deletes, reorder, replacement, and file workflows remain preview-only.")]
+      };
+    }
+  }
+
+  const media = productMediaAddsFromStoredPreview(record);
+  if (media.length === 0) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_product_media_adds", "Stored product media preview did not include safe media URLs for execution.")]
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      productId,
+      media
+    }
+  };
+}
+
+function productMediaAddsFromStoredPreview(record: StoredPreviewRecord): ProductMediaCreateInput[] {
+  const result: ProductMediaCreateInput[] = [];
+  for (const item of storedChangeArray(record, "media", "value")) {
+    const media = productMediaCreateInputFromStoredValue(item);
+    if (!media) continue;
+    result.push(media);
+    if (result.length >= 10) break;
+  }
+  return result;
+}
+
+function productMediaCreateInputFromStoredValue(value: unknown): ProductMediaCreateInput | undefined {
+  const fields = objectFields(value);
+  const originalSource = safeMediaSourceText(fields.originalSource ?? fields.url ?? fields.src ?? fields.source ?? value);
+  const mediaContentType = productMediaContentType(fields.mediaContentType ?? fields.contentType ?? fields.type ?? "IMAGE");
+  if (!originalSource || !mediaContentType) return undefined;
+  const media: ProductMediaCreateInput = { originalSource, mediaContentType };
+  const alt = safeVariantText(fields.alt ?? fields.altText, 512);
+  if (alt) media.alt = alt;
+  return media;
+}
+
+function safeMediaSourceText(value: unknown): string | undefined {
+  const text = safeContentText(value, 2048);
+  if (!text || text === "[redacted]" || !isHttpUrl(text)) return undefined;
+  return text;
+}
+
+function productMediaContentType(value: unknown): ProductMediaCreateInput["mediaContentType"] | undefined {
+  const text = safeContentText(value, 80)?.toUpperCase();
+  return text === "IMAGE" || text === "VIDEO" || text === "MODEL_3D" || text === "EXTERNAL_VIDEO" ? text : undefined;
 }
 
 function productVariantPriceUpdateInputFromStoredPreview(record: StoredPreviewRecord): { ok: true; input: ProductVariantPriceUpdateInput } | { ok: false; diagnostics: ExecutePreviewBindingDiagnostic[] } {
@@ -3245,9 +3409,9 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: "product.media.update.execute",
-    description: "Placeholder for product media updates after preview and confirmation.",
+    description: "Execute an add-only product media update from a stored preview after explicit confirmation.",
     inputSchema: { type: "object" },
-    handler: (input, context) => executePlaceholder("product.media.update.execute", stringInput(input, "productId", "product"), "Product media update execution placeholder.", input, context)
+    handler: (input, context) => productMediaUpdateExecuteResult(input, context)
   },
   {
     name: "product.importFromUserUrl.preview",
