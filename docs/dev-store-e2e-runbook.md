@@ -129,6 +129,14 @@ write_inventory_transfers
 read_inventory_transfers
 ```
 
+For `inventory.transfer.addItems.execute`, add:
+
+```text
+write_inventory_transfers
+read_inventory_transfers
+read_inventory
+```
+
 For `inventory.transfer.ship.execute`, add both:
 
 ```text
@@ -230,7 +238,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory,write_inventory_transfers,read_inventory_transfers,write_inventory_shipments,read_inventory_shipments,write_inventory_shipments_received_items"
 ```
 
-Write mode is only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-delete, explicit-option-reorder, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, or explicit-option-value-delete `product.update.execute`, custom explicit-product `collection.create.execute`, explicit single-item `inventory.setQuantity.execute`, explicit single-item `inventory.adjustQuantity.execute`, explicit same-location state `inventory.moveQuantity.execute`, explicit single-item draft transfer `inventory.transfer.execute`, explicit transfer mark-ready `inventory.transfer.markReady.execute`, explicit transfer cancel `inventory.transfer.cancel.execute`, explicit transfer ship `inventory.transfer.ship.execute`, or explicit transfer receive `inventory.transfer.receive.execute`. All other execute tools remain fail-closed placeholders.
+Write mode is only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-delete, explicit-option-reorder, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, or explicit-option-value-delete `product.update.execute`, custom explicit-product `collection.create.execute`, explicit single-item `inventory.setQuantity.execute`, explicit single-item `inventory.adjustQuantity.execute`, explicit same-location state `inventory.moveQuantity.execute`, explicit single-item draft transfer `inventory.transfer.execute`, explicit transfer add-item quantity set `inventory.transfer.addItems.execute`, explicit transfer mark-ready `inventory.transfer.markReady.execute`, explicit transfer cancel `inventory.transfer.cancel.execute`, explicit transfer ship `inventory.transfer.ship.execute`, or explicit transfer receive `inventory.transfer.receive.execute`. All other execute tools remain fail-closed placeholders.
 
 ## Local E2E Config Preflight
 
@@ -810,7 +818,7 @@ Use only a disposable/development inventory shipment where receiving one shipmen
 
 Run these manually against the development-store setup:
 
-- Read-only mode on: `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, `inventory.moveQuantity.execute`, `inventory.transfer.execute`, `inventory.transfer.markReady.execute`, `inventory.transfer.cancel.execute`, `inventory.transfer.ship.execute`, and `inventory.transfer.receive.execute` return `blocked`.
+- Read-only mode on: `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, `inventory.moveQuantity.execute`, `inventory.transfer.execute`, `inventory.transfer.addItems.execute`, `inventory.transfer.markReady.execute`, `inventory.transfer.cancel.execute`, `inventory.transfer.ship.execute`, and `inventory.transfer.receive.execute` return `blocked`.
 - Missing `confirmed: true`: execute returns `blocked`.
 - Missing `previewId`: execute returns `blocked`.
 - Expired preview: execute returns `blocked`.
@@ -848,7 +856,7 @@ Confirm:
 - No order/customer dump.
 - Blocked cases audit `blocked`.
 - Placeholder cases audit `not_implemented`.
-- Successful `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, `inventory.moveQuantity.execute`, `inventory.transfer.execute`, `inventory.transfer.markReady.execute`, `inventory.transfer.cancel.execute`, `inventory.transfer.ship.execute`, and `inventory.transfer.receive.execute` audit `success` only after Shopify write success.
+- Successful `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, `inventory.moveQuantity.execute`, `inventory.transfer.execute`, `inventory.transfer.addItems.execute`, `inventory.transfer.markReady.execute`, `inventory.transfer.cancel.execute`, `inventory.transfer.ship.execute`, and `inventory.transfer.receive.execute` audit `success` only after Shopify write success.
 
 ## Troubleshooting
 

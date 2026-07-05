@@ -127,6 +127,7 @@ describe("setup", () => {
     expect(warningText).toContain("inventory.adjustQuantity.execute");
     expect(warningText).toContain("inventory.moveQuantity.execute");
     expect(warningText).toContain("inventory.transfer.execute");
+    expect(warningText).toContain("inventory.transfer.addItems.execute");
     expect(warningText).toContain("inventory.transfer.markReady.execute");
     expect(warningText).toContain("inventory.transfer.cancel.execute");
     expect(warningText).toContain("inventory.transfer.ship.execute");
@@ -160,6 +161,7 @@ describe("setup", () => {
     expect(JSON.stringify(result.warnings)).toContain("inventory.adjustQuantity.execute");
     expect(JSON.stringify(result.warnings)).toContain("inventory.moveQuantity.execute");
     expect(JSON.stringify(result.warnings)).toContain("inventory.transfer.execute");
+    expect(JSON.stringify(result.warnings)).toContain("inventory.transfer.addItems.execute");
     expect(JSON.stringify(result.warnings)).toContain("inventory.transfer.markReady.execute");
     expect(JSON.stringify(result.warnings)).toContain("inventory.transfer.cancel.execute");
     expect(JSON.stringify(result.warnings)).toContain("inventory.transfer.ship.execute");
