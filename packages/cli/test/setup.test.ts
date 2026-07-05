@@ -129,6 +129,7 @@ describe("setup", () => {
     expect(warningText).toContain("inventory.transfer.execute");
     expect(warningText).toContain("inventory.transfer.markReady.execute");
     expect(warningText).toContain("inventory.transfer.cancel.execute");
+    expect(warningText).toContain("inventory.transfer.ship.execute");
     expect(warningText).toContain("fail-closed placeholders");
   });
 
@@ -160,6 +161,7 @@ describe("setup", () => {
     expect(JSON.stringify(result.warnings)).toContain("inventory.transfer.execute");
     expect(JSON.stringify(result.warnings)).toContain("inventory.transfer.markReady.execute");
     expect(JSON.stringify(result.warnings)).toContain("inventory.transfer.cancel.execute");
+    expect(JSON.stringify(result.warnings)).toContain("inventory.transfer.ship.execute");
     expect(JSON.stringify(result.warnings)).toContain("product.create.execute");
   });
 

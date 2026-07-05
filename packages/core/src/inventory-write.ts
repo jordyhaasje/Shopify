@@ -50,6 +50,13 @@ export interface InventoryTransferCancelInput {
   inventoryTransferId: string;
 }
 
+export interface InventoryTransferShipInput {
+  inventoryTransferId: string;
+  inventoryItemId: string;
+  quantity: number;
+  idempotencyKey: string;
+}
+
 export interface InventoryQuantityChangeSummary {
   name?: string;
   delta?: number;
@@ -110,6 +117,14 @@ export interface InventoryTransferCancelSummary {
   status?: string;
 }
 
+export interface InventoryTransferShipSummary {
+  inventoryTransferId: string;
+  inventoryShipmentId: string;
+  status?: string;
+  inventoryItemId: string;
+  quantity: number;
+}
+
 export interface InventoryWriteDiagnostic {
   severity: "warning" | "error";
   code: string;
@@ -148,6 +163,10 @@ export interface InventoryTransferMarkReadyResult extends InventoryWriteResultBa
 
 export interface InventoryTransferCancelResult extends InventoryWriteResultBase {
   inventoryTransfer?: InventoryTransferCancelSummary;
+}
+
+export interface InventoryTransferShipResult extends InventoryWriteResultBase {
+  inventoryShipment?: InventoryTransferShipSummary;
 }
 
 export interface InventoryWriteOptions {
@@ -222,6 +241,16 @@ interface InventoryTransferMarkReadyData {
 interface InventoryTransferCancelData {
   inventoryTransferCancel?: {
     inventoryTransfer?: {
+      id?: unknown;
+      status?: unknown;
+    } | null;
+    userErrors?: GraphqlUserError[];
+  } | null;
+}
+
+interface InventoryShipmentCreateInTransitData {
+  inventoryShipmentCreateInTransit?: {
+    inventoryShipment?: {
       id?: unknown;
       status?: unknown;
     } | null;
@@ -749,6 +778,88 @@ export async function cancelInventoryTransfer(
   };
 }
 
+export async function shipInventoryTransfer(
+  config: StoreAgentConfig,
+  input: InventoryTransferShipInput,
+  options: InventoryWriteOptions = {}
+): Promise<InventoryTransferShipResult> {
+  if (config.readOnly) return blocked("Inventory transfer ship is blocked because read-only mode is enabled.");
+
+  const inventoryTransferId = safeText(input.inventoryTransferId, 180);
+  if (!inventoryTransferId) return missingInput("Provide an inventory transfer ID.");
+
+  const inventoryItemId = safeText(input.inventoryItemId, 180);
+  if (!inventoryItemId) return missingInput("Provide an inventory item ID.");
+
+  const quantity = safeMoveQuantity(input.quantity);
+  if (quantity === undefined) return missingInput("Provide a positive integer inventory transfer shipment quantity.");
+
+  const idempotencyKey = safeIdempotencyKey(input.idempotencyKey);
+  if (!idempotencyKey) return missingInput("Provide an idempotency key.");
+
+  const variables = {
+    input: {
+      movementId: inventoryTransferId,
+      lineItems: [{
+        inventoryItemId,
+        quantity
+      }]
+    },
+    idempotencyKey
+  };
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  let result: ShopifyGraphqlResult<InventoryShipmentCreateInTransitData>;
+  try {
+    result = await client.request<InventoryShipmentCreateInTransitData>({
+      query: inventoryShipmentCreateInTransitMutation,
+      variables
+    });
+  } catch {
+    return shopifyFailure("Shopify inventory transfer ship request failed before a safe response was available.");
+  }
+
+  if (!result.ok) return mapGraphqlFailure(result);
+
+  const userErrors = result.data.inventoryShipmentCreateInTransit?.userErrors ?? result.userErrors;
+  if (userErrors.length > 0) {
+    return {
+      ok: false,
+      status: "user_errors",
+      summary: "Shopify rejected the inventory transfer ship request.",
+      userErrors: sanitizeUserErrors(userErrors),
+      diagnostics: [{ severity: "warning", code: "shopify_user_errors", message: "Shopify returned inventory transfer ship user errors." }]
+    };
+  }
+
+  const shipment = result.data.inventoryShipmentCreateInTransit?.inventoryShipment;
+  const inventoryShipmentId = safeText(shipment?.id, 180);
+  if (!inventoryShipmentId) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify inventory transfer ship response did not include a shipment ID.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify inventory transfer ship response did not include a shipment ID." }]
+    };
+  }
+
+  return {
+    ok: true,
+    status: "ok",
+    summary: `Created in-transit Shopify inventory shipment for ${quantity} unit${quantity === 1 ? "" : "s"}.`,
+    inventoryShipment: {
+      inventoryTransferId,
+      inventoryShipmentId,
+      status: safeText(shipment?.status, 80),
+      inventoryItemId,
+      quantity
+    },
+    userErrors: [],
+    diagnostics: []
+  };
+}
+
 const inventorySetQuantitiesMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentInventorySetQuantities($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
     inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
@@ -860,7 +971,23 @@ const inventoryTransferCancelMutation = /* GraphQL */ `
   }
 `;
 
-function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<InventorySetQuantitiesData | InventoryAdjustQuantitiesData | InventoryMoveQuantitiesData | InventoryTransferCreateData | InventoryTransferMarkReadyData>, { ok: false }>): InventoryWriteResultBase {
+const inventoryShipmentCreateInTransitMutation = /* GraphQL */ `
+  mutation ShopifyStoreAgentInventoryShipmentCreateInTransit($input: InventoryShipmentCreateInput!, $idempotencyKey: String!) {
+    inventoryShipmentCreateInTransit(input: $input) @idempotent(key: $idempotencyKey) {
+      inventoryShipment {
+        id
+        status
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
+function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<InventorySetQuantitiesData | InventoryAdjustQuantitiesData | InventoryMoveQuantitiesData | InventoryTransferCreateData | InventoryTransferMarkReadyData | InventoryTransferCancelData | InventoryShipmentCreateInTransitData>, { ok: false }>): InventoryWriteResultBase {
   return {
     ok: false,
     status: "shopify_error",
