@@ -20,6 +20,8 @@ const expectedToolNames = [
   "inventory.lookup",
   "inventory.setQuantity.preview",
   "inventory.setQuantity.execute",
+  "inventory.adjustQuantity.preview",
+  "inventory.adjustQuantity.execute",
   "order.find",
   "order.get",
   "customer.find",
@@ -409,6 +411,137 @@ describe("MCP tools", () => {
     });
     expect(fetchCalled).toBe(false);
     expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.setQuantity.execute", result: "blocked" });
+  });
+
+  it("previews inventory quantity adjustment with executeRequest binding", async () => {
+    const context = baseContext();
+
+    const result = await callTool("inventory.adjustQuantity.preview", {
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      delta: -2,
+      reason: "correction"
+    }, context) as Record<string, unknown>;
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "preview",
+      status: "ok",
+      target: { type: "inventory", id: "gid://shopify/InventoryItem/1" },
+      executeRequest: expect.objectContaining({
+        tool: "inventory.adjustQuantity.execute",
+        expectedTool: "inventory.adjustQuantity.preview",
+        requiresConfirmation: true
+      })
+    });
+    expect(changeFor(result, "delta")).toMatchObject({ before: "current available quantity", after: -2 });
+    expect(context.audit.list()[0]).toMatchObject({ tool: "inventory.adjustQuantity.preview", mode: "preview", result: "success" });
+  });
+
+  it("adjusts inventory quantity from stored preview via inventoryAdjustQuantities", async () => {
+    const requests: Array<{ body: string }> = [];
+    const context = baseContext(async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          inventoryAdjustQuantities: {
+            inventoryAdjustmentGroup: {
+              reason: "Inventory correction",
+              referenceDocumentUri: "gid://store-agent/TestRun/2",
+              changes: [{ name: "available", delta: -2, quantityAfterChange: 6 }],
+              rawNodeOnly: "do not return"
+            },
+            userErrors: []
+          }
+        }
+      });
+    }, false);
+    context.config.grantedScopes = ["write_inventory"];
+    const preview = await callTool("inventory.adjustQuantity.preview", {
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      delta: -2,
+      reason: "correction",
+      referenceDocumentUri: "gid://store-agent/TestRun/2"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("inventory.adjustQuantity.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash,
+      delta: 999
+    }, context);
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "execute",
+      implemented: true,
+      status: "ok",
+      inventoryAdjustment: {
+        inventoryItemId: "gid://shopify/InventoryItem/1",
+        locationId: "gid://shopify/Location/1",
+        delta: -2
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentInventoryAdjustQuantities");
+    expect(request.query).toContain("@idempotent");
+    expect(request.query).not.toContain("inventorySetQuantities");
+    expect(request.query).not.toContain("productUpdate");
+    expect(request.variables.input.changes).toEqual([{
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      delta: -2
+    }]);
+    expect(request.variables.idempotencyKey).toBe(`store-agent:${preview.previewId}`);
+    expect(requests[0].body).not.toContain("999");
+    expect(output).not.toContain("rawNodeOnly");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.adjustQuantity.execute", result: "success" });
+  });
+
+  it("blocks inventory adjustment before fetch when write_inventory is missing", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("inventory.adjustQuantity.preview", {
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      delta: -2,
+      reason: "correction"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("inventory.adjustQuantity.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: [{ code: "missing_write_scope" }]
+    });
+    expect(fetchCalled).toBe(false);
+    expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.adjustQuantity.execute", result: "blocked" });
   });
 
   it("runs catalog and content previews with structured audit entries", async () => {

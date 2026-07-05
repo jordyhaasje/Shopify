@@ -12,6 +12,15 @@ export interface InventorySetQuantityInput {
   idempotencyKey: string;
 }
 
+export interface InventoryAdjustQuantityInput {
+  inventoryItemId: string;
+  locationId: string;
+  delta: number;
+  reason: string;
+  referenceDocumentUri?: string;
+  idempotencyKey: string;
+}
+
 export interface InventoryQuantityChangeSummary {
   name?: string;
   delta?: number;
@@ -25,6 +34,16 @@ export interface InventorySetQuantitySummary {
   quantity: number;
   compareQuantity?: number | null;
   ignoreCompareQuantity: boolean;
+  reason?: string;
+  referenceDocumentUri?: string;
+  changes: InventoryQuantityChangeSummary[];
+}
+
+export interface InventoryAdjustQuantitySummary {
+  inventoryItemId: string;
+  locationId: string;
+  name: "available";
+  delta: number;
   reason?: string;
   referenceDocumentUri?: string;
   changes: InventoryQuantityChangeSummary[];
@@ -50,12 +69,31 @@ export interface InventorySetQuantityResult extends InventoryWriteResultBase {
   inventorySet?: InventorySetQuantitySummary;
 }
 
+export interface InventoryAdjustQuantityResult extends InventoryWriteResultBase {
+  inventoryAdjustment?: InventoryAdjustQuantitySummary;
+}
+
 export interface InventoryWriteOptions {
   fetcher?: FetchLike;
 }
 
 interface InventorySetQuantitiesData {
   inventorySetQuantities?: {
+    inventoryAdjustmentGroup?: {
+      reason?: unknown;
+      referenceDocumentUri?: unknown;
+      changes?: Array<{
+        name?: unknown;
+        delta?: unknown;
+        quantityAfterChange?: unknown;
+      } | null> | null;
+    } | null;
+    userErrors?: GraphqlUserError[];
+  } | null;
+}
+
+interface InventoryAdjustQuantitiesData {
+  inventoryAdjustQuantities?: {
     inventoryAdjustmentGroup?: {
       reason?: unknown;
       referenceDocumentUri?: unknown;
@@ -177,6 +215,96 @@ export async function setInventoryQuantity(
   };
 }
 
+export async function adjustInventoryQuantity(
+  config: StoreAgentConfig,
+  input: InventoryAdjustQuantityInput,
+  options: InventoryWriteOptions = {}
+): Promise<InventoryAdjustQuantityResult> {
+  if (config.readOnly) return blocked("Inventory quantity adjustment is blocked because read-only mode is enabled.");
+
+  const inventoryItemId = safeText(input.inventoryItemId, 180);
+  if (!inventoryItemId) return missingInput("Provide an inventory item ID.");
+
+  const locationId = safeText(input.locationId, 180);
+  if (!locationId) return missingInput("Provide a location ID.");
+
+  const delta = safeInventoryDelta(input.delta);
+  if (delta === undefined) return missingInput("Provide a non-zero integer inventory adjustment delta.");
+
+  const reason = safeNonSecretText(input.reason, 120);
+  if (!reason) return missingInput("Provide an inventory adjustment reason.");
+
+  const idempotencyKey = safeIdempotencyKey(input.idempotencyKey);
+  if (!idempotencyKey) return missingInput("Provide an idempotency key.");
+
+  const referenceDocumentUri = safeOptionalUri(input.referenceDocumentUri);
+  const variables = {
+    input: {
+      name: "available",
+      reason,
+      referenceDocumentUri,
+      changes: [{
+        inventoryItemId,
+        locationId,
+        delta
+      }]
+    },
+    idempotencyKey
+  };
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  let result: ShopifyGraphqlResult<InventoryAdjustQuantitiesData>;
+  try {
+    result = await client.request<InventoryAdjustQuantitiesData>({
+      query: inventoryAdjustQuantitiesMutation,
+      variables
+    });
+  } catch {
+    return shopifyFailure("Shopify inventory quantity adjustment request failed before a safe response was available.");
+  }
+
+  if (!result.ok) return mapGraphqlFailure(result);
+
+  const userErrors = result.data.inventoryAdjustQuantities?.userErrors ?? result.userErrors;
+  if (userErrors.length > 0) {
+    return {
+      ok: false,
+      status: "user_errors",
+      summary: "Shopify rejected the inventory quantity adjustment request.",
+      userErrors: sanitizeUserErrors(userErrors),
+      diagnostics: [{ severity: "warning", code: "shopify_user_errors", message: "Shopify returned inventory adjustment user errors." }]
+    };
+  }
+
+  const group = result.data.inventoryAdjustQuantities?.inventoryAdjustmentGroup;
+  if (!group) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify inventory quantity adjustment response did not include an adjustment group.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify inventory quantity adjustment response did not include an adjustment group." }]
+    };
+  }
+
+  return {
+    ok: true,
+    status: "ok",
+    summary: `Adjusted Shopify inventory quantity by ${delta}.`,
+    inventoryAdjustment: {
+      inventoryItemId,
+      locationId,
+      name: "available",
+      delta,
+      reason: safeText(group.reason, 120) ?? reason,
+      referenceDocumentUri: safeText(group.referenceDocumentUri, 255) ?? referenceDocumentUri,
+      changes: safeInventoryChanges(group.changes)
+    },
+    userErrors: [],
+    diagnostics: []
+  };
+}
+
 const inventorySetQuantitiesMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentInventorySetQuantities($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
     inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
@@ -198,7 +326,28 @@ const inventorySetQuantitiesMutation = /* GraphQL */ `
   }
 `;
 
-function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<InventorySetQuantitiesData>, { ok: false }>): InventoryWriteResultBase {
+const inventoryAdjustQuantitiesMutation = /* GraphQL */ `
+  mutation ShopifyStoreAgentInventoryAdjustQuantities($input: InventoryAdjustQuantitiesInput!, $idempotencyKey: String!) {
+    inventoryAdjustQuantities(input: $input) @idempotent(key: $idempotencyKey) {
+      inventoryAdjustmentGroup {
+        reason
+        referenceDocumentUri
+        changes {
+          name
+          delta
+          quantityAfterChange
+        }
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
+function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<InventorySetQuantitiesData | InventoryAdjustQuantitiesData>, { ok: false }>): InventoryWriteResultBase {
   return {
     ok: false,
     status: "shopify_error",
@@ -270,6 +419,11 @@ function safeOptionalInventoryQuantity(value: unknown): number | null | undefine
 function safeInventoryQuantity(value: unknown): number | undefined {
   const integer = safeInteger(value);
   return integer !== undefined && integer >= 0 && integer <= 1_000_000_000 ? integer : undefined;
+}
+
+function safeInventoryDelta(value: unknown): number | undefined {
+  const integer = safeInteger(value);
+  return integer !== undefined && integer !== 0 && integer >= -1_000_000_000 && integer <= 1_000_000_000 ? integer : undefined;
 }
 
 function safeInteger(value: unknown): number | undefined {
