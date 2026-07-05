@@ -26,7 +26,7 @@ See [github-install.md](github-install.md) for the temporary GitHub install note
 
 ## Future NPM Setup
 
-The intended future user flow is:
+The future package-distributed user flow is:
 
 ```bash
 npx shopify-store-agent setup
@@ -36,7 +36,9 @@ That path is reserved for after package publishing is explicitly approved and co
 
 Publishing itself is manual and gated by [release-runbook.md](release-runbook.md). Do not treat package metadata or `pack:check` as permission to publish.
 
-The future wizard should collect or create local Shopify credentials, run capability checks, and generate MCP configuration snippets for hosts such as Codex, Claude Code, and Cursor. It should also explain that users can ask the AI host in ordinary store language; the host should translate requests into safe tool calls and ask for missing exact targets instead of requiring technical prompts.
+The current CLI already provides the local setup foundation through the GitHub route: `setup` creates local config guidance and MCP snippets, `auth` runs the browser OAuth flow, `setup-check` verifies local onboarding state without Shopify fetches, and `smoke --dry-run` validates the local no-write path. Future npm/npx publishing should distribute that same reviewed behavior, not introduce a different install or write model.
+
+Setup guidance explains that users can ask the AI host in ordinary store language. The host should translate requests into safe tool calls and ask for missing exact targets instead of requiring technical prompts.
 
 Capability checks are safe by default. Local mode reports config status, redacted credential presence, read-only mode, local capability flags, diagnostics, and setup recommendations. Optional live mode uses the Admin API token only for a minimal shop identity check and must not return sensitive store data.
 
