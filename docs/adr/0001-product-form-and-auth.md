@@ -51,6 +51,7 @@ pnpm run lint
 pnpm run typecheck
 pnpm test
 pnpm run build
+pnpm run smoke:local
 ```
 
 GitHub Actions is intentionally not active until the GitHub account issue is resolved.
