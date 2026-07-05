@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adjustInventoryQuantity, cancelInventoryTransfer, createConfig, createInventoryTransfer, markInventoryTransferReady, moveInventoryQuantity, receiveInventoryTransfer, setInventoryQuantity, shipInventoryTransfer, type FetchLike } from "../src/index.js";
+import { addItemsToInventoryTransfer, adjustInventoryQuantity, cancelInventoryTransfer, createConfig, createInventoryTransfer, markInventoryTransferReady, moveInventoryQuantity, receiveInventoryTransfer, setInventoryQuantity, shipInventoryTransfer, type FetchLike } from "../src/index.js";
 
 describe("inventory write helper", () => {
   it("sets an explicit inventory quantity through inventorySetQuantities", async () => {
@@ -588,6 +588,68 @@ describe("inventory write helper", () => {
     expect(request.query).not.toContain("@idempotent");
     expect(request.variables).toEqual({
       id: "gid://shopify/InventoryTransfer/1"
+    });
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("shpat_inventory_secret");
+  });
+
+  it("sets an explicit inventory transfer item quantity", async () => {
+    const requests: Array<{ body: string; token?: string }> = [];
+    const fetcher: FetchLike = async (_url, init) => {
+      requests.push({ body: init.body, token: init.headers["X-Shopify-Access-Token"] });
+      return jsonResponse({
+        data: {
+          inventoryTransferSetItems: {
+            inventoryTransfer: {
+              id: "gid://shopify/InventoryTransfer/1",
+              status: "DRAFT",
+              rawNodeOnly: "do not return"
+            },
+            updatedLineItems: [{
+              inventoryItemId: "gid://shopify/InventoryItem/1",
+              newQuantity: 2,
+              rawNodeOnly: "do not return"
+            }],
+            userErrors: []
+          }
+        }
+      });
+    };
+
+    const result = await addItemsToInventoryTransfer(config(), {
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      quantity: 2,
+      idempotencyKey: "store-agent:preview_add_items"
+    }, { fetcher });
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "ok",
+      inventoryTransfer: {
+        inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+        status: "DRAFT",
+        inventoryItemId: "gid://shopify/InventoryItem/1",
+        quantity: 2
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentInventoryTransferSetItems");
+    expect(request.query).toContain("inventoryTransferSetItems");
+    expect(request.query).toContain("@idempotent");
+    expect(request.query).not.toContain("inventoryTransferCreate");
+    expect(request.query).not.toContain("inventoryShipmentCreateInTransit");
+    expect(request.variables).toEqual({
+      input: {
+        id: "gid://shopify/InventoryTransfer/1",
+        lineItems: [{
+          inventoryItemId: "gid://shopify/InventoryItem/1",
+          quantity: 2
+        }]
+      },
+      idempotencyKey: "store-agent:preview_add_items"
     });
     expect(output).not.toContain("rawNodeOnly");
     expect(output).not.toContain("shpat_inventory_secret");

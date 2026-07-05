@@ -42,6 +42,13 @@ export interface InventoryTransferInput {
   idempotencyKey: string;
 }
 
+export interface InventoryTransferAddItemsInput {
+  inventoryTransferId: string;
+  inventoryItemId: string;
+  quantity: number;
+  idempotencyKey: string;
+}
+
 export interface InventoryTransferMarkReadyInput {
   inventoryTransferId: string;
 }
@@ -115,6 +122,13 @@ export interface InventoryTransferSummary {
   referenceDocumentUri?: string;
 }
 
+export interface InventoryTransferAddItemsSummary {
+  inventoryTransferId: string;
+  status?: string;
+  inventoryItemId: string;
+  quantity: number;
+}
+
 export interface InventoryTransferMarkReadySummary {
   inventoryTransferId: string;
   status?: string;
@@ -171,6 +185,10 @@ export interface InventoryMoveQuantityResult extends InventoryWriteResultBase {
 
 export interface InventoryTransferResult extends InventoryWriteResultBase {
   inventoryTransfer?: InventoryTransferSummary;
+}
+
+export interface InventoryTransferAddItemsResult extends InventoryWriteResultBase {
+  inventoryTransfer?: InventoryTransferAddItemsSummary;
 }
 
 export interface InventoryTransferMarkReadyResult extends InventoryWriteResultBase {
@@ -244,6 +262,20 @@ interface InventoryTransferCreateData {
       id?: unknown;
       status?: unknown;
     } | null;
+    userErrors?: GraphqlUserError[];
+  } | null;
+}
+
+interface InventoryTransferSetItemsData {
+  inventoryTransferSetItems?: {
+    inventoryTransfer?: {
+      id?: unknown;
+      status?: unknown;
+    } | null;
+    updatedLineItems?: Array<{
+      inventoryItemId?: unknown;
+      newQuantity?: unknown;
+    } | null> | null;
     userErrors?: GraphqlUserError[];
   } | null;
 }
@@ -690,6 +722,90 @@ export async function createInventoryTransfer(
   };
 }
 
+export async function addItemsToInventoryTransfer(
+  config: StoreAgentConfig,
+  input: InventoryTransferAddItemsInput,
+  options: InventoryWriteOptions = {}
+): Promise<InventoryTransferAddItemsResult> {
+  if (config.readOnly) return blocked("Inventory transfer add-items is blocked because read-only mode is enabled.");
+
+  const inventoryTransferId = safeText(input.inventoryTransferId, 180);
+  if (!inventoryTransferId) return missingInput("Provide an inventory transfer ID.");
+
+  const inventoryItemId = safeText(input.inventoryItemId, 180);
+  if (!inventoryItemId) return missingInput("Provide an inventory item ID.");
+
+  const quantity = safeMoveQuantity(input.quantity);
+  if (quantity === undefined) return missingInput("Provide a positive integer inventory transfer add-item quantity.");
+
+  const idempotencyKey = safeIdempotencyKey(input.idempotencyKey);
+  if (!idempotencyKey) return missingInput("Provide an idempotency key.");
+
+  const variables = {
+    input: {
+      id: inventoryTransferId,
+      lineItems: [{
+        inventoryItemId,
+        quantity
+      }]
+    },
+    idempotencyKey
+  };
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  let result: ShopifyGraphqlResult<InventoryTransferSetItemsData>;
+  try {
+    result = await client.request<InventoryTransferSetItemsData>({
+      query: inventoryTransferSetItemsMutation,
+      variables
+    });
+  } catch {
+    return shopifyFailure("Shopify inventory transfer add-items request failed before a safe response was available.");
+  }
+
+  if (!result.ok) return mapGraphqlFailure(result);
+
+  const userErrors = result.data.inventoryTransferSetItems?.userErrors ?? result.userErrors;
+  if (userErrors.length > 0) {
+    return {
+      ok: false,
+      status: "user_errors",
+      summary: "Shopify rejected the inventory transfer add-items request.",
+      userErrors: sanitizeUserErrors(userErrors),
+      diagnostics: [{ severity: "warning", code: "shopify_user_errors", message: "Shopify returned inventory transfer add-items user errors." }]
+    };
+  }
+
+  const transfer = result.data.inventoryTransferSetItems?.inventoryTransfer;
+  const updatedTransferId = safeText(transfer?.id, 180);
+  if (!updatedTransferId) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify inventory transfer add-items response did not include a transfer ID.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify inventory transfer add-items response did not include a transfer ID." }]
+    };
+  }
+
+  const updatedLineItem = result.data.inventoryTransferSetItems?.updatedLineItems?.find((item) => safeText(item?.inventoryItemId, 180) === inventoryItemId);
+  const updatedQuantity = safeMoveQuantity(updatedLineItem?.newQuantity) ?? quantity;
+
+  return {
+    ok: true,
+    status: "ok",
+    summary: `Set Shopify inventory transfer item quantity to ${updatedQuantity}.`,
+    inventoryTransfer: {
+      inventoryTransferId: updatedTransferId,
+      status: safeText(transfer?.status, 80),
+      inventoryItemId,
+      quantity: updatedQuantity
+    },
+    userErrors: [],
+    diagnostics: []
+  };
+}
+
 export async function markInventoryTransferReady(
   config: StoreAgentConfig,
   input: InventoryTransferMarkReadyInput,
@@ -1053,6 +1169,26 @@ const inventoryTransferCreateMutation = /* GraphQL */ `
   }
 `;
 
+const inventoryTransferSetItemsMutation = /* GraphQL */ `
+  mutation ShopifyStoreAgentInventoryTransferSetItems($input: InventoryTransferSetItemsInput!, $idempotencyKey: String!) {
+    inventoryTransferSetItems(input: $input) @idempotent(key: $idempotencyKey) {
+      inventoryTransfer {
+        id
+        status
+      }
+      updatedLineItems {
+        inventoryItemId
+        newQuantity
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
 const inventoryTransferMarkReadyMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentInventoryTransferMarkReady($id: ID!) {
     inventoryTransferMarkAsReadyToShip(id: $id) {
@@ -1117,7 +1253,7 @@ const inventoryShipmentReceiveMutation = /* GraphQL */ `
   }
 `;
 
-function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<InventorySetQuantitiesData | InventoryAdjustQuantitiesData | InventoryMoveQuantitiesData | InventoryTransferCreateData | InventoryTransferMarkReadyData | InventoryTransferCancelData | InventoryShipmentCreateInTransitData | InventoryShipmentReceiveData>, { ok: false }>): InventoryWriteResultBase {
+function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<InventorySetQuantitiesData | InventoryAdjustQuantitiesData | InventoryMoveQuantitiesData | InventoryTransferCreateData | InventoryTransferSetItemsData | InventoryTransferMarkReadyData | InventoryTransferCancelData | InventoryShipmentCreateInTransitData | InventoryShipmentReceiveData>, { ok: false }>): InventoryWriteResultBase {
   return {
     ok: false,
     status: "shopify_error",

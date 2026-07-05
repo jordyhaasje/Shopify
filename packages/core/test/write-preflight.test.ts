@@ -297,6 +297,34 @@ describe("write scope preflight", () => {
     });
   });
 
+  it("blocks inventory transfer add-items unless transfer and inventory read scopes are known", () => {
+    const result = checkWriteScopePreflight(createConfig({
+      storeUrl: "demo",
+      readOnly: false,
+      grantedScopes: ["write_inventory_transfers", "read_inventory_transfers"]
+    }), "inventory.transfer.addItems.execute");
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "blocked",
+      grantedScopesKnown: true,
+      requiredScopes: ["write_inventory_transfers", "read_inventory_transfers", "read_inventory"],
+      diagnostics: [{ code: "missing_write_scope" }]
+    });
+  });
+
+  it("allows inventory transfer add-items when transfer and inventory read scopes are known", () => {
+    expect(checkWriteScopePreflight(createConfig({
+      storeUrl: "demo",
+      readOnly: false,
+      grantedScopes: ["write_inventory_transfers", "read_inventory_transfers", "read_inventory"]
+    }), "inventory.transfer.addItems.execute")).toMatchObject({
+      ok: true,
+      status: "ok",
+      requiredScopes: ["write_inventory_transfers", "read_inventory_transfers", "read_inventory"]
+    });
+  });
+
   it("blocks inventory transfer mark-ready unless both transfer scopes are known", () => {
     const result = checkWriteScopePreflight(createConfig({
       storeUrl: "demo",
