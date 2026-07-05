@@ -7,6 +7,7 @@ import {
   previewInventoryTransfer,
   previewInventoryTransferCancel,
   previewInventoryTransferMarkReady,
+  previewInventoryTransferReceive,
   previewInventoryTransferShip,
   previewPageCreate,
   previewProductCreate,
@@ -497,6 +498,36 @@ describe("catalog and content previews", () => {
         expect.objectContaining({ field: "inventoryItemId", value: "gid://shopify/InventoryItem/1" }),
         expect.objectContaining({ field: "quantity", before: "READY_TO_SHIP", after: "IN_TRANSIT" }),
         expect.objectContaining({ field: "quantityValue", value: 3 })
+      ])
+    });
+  });
+
+  it("previews receiving an explicit inventory shipment line item quantity", () => {
+    const preview = previewInventoryTransferReceive({
+      inventoryShipmentId: "gid://shopify/InventoryShipment/1",
+      shipmentLineItemId: "gid://shopify/InventoryShipmentLineItem/1",
+      quantity: 2,
+      reason: "ACCEPTED",
+      currentStatus: "IN_TRANSIT"
+    });
+
+    expect(preview).toMatchObject({
+      ok: true,
+      status: "ok",
+      target: { type: "inventory_shipment", id: "gid://shopify/InventoryShipment/1" },
+      auditContext: {
+        tool: "inventory.transfer.receive.preview",
+        mode: "preview",
+        performsShopifyMutation: false,
+        usesShopifyWriteOperation: false
+      },
+      warnings: [],
+      proposedChanges: expect.arrayContaining([
+        expect.objectContaining({ field: "inventoryShipmentId", value: "gid://shopify/InventoryShipment/1" }),
+        expect.objectContaining({ field: "shipmentLineItemId", value: "gid://shopify/InventoryShipmentLineItem/1" }),
+        expect.objectContaining({ field: "quantity", before: "IN_TRANSIT", after: "RECEIVED" }),
+        expect.objectContaining({ field: "quantityValue", value: 2 }),
+        expect.objectContaining({ field: "reason", value: "ACCEPTED" })
       ])
     });
   });

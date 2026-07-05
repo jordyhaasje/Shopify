@@ -15,7 +15,7 @@ export interface PreviewChange {
 }
 
 export interface PreviewTarget {
-  type: "product" | "product_media" | "product_url_import" | "inventory" | "inventory_transfer" | "page" | "collection";
+  type: "product" | "product_media" | "product_url_import" | "inventory" | "inventory_transfer" | "inventory_shipment" | "page" | "collection";
   id?: string;
   handle?: string;
   title?: string;
@@ -55,6 +55,7 @@ type PreviewTool =
   | "inventory.transfer.markReady.preview"
   | "inventory.transfer.cancel.preview"
   | "inventory.transfer.ship.preview"
+  | "inventory.transfer.receive.preview"
   | "page.create.preview"
   | "collection.create.preview";
 
@@ -380,6 +381,30 @@ export function previewInventoryTransferShip(input: Record<string, unknown>): Ca
   return okResult("inventory.transfer.ship.preview", target, `Preview shipping ${quantity} unit${quantity === 1 ? "" : "s"} from inventory transfer ${inventoryTransferId}.`, changes, []);
 }
 
+export function previewInventoryTransferReceive(input: Record<string, unknown>): CatalogPreviewResult {
+  const inventoryShipmentId = firstString(input.inventoryShipmentId, input.shipmentId, input.id);
+  const shipmentLineItemId = firstString(input.shipmentLineItemId, input.lineItemId, input.inventoryShipmentLineItemId);
+  const currentStatus = firstString(input.currentStatus, input.status);
+  const reason = receiveReason(input.reason);
+  const target: PreviewTarget = { type: "inventory_shipment", id: inventoryShipmentId || undefined };
+  if (!inventoryShipmentId) return missingInput("inventory.transfer.receive.preview", target, "Provide an inventory shipment ID.");
+  if (!shipmentLineItemId) return missingInput("inventory.transfer.receive.preview", target, "Provide an inventory shipment line item ID.");
+
+  const quantity = integerValue(input.quantity);
+  if (quantity === undefined || quantity <= 0) return validationError("inventory.transfer.receive.preview", target, "Inventory transfer receive quantity must be a positive integer.");
+  if (!reason) return validationError("inventory.transfer.receive.preview", target, "Inventory transfer receive reason must be ACCEPTED or REJECTED.");
+
+  const changes = compactChanges([
+    { field: "inventoryShipmentId", action: "plan" as const, value: summarizeValue("inventoryShipmentId", inventoryShipmentId) },
+    { field: "shipmentLineItemId", action: "plan" as const, value: summarizeValue("shipmentLineItemId", shipmentLineItemId) },
+    { field: "quantity", action: "update" as const, before: currentStatus || "IN_TRANSIT", after: "RECEIVED" },
+    { field: "quantityValue", action: "plan" as const, value: quantity },
+    { field: "reason", action: "plan" as const, value: reason }
+  ]);
+
+  return okResult("inventory.transfer.receive.preview", target, `Preview receiving ${quantity} unit${quantity === 1 ? "" : "s"} for inventory shipment ${inventoryShipmentId}.`, changes, []);
+}
+
 export function previewPageCreate(input: Record<string, unknown>): CatalogPreviewResult {
   const title = firstString(input.title);
   const body = firstString(input.body, input.content, input.bodyHtml);
@@ -551,6 +576,11 @@ function stringValue(value: unknown): string | undefined {
 
 function integerValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) ? value : undefined;
+}
+
+function receiveReason(value: unknown): "ACCEPTED" | "REJECTED" | undefined {
+  const text = stringValue(value)?.toUpperCase();
+  return text === "ACCEPTED" || text === "REJECTED" ? text : undefined;
 }
 
 function inventoryQuantityName(value: unknown): string | undefined {

@@ -49,6 +49,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 - Minimal `inventory.transfer.markReady.execute` is implemented for one explicit inventory transfer ID, stored preview binding, and local preflight requiring both `write_inventory_transfers` and `read_inventory_transfers`. It marks a draft transfer ready to ship only.
 - Minimal `inventory.transfer.cancel.execute` is implemented for one explicit inventory transfer ID, stored preview binding, and local preflight requiring both `write_inventory_transfers` and `read_inventory_transfers`. It cancels one transfer only.
 - Minimal `inventory.transfer.ship.execute` is implemented for one explicit inventory transfer ID, one explicit inventory item ID, one positive quantity, stored preview binding, and local preflight requiring both `write_inventory_shipments` and `read_inventory_shipments`. It creates one in-transit inventory shipment only.
+- Minimal `inventory.transfer.receive.execute` is implemented for one explicit inventory shipment ID, one explicit shipment line item ID, one positive quantity, a reviewed receive reason of `ACCEPTED` or `REJECTED`, stored preview binding, and local preflight requiring both `write_inventory_shipments_received_items` and `read_inventory_shipments`. It receives one shipment line item only.
 - Minimal `inventory.lookup` is implemented as a read-only helper for explicit inventory item ID, variant ID, or SKU lookups. It returns compact inventory item, variant, location, and quantity summaries to help users prepare reviewed inventory previews.
 - Minimal `inventory.locationLookup` is implemented as a read-only helper for explicit location ID, location name, or location query lookups. It returns compact location summaries to help users prepare reviewed inventory previews and future location workflows.
 - A product media/update execute expansion plan exists, with media execute still intentionally not implemented.
@@ -68,7 +69,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 
 ## Later Roadmap
 
-- Inventory beyond explicit single-item quantity set, single-item adjustment, single-location state move, basic inventory lookup, basic location lookup, draft transfer create, transfer mark-ready, transfer cancel, and transfer ship, including bulk inventory, richer transfer lifecycle actions such as receive, and richer location workflows.
+- Inventory beyond explicit single-item quantity set, single-item adjustment, single-location state move, basic inventory lookup, basic location lookup, draft transfer create, transfer mark-ready, transfer cancel, transfer ship, and transfer receive, including bulk inventory, richer transfer lifecycle actions, and richer location workflows.
 - Metafields.
 - Publications.
 - Translations.

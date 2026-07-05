@@ -21,6 +21,7 @@ The goal is to test the current local-first flow end to end:
 - `inventory.transfer.markReady.execute` for one explicit inventory transfer ID and mark-ready only.
 - `inventory.transfer.cancel.execute` for one explicit inventory transfer ID and cancel only.
 - `inventory.transfer.ship.execute` for one explicit inventory transfer ID, one explicit inventory item ID, one positive quantity, and one in-transit shipment only.
+- `inventory.transfer.receive.execute` for one explicit inventory shipment ID, one explicit shipment line item ID, one positive quantity, one receive reason, and one shipment-line-item receive only.
 - Audit and output safety.
 
 ## Requirements
@@ -63,6 +64,7 @@ Manual development-store E2E validation:
 - inventory.transfer.markReady.execute: passed/failed/skipped
 - inventory.transfer.cancel.execute: passed/failed/skipped
 - inventory.transfer.ship.execute: passed/failed/skipped
+- inventory.transfer.receive.execute: passed/failed/skipped
 - Negative execute checks: passed/failed/skipped
 - Audit/output safety review: passed/failed/skipped
 - Cleanup completed:
@@ -131,6 +133,13 @@ For `inventory.transfer.ship.execute`, add both:
 
 ```text
 write_inventory_shipments
+read_inventory_shipments
+```
+
+For `inventory.transfer.receive.execute`, add both:
+
+```text
+write_inventory_shipments_received_items
 read_inventory_shipments
 ```
 
@@ -205,10 +214,10 @@ pnpm --filter shopify-store-agent run setup -- \
   --auth manual \
   --admin-token "$SHOPIFY_ADMIN_TOKEN" \
   --write-enabled \
-  --scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory,write_inventory_transfers,read_inventory_transfers,write_inventory_shipments,read_inventory_shipments"
+  --scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory,write_inventory_transfers,read_inventory_transfers,write_inventory_shipments,read_inventory_shipments,write_inventory_shipments_received_items"
 ```
 
-Use only the write scope needed for the specific test. For page-only validation, `write_content` or `write_online_store_pages` is enough. For product create, basic-field product update, explicit variant price update, explicit variant creation, explicit option creation, explicit option delete, explicit option reorder, explicit option rename, explicit option value rename, explicit option value add, explicit option value delete, or custom explicit-product collection create validation, `write_products` is required. For explicit single-item inventory quantity set, adjustment, or same-location state move validation, `write_inventory` is required. For explicit draft inventory transfer, mark-ready, or cancel validation, both `write_inventory_transfers` and `read_inventory_transfers` are required. For explicit transfer ship validation, both `write_inventory_shipments` and `read_inventory_shipments` are required.
+Use only the write scope needed for the specific test. For page-only validation, `write_content` or `write_online_store_pages` is enough. For product create, basic-field product update, explicit variant price update, explicit variant creation, explicit option creation, explicit option delete, explicit option reorder, explicit option rename, explicit option value rename, explicit option value add, explicit option value delete, or custom explicit-product collection create validation, `write_products` is required. For explicit single-item inventory quantity set, adjustment, or same-location state move validation, `write_inventory` is required. For explicit draft inventory transfer, mark-ready, or cancel validation, both `write_inventory_transfers` and `read_inventory_transfers` are required. For explicit transfer ship validation, both `write_inventory_shipments` and `read_inventory_shipments` are required. For explicit transfer receive validation, both `write_inventory_shipments_received_items` and `read_inventory_shipments` are required.
 
 For deliberate OAuth write testing on a development store, run `auth` with write mode and the minimal reviewed scope set:
 
@@ -218,10 +227,10 @@ pnpm --filter shopify-store-agent run auth -- \
   --client-id "$SHOPIFY_CLIENT_ID" \
   --client-secret "$SHOPIFY_CLIENT_SECRET" \
   --write-enabled \
-  --scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory,write_inventory_transfers,read_inventory_transfers,write_inventory_shipments,read_inventory_shipments"
+  --scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory,write_inventory_transfers,read_inventory_transfers,write_inventory_shipments,read_inventory_shipments,write_inventory_shipments_received_items"
 ```
 
-Write mode is only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-delete, explicit-option-reorder, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, or explicit-option-value-delete `product.update.execute`, custom explicit-product `collection.create.execute`, explicit single-item `inventory.setQuantity.execute`, explicit single-item `inventory.adjustQuantity.execute`, explicit same-location state `inventory.moveQuantity.execute`, explicit single-item draft transfer `inventory.transfer.execute`, explicit transfer mark-ready `inventory.transfer.markReady.execute`, explicit transfer cancel `inventory.transfer.cancel.execute`, or explicit transfer ship `inventory.transfer.ship.execute`. All other execute tools remain fail-closed placeholders.
+Write mode is only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-delete, explicit-option-reorder, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, or explicit-option-value-delete `product.update.execute`, custom explicit-product `collection.create.execute`, explicit single-item `inventory.setQuantity.execute`, explicit single-item `inventory.adjustQuantity.execute`, explicit same-location state `inventory.moveQuantity.execute`, explicit single-item draft transfer `inventory.transfer.execute`, explicit transfer mark-ready `inventory.transfer.markReady.execute`, explicit transfer cancel `inventory.transfer.cancel.execute`, explicit transfer ship `inventory.transfer.ship.execute`, or explicit transfer receive `inventory.transfer.receive.execute`. All other execute tools remain fail-closed placeholders.
 
 ## Local E2E Config Preflight
 
@@ -231,7 +240,7 @@ Before any live development-store write step, run a local preflight against the 
 pnpm --filter shopify-store-agent run e2e-preflight -- \
   --store your-store.myshopify.com \
   --config /absolute/path/to/config.json \
-  --required-scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory,write_inventory_transfers,read_inventory_transfers,write_inventory_shipments,read_inventory_shipments" \
+  --required-scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory,write_inventory_transfers,read_inventory_transfers,write_inventory_shipments,read_inventory_shipments,write_inventory_shipments_received_items" \
   --require-write-enabled
 ```
 
@@ -728,11 +737,46 @@ Use only a disposable/development inventory transfer where creating an in-transi
 - No bulk inventory, product update, or location management operation is performed.
 - Output and audit contain no secrets, raw reviewed payload, raw Shopify response, product dump, location dump, transfer dump, shipment dump, or full Shopify node.
 
+## Inventory Transfer Receive E2E
+
+Use only a disposable/development inventory shipment where receiving one shipment line item is safe. This validates only the receive lifecycle step; it does not create, edit, mark ready, cancel, or create in-transit shipments.
+
+1. Prepare or identify a safe inventory shipment ID and shipment line item ID from user-provided development-store context. Do not discover shipment IDs autonomously during execute.
+
+2. Run `inventory.transfer.receive.preview` with explicit test data:
+
+```json
+{
+  "inventoryShipmentId": "gid://shopify/InventoryShipment/<test-shipment-id>",
+  "shipmentLineItemId": "gid://shopify/InventoryShipmentLineItem/<test-shipment-line-item-id>",
+  "quantity": 1,
+  "reason": "ACCEPTED",
+  "currentStatus": "IN_TRANSIT"
+}
+```
+
+3. Review the preview binding values and `executeRequest`.
+
+4. Confirm read-only mode is explicitly off only for this development-store test.
+
+5. Confirm local granted scopes include both `write_inventory_shipments_received_items` and `read_inventory_shipments`.
+
+6. Run `inventory.transfer.receive.execute` with the reviewed binding values and `confirmed: true`.
+
+7. Confirm:
+
+- The mutation is limited to `inventoryShipmentReceive`.
+- The shipment ID, shipment line item ID, quantity, and reason come from the stored preview.
+- No transfer create, item edit, mark-ready, cancel, or ship-creation action is performed.
+- No shipment lookup/discovery is performed during execute.
+- No bulk inventory, product update, or location management operation is performed.
+- Output and audit contain no secrets, raw reviewed payload, raw Shopify response, product dump, location dump, transfer dump, shipment dump, or full Shopify node.
+
 ## Negative Tests
 
 Run these manually against the development-store setup:
 
-- Read-only mode on: `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, `inventory.moveQuantity.execute`, `inventory.transfer.execute`, `inventory.transfer.markReady.execute`, `inventory.transfer.cancel.execute`, and `inventory.transfer.ship.execute` return `blocked`.
+- Read-only mode on: `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, `inventory.moveQuantity.execute`, `inventory.transfer.execute`, `inventory.transfer.markReady.execute`, `inventory.transfer.cancel.execute`, `inventory.transfer.ship.execute`, and `inventory.transfer.receive.execute` return `blocked`.
 - Missing `confirmed: true`: execute returns `blocked`.
 - Missing `previewId`: execute returns `blocked`.
 - Expired preview: execute returns `blocked`.
@@ -770,7 +814,7 @@ Confirm:
 - No order/customer dump.
 - Blocked cases audit `blocked`.
 - Placeholder cases audit `not_implemented`.
-- Successful `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, `inventory.moveQuantity.execute`, `inventory.transfer.execute`, `inventory.transfer.markReady.execute`, `inventory.transfer.cancel.execute`, and `inventory.transfer.ship.execute` audit `success` only after Shopify write success.
+- Successful `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, `inventory.moveQuantity.execute`, `inventory.transfer.execute`, `inventory.transfer.markReady.execute`, `inventory.transfer.cancel.execute`, `inventory.transfer.ship.execute`, and `inventory.transfer.receive.execute` audit `success` only after Shopify write success.
 
 ## Troubleshooting
 

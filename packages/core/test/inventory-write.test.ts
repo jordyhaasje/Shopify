@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adjustInventoryQuantity, cancelInventoryTransfer, createConfig, createInventoryTransfer, markInventoryTransferReady, moveInventoryQuantity, setInventoryQuantity, shipInventoryTransfer, type FetchLike } from "../src/index.js";
+import { adjustInventoryQuantity, cancelInventoryTransfer, createConfig, createInventoryTransfer, markInventoryTransferReady, moveInventoryQuantity, receiveInventoryTransfer, setInventoryQuantity, shipInventoryTransfer, type FetchLike } from "../src/index.js";
 
 describe("inventory write helper", () => {
   it("sets an explicit inventory quantity through inventorySetQuantities", async () => {
@@ -646,6 +646,64 @@ describe("inventory write helper", () => {
         }]
       },
       idempotencyKey: "store-agent:preview_ship"
+    });
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("shpat_inventory_secret");
+  });
+
+  it("receives an explicit inventory shipment line item quantity", async () => {
+    const requests: Array<{ body: string; token?: string }> = [];
+    const fetcher: FetchLike = async (_url, init) => {
+      requests.push({ body: init.body, token: init.headers["X-Shopify-Access-Token"] });
+      return jsonResponse({
+        data: {
+          inventoryShipmentReceive: {
+            inventoryShipment: {
+              id: "gid://shopify/InventoryShipment/1",
+              status: "RECEIVED",
+              rawNodeOnly: "do not return"
+            },
+            userErrors: []
+          }
+        }
+      });
+    };
+
+    const result = await receiveInventoryTransfer(config(), {
+      inventoryShipmentId: "gid://shopify/InventoryShipment/1",
+      shipmentLineItemId: "gid://shopify/InventoryShipmentLineItem/1",
+      quantity: 2,
+      reason: "ACCEPTED",
+      idempotencyKey: "store-agent:preview_receive"
+    }, { fetcher });
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "ok",
+      inventoryShipment: {
+        inventoryShipmentId: "gid://shopify/InventoryShipment/1",
+        status: "RECEIVED",
+        shipmentLineItemId: "gid://shopify/InventoryShipmentLineItem/1",
+        quantity: 2,
+        reason: "ACCEPTED"
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentInventoryShipmentReceive");
+    expect(request.query).toContain("inventoryShipmentReceive");
+    expect(request.query).toContain("@idempotent");
+    expect(request.query).not.toContain("inventoryShipmentCreateInTransit");
+    expect(request.query).not.toContain("inventoryTransferCancel");
+    expect(request.variables).toEqual({
+      id: "gid://shopify/InventoryShipment/1",
+      lineItems: [{
+        shipmentLineItemId: "gid://shopify/InventoryShipmentLineItem/1",
+        quantity: 2,
+        reason: "ACCEPTED"
+      }],
+      idempotencyKey: "store-agent:preview_receive"
     });
     expect(output).not.toContain("rawNodeOnly");
     expect(output).not.toContain("shpat_inventory_secret");

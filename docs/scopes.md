@@ -26,6 +26,7 @@ Use for product creation, updates, variants, collections, and product-level meta
 - Transfer write: `write_inventory_transfers`
 - Shipment read: `read_inventory_shipments`
 - Shipment write: `write_inventory_shipments`
+- Shipment received-items write: `write_inventory_shipments_received_items`
 
 Use only when inventory quantities, locations, or inventory item data are part of the enabled workflow.
 
@@ -46,6 +47,8 @@ Use only when inventory quantities, locations, or inventory item data are part o
 `inventory.transfer.cancel.execute` also requires both `write_inventory_transfers` and `read_inventory_transfers` in local granted-scope preflight. This inventory execute path is limited to one stored `inventory.transfer.cancel.preview` at a time with an explicit inventory transfer ID. It uses only the stored preview as the source of truth, cancels a transfer with `inventoryTransferCancel`, does not perform lookup/discovery during execute, and does not implement transfer create, item edits, mark-ready, ship/receive, bulk inventory, or location management.
 
 `inventory.transfer.ship.execute` requires both `write_inventory_shipments` and `read_inventory_shipments` in local granted-scope preflight. This inventory execute path is limited to one stored `inventory.transfer.ship.preview` at a time with an explicit inventory transfer ID, explicit inventory item ID, and positive quantity. It uses only the stored preview as the source of truth, creates an in-transit shipment with `inventoryShipmentCreateInTransit`, does not perform lookup/discovery during execute, and does not implement transfer create, item edits, mark-ready, cancel, receive, bulk inventory, or location management.
+
+`inventory.transfer.receive.execute` requires both `write_inventory_shipments_received_items` and `read_inventory_shipments` in local granted-scope preflight. This inventory execute path is limited to one stored `inventory.transfer.receive.preview` at a time with an explicit inventory shipment ID, explicit shipment line item ID, positive quantity, and reviewed receive reason of `ACCEPTED` or `REJECTED`. It uses only the stored preview as the source of truth, receives one shipment line item with `inventoryShipmentReceive`, does not perform lookup/discovery during execute, and does not implement transfer create, item edits, mark-ready, cancel, ship creation, bulk inventory, or location management.
 
 ## Orders
 
