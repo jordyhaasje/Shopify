@@ -41,6 +41,8 @@ Use only when inventory quantities, locations, or inventory item data are part o
 
 `inventory.transfer.markReady.execute` also requires both `write_inventory_transfers` and `read_inventory_transfers` in local granted-scope preflight. This inventory execute path is limited to one stored `inventory.transfer.markReady.preview` at a time with an explicit inventory transfer ID. It uses only the stored preview as the source of truth, marks a transfer ready to ship with `inventoryTransferMarkAsReadyToShip`, does not perform lookup/discovery during execute, and does not implement transfer create, item edits, ship/receive/cancel, bulk inventory, or location management.
 
+`inventory.transfer.cancel.execute` also requires both `write_inventory_transfers` and `read_inventory_transfers` in local granted-scope preflight. This inventory execute path is limited to one stored `inventory.transfer.cancel.preview` at a time with an explicit inventory transfer ID. It uses only the stored preview as the source of truth, cancels a transfer with `inventoryTransferCancel`, does not perform lookup/discovery during execute, and does not implement transfer create, item edits, mark-ready, ship/receive, bulk inventory, or location management.
+
 ## Orders
 
 - Read: `read_orders`

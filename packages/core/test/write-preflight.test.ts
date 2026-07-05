@@ -324,4 +324,32 @@ describe("write scope preflight", () => {
       requiredScopes: ["write_inventory_transfers", "read_inventory_transfers"]
     });
   });
+
+  it("blocks inventory transfer cancel unless both transfer scopes are known", () => {
+    const result = checkWriteScopePreflight(createConfig({
+      storeUrl: "demo",
+      readOnly: false,
+      grantedScopes: ["write_inventory_transfers"]
+    }), "inventory.transfer.cancel.execute");
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "blocked",
+      grantedScopesKnown: true,
+      requiredScopes: ["write_inventory_transfers", "read_inventory_transfers"],
+      diagnostics: [{ code: "missing_write_scope" }]
+    });
+  });
+
+  it("allows inventory transfer cancel when read and write transfer scopes are known", () => {
+    expect(checkWriteScopePreflight(createConfig({
+      storeUrl: "demo",
+      readOnly: false,
+      grantedScopes: ["write_inventory_transfers", "read_inventory_transfers"]
+    }), "inventory.transfer.cancel.execute")).toMatchObject({
+      ok: true,
+      status: "ok",
+      requiredScopes: ["write_inventory_transfers", "read_inventory_transfers"]
+    });
+  });
 });

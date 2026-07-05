@@ -5,6 +5,7 @@ import {
   previewInventoryMoveQuantity,
   previewInventorySetQuantity,
   previewInventoryTransfer,
+  previewInventoryTransferCancel,
   previewInventoryTransferMarkReady,
   previewPageCreate,
   previewProductCreate,
@@ -443,6 +444,30 @@ describe("catalog and content previews", () => {
       proposedChanges: expect.arrayContaining([
         expect.objectContaining({ field: "inventoryTransferId", value: "gid://shopify/InventoryTransfer/1" }),
         expect.objectContaining({ field: "status", before: "DRAFT", after: "READY_TO_SHIP" })
+      ])
+    });
+  });
+
+  it("previews cancelling an explicit inventory transfer", () => {
+    const preview = previewInventoryTransferCancel({
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+      currentStatus: "READY_TO_SHIP"
+    });
+
+    expect(preview).toMatchObject({
+      ok: true,
+      status: "ok",
+      target: { type: "inventory_transfer", id: "gid://shopify/InventoryTransfer/1" },
+      auditContext: {
+        tool: "inventory.transfer.cancel.preview",
+        mode: "preview",
+        performsShopifyMutation: false,
+        usesShopifyWriteOperation: false
+      },
+      warnings: [],
+      proposedChanges: expect.arrayContaining([
+        expect.objectContaining({ field: "inventoryTransferId", value: "gid://shopify/InventoryTransfer/1" }),
+        expect.objectContaining({ field: "status", before: "READY_TO_SHIP", after: "CANCELLED" })
       ])
     });
   });

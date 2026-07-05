@@ -46,6 +46,10 @@ export interface InventoryTransferMarkReadyInput {
   inventoryTransferId: string;
 }
 
+export interface InventoryTransferCancelInput {
+  inventoryTransferId: string;
+}
+
 export interface InventoryQuantityChangeSummary {
   name?: string;
   delta?: number;
@@ -101,6 +105,11 @@ export interface InventoryTransferMarkReadySummary {
   status?: string;
 }
 
+export interface InventoryTransferCancelSummary {
+  inventoryTransferId: string;
+  status?: string;
+}
+
 export interface InventoryWriteDiagnostic {
   severity: "warning" | "error";
   code: string;
@@ -135,6 +144,10 @@ export interface InventoryTransferResult extends InventoryWriteResultBase {
 
 export interface InventoryTransferMarkReadyResult extends InventoryWriteResultBase {
   inventoryTransfer?: InventoryTransferMarkReadySummary;
+}
+
+export interface InventoryTransferCancelResult extends InventoryWriteResultBase {
+  inventoryTransfer?: InventoryTransferCancelSummary;
 }
 
 export interface InventoryWriteOptions {
@@ -198,6 +211,16 @@ interface InventoryTransferCreateData {
 
 interface InventoryTransferMarkReadyData {
   inventoryTransferMarkAsReadyToShip?: {
+    inventoryTransfer?: {
+      id?: unknown;
+      status?: unknown;
+    } | null;
+    userErrors?: GraphqlUserError[];
+  } | null;
+}
+
+interface InventoryTransferCancelData {
+  inventoryTransferCancel?: {
     inventoryTransfer?: {
       id?: unknown;
       status?: unknown;
@@ -667,6 +690,65 @@ export async function markInventoryTransferReady(
   };
 }
 
+export async function cancelInventoryTransfer(
+  config: StoreAgentConfig,
+  input: InventoryTransferCancelInput,
+  options: InventoryWriteOptions = {}
+): Promise<InventoryTransferCancelResult> {
+  if (config.readOnly) return blocked("Inventory transfer cancel is blocked because read-only mode is enabled.");
+
+  const inventoryTransferId = safeText(input.inventoryTransferId, 180);
+  if (!inventoryTransferId) return missingInput("Provide an inventory transfer ID.");
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  let result: ShopifyGraphqlResult<InventoryTransferCancelData>;
+  try {
+    result = await client.request<InventoryTransferCancelData>({
+      query: inventoryTransferCancelMutation,
+      variables: { id: inventoryTransferId }
+    });
+  } catch {
+    return shopifyFailure("Shopify inventory transfer cancel request failed before a safe response was available.");
+  }
+
+  if (!result.ok) return mapGraphqlFailure(result);
+
+  const userErrors = result.data.inventoryTransferCancel?.userErrors ?? result.userErrors;
+  if (userErrors.length > 0) {
+    return {
+      ok: false,
+      status: "user_errors",
+      summary: "Shopify rejected the inventory transfer cancel request.",
+      userErrors: sanitizeUserErrors(userErrors),
+      diagnostics: [{ severity: "warning", code: "shopify_user_errors", message: "Shopify returned inventory transfer cancel user errors." }]
+    };
+  }
+
+  const transfer = result.data.inventoryTransferCancel?.inventoryTransfer;
+  const cancelledTransferId = safeText(transfer?.id, 180);
+  if (!cancelledTransferId) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify inventory transfer cancel response did not include a transfer ID.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify inventory transfer cancel response did not include a transfer ID." }]
+    };
+  }
+
+  return {
+    ok: true,
+    status: "ok",
+    summary: "Cancelled Shopify inventory transfer.",
+    inventoryTransfer: {
+      inventoryTransferId: cancelledTransferId,
+      status: safeText(transfer?.status, 80)
+    },
+    userErrors: [],
+    diagnostics: []
+  };
+}
+
 const inventorySetQuantitiesMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentInventorySetQuantities($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
     inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
@@ -749,6 +831,22 @@ const inventoryTransferCreateMutation = /* GraphQL */ `
 const inventoryTransferMarkReadyMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentInventoryTransferMarkReady($id: ID!) {
     inventoryTransferMarkAsReadyToShip(id: $id) {
+      inventoryTransfer {
+        id
+        status
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
+const inventoryTransferCancelMutation = /* GraphQL */ `
+  mutation ShopifyStoreAgentInventoryTransferCancel($id: ID!) {
+    inventoryTransferCancel(id: $id) {
       inventoryTransfer {
         id
         status

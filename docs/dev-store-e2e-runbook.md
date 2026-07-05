@@ -19,6 +19,7 @@ The goal is to test the current local-first flow end to end:
 - `inventory.moveQuantity.execute` for one explicit inventory item ID, one explicit location ID, and one same-location quantity state move only.
 - `inventory.transfer.execute` for one explicit inventory item ID, one source location ID, one destination location ID, and one draft transfer only.
 - `inventory.transfer.markReady.execute` for one explicit inventory transfer ID and mark-ready only.
+- `inventory.transfer.cancel.execute` for one explicit inventory transfer ID and cancel only.
 - Audit and output safety.
 
 ## Requirements
@@ -59,6 +60,7 @@ Manual development-store E2E validation:
 - inventory.moveQuantity.execute: passed/failed/skipped
 - inventory.transfer.execute: passed/failed/skipped
 - inventory.transfer.markReady.execute: passed/failed/skipped
+- inventory.transfer.cancel.execute: passed/failed/skipped
 - Negative execute checks: passed/failed/skipped
 - Audit/output safety review: passed/failed/skipped
 - Cleanup completed:
@@ -116,7 +118,7 @@ For `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, or `inv
 write_inventory
 ```
 
-For `inventory.transfer.execute` or `inventory.transfer.markReady.execute`, add both:
+For `inventory.transfer.execute`, `inventory.transfer.markReady.execute`, or `inventory.transfer.cancel.execute`, add both:
 
 ```text
 write_inventory_transfers
@@ -210,7 +212,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory,write_inventory_transfers,read_inventory_transfers"
 ```
 
-Write mode is only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-delete, explicit-option-reorder, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, or explicit-option-value-delete `product.update.execute`, custom explicit-product `collection.create.execute`, explicit single-item `inventory.setQuantity.execute`, explicit single-item `inventory.adjustQuantity.execute`, explicit same-location state `inventory.moveQuantity.execute`, explicit single-item draft transfer `inventory.transfer.execute`, or explicit transfer mark-ready `inventory.transfer.markReady.execute`. All other execute tools remain fail-closed placeholders.
+Write mode is only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-delete, explicit-option-reorder, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, or explicit-option-value-delete `product.update.execute`, custom explicit-product `collection.create.execute`, explicit single-item `inventory.setQuantity.execute`, explicit single-item `inventory.adjustQuantity.execute`, explicit same-location state `inventory.moveQuantity.execute`, explicit single-item draft transfer `inventory.transfer.execute`, explicit transfer mark-ready `inventory.transfer.markReady.execute`, or explicit transfer cancel `inventory.transfer.cancel.execute`. All other execute tools remain fail-closed placeholders.
 
 ## Local E2E Config Preflight
 
@@ -651,11 +653,43 @@ Use only a disposable/development inventory transfer where marking it ready to s
 - No bulk inventory, product update, or location management operation is performed.
 - Output and audit contain no secrets, raw reviewed payload, raw Shopify response, product dump, location dump, transfer dump, or full Shopify node.
 
+## Inventory Transfer Cancel E2E
+
+Use only a disposable/development inventory transfer where cancellation is safe. This validates only the cancel lifecycle step; it does not create, edit, mark ready, ship, or receive transfers.
+
+1. Prepare or identify a safe inventory transfer ID from user-provided development-store context. Do not discover transfer IDs autonomously during execute.
+
+2. Run `inventory.transfer.cancel.preview` with explicit test data:
+
+```json
+{
+  "inventoryTransferId": "gid://shopify/InventoryTransfer/<test-transfer-id>",
+  "currentStatus": "READY_TO_SHIP"
+}
+```
+
+3. Review the preview binding values and `executeRequest`.
+
+4. Confirm read-only mode is explicitly off only for this development-store test.
+
+5. Confirm local granted scopes include both `write_inventory_transfers` and `read_inventory_transfers`.
+
+6. Run `inventory.transfer.cancel.execute` with the reviewed binding values and `confirmed: true`.
+
+7. Confirm:
+
+- The mutation is limited to `inventoryTransferCancel`.
+- The transfer ID comes from the stored preview.
+- No transfer create, item edit, mark-ready, ship, or receive action is performed.
+- No transfer lookup/discovery is performed during execute.
+- No bulk inventory, product update, or location management operation is performed.
+- Output and audit contain no secrets, raw reviewed payload, raw Shopify response, product dump, location dump, transfer dump, or full Shopify node.
+
 ## Negative Tests
 
 Run these manually against the development-store setup:
 
-- Read-only mode on: `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, `inventory.moveQuantity.execute`, `inventory.transfer.execute`, and `inventory.transfer.markReady.execute` return `blocked`.
+- Read-only mode on: `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, `inventory.moveQuantity.execute`, `inventory.transfer.execute`, `inventory.transfer.markReady.execute`, and `inventory.transfer.cancel.execute` return `blocked`.
 - Missing `confirmed: true`: execute returns `blocked`.
 - Missing `previewId`: execute returns `blocked`.
 - Expired preview: execute returns `blocked`.
@@ -693,7 +727,7 @@ Confirm:
 - No order/customer dump.
 - Blocked cases audit `blocked`.
 - Placeholder cases audit `not_implemented`.
-- Successful `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, `inventory.moveQuantity.execute`, `inventory.transfer.execute`, and `inventory.transfer.markReady.execute` audit `success` only after Shopify write success.
+- Successful `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, `inventory.moveQuantity.execute`, `inventory.transfer.execute`, `inventory.transfer.markReady.execute`, and `inventory.transfer.cancel.execute` audit `success` only after Shopify write success.
 
 ## Troubleshooting
 

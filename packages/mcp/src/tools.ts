@@ -5,6 +5,7 @@ import {
   checkShopifyCapabilities,
   checkWriteScopePreflight,
   type CatalogPreviewResult,
+  cancelInventoryTransfer,
   createBulkPreview,
   createCollection,
   createConfig,
@@ -35,6 +36,8 @@ import {
   type InventoryTransferResult,
   type InventoryTransferMarkReadyInput,
   type InventoryTransferMarkReadyResult,
+  type InventoryTransferCancelInput,
+  type InventoryTransferCancelResult,
   loadStoredConfig,
   defaultAuditLogPath,
   defaultPreviewStorePath,
@@ -94,6 +97,7 @@ import {
   previewInventorySetQuantity,
   previewInventoryTransfer,
   previewInventoryTransferMarkReady,
+  previewInventoryTransferCancel,
   previewPageCreate,
   previewProductCreate,
   previewProductImportFromUserUrl,
@@ -214,6 +218,7 @@ function implementedExecuteToolForPreview(previewTool: string): string | undefin
   if (previewTool === "inventory.moveQuantity.preview") return "inventory.moveQuantity.execute";
   if (previewTool === "inventory.transfer.preview") return "inventory.transfer.execute";
   if (previewTool === "inventory.transfer.markReady.preview") return "inventory.transfer.markReady.execute";
+  if (previewTool === "inventory.transfer.cancel.preview") return "inventory.transfer.cancel.execute";
   return undefined;
 }
 
@@ -829,6 +834,50 @@ async function inventoryTransferMarkReadyExecuteResult(input: Record<string, unk
 
   const write = await markInventoryTransferReady(context.config, extracted.input, { fetcher: context.fetcher });
   return inventoryTransferMarkReadyWriteResult(tool, storedTarget, binding, write, context);
+}
+
+async function inventoryTransferCancelExecuteResult(input: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>> {
+  const tool = "inventory.transfer.cancel.execute";
+  const target = inventoryExecuteTarget(input, context);
+
+  if (context.config.readOnly) {
+    return blockedImplementedExecuteResult(tool, target, [diagnostic("read_only", "Execute is blocked because read-only mode is enabled.")], context, "inventory.transfer.cancel.preview");
+  }
+
+  if (!context.previewStore) {
+    return blockedImplementedExecuteResult(tool, target, [diagnostic("stored_preview_missing", "Stored preview was not found; execute binding fails closed.")], context, "inventory.transfer.cancel.preview");
+  }
+
+  const lookup = context.previewStore.getPreview(stringInput(input, "previewId"));
+  const storedTarget = lookup.record ? previewRecordBindingTarget(lookup.record) : target;
+  const binding = verifyStoredPreviewBinding(context.previewStore, input, {
+    executeTool: tool,
+    expectedPreviewTool: "inventory.transfer.cancel.preview",
+    target: storedTarget
+  });
+  if (!stringInput(input, "target")) {
+    binding.ok = false;
+    binding.diagnostics = [
+      diagnostic("missing_target", "Execute requires the reviewed preview target."),
+      ...binding.diagnostics.filter((item) => item.code !== "missing_target")
+    ];
+  }
+  if (!binding.ok) return blockedImplementedExecuteResult(tool, storedTarget, binding.diagnostics, context, binding);
+  if (!lookup.ok || !lookup.record) {
+    return blockedImplementedExecuteResult(tool, storedTarget, [lookup.diagnostic ?? diagnostic("stored_preview_missing", "Stored preview was not found; execute binding fails closed.")], context, binding);
+  }
+  if (lookup.record.tool !== "inventory.transfer.cancel.preview") {
+    return blockedImplementedExecuteResult(tool, storedTarget, [diagnostic("stored_preview_tool_mismatch", "Stored preview is not an inventory transfer cancel preview.")], context, binding);
+  }
+
+  const extracted = inventoryTransferCancelInputFromStoredPreview(lookup.record);
+  if (!extracted.ok) return blockedImplementedExecuteResult(tool, storedTarget, extracted.diagnostics, context, binding);
+
+  const preflight = checkWriteScopePreflight(context.config, tool);
+  if (!preflight.ok) return blockedImplementedExecuteResult(tool, storedTarget, preflight.diagnostics, context, binding);
+
+  const write = await cancelInventoryTransfer(context.config, extracted.input, { fetcher: context.fetcher });
+  return inventoryTransferCancelWriteResult(tool, storedTarget, binding, write, context);
 }
 
 function savePreviewRecord(context: ToolContext, record: Parameters<MemoryPreviewStore["savePreview"]>[0]): StoredPreviewRecord {
@@ -1533,6 +1582,39 @@ function inventoryTransferMarkReadyWriteResult(
   };
 }
 
+function inventoryTransferCancelWriteResult(
+  tool: string,
+  target: string,
+  binding: ExecutePreviewBindingResult,
+  write: InventoryTransferCancelResult,
+  context: ToolContext
+): Record<string, unknown> {
+  const result = inventoryWriteAuditResult(write);
+  const audit = context.audit.record({
+    tool,
+    target: safeExecuteString(target),
+    mode: "execute",
+    summary: write.summary,
+    result
+  });
+  return {
+    ok: write.ok,
+    mode: "execute",
+    implemented: true,
+    status: write.status,
+    summary: write.summary,
+    audit,
+    inventoryTransfer: write.inventoryTransfer,
+    userErrors: write.userErrors,
+    diagnostics: write.diagnostics,
+    previewBinding: {
+      previewId: binding.previewId,
+      expectedTool: binding.expectedPreviewTool,
+      target: binding.target
+    }
+  };
+}
+
 function productCreateAuditResult(write: ProductCreateResult): "success" | "blocked" | "failed" {
   if (write.status === "ok") return "success";
   if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
@@ -1551,7 +1633,7 @@ function collectionCreateAuditResult(write: CollectionCreateResult): "success" |
   return "failed";
 }
 
-function inventoryWriteAuditResult(write: InventorySetQuantityResult | InventoryAdjustQuantityResult | InventoryMoveQuantityResult | InventoryTransferResult | InventoryTransferMarkReadyResult): "success" | "blocked" | "failed" {
+function inventoryWriteAuditResult(write: InventorySetQuantityResult | InventoryAdjustQuantityResult | InventoryMoveQuantityResult | InventoryTransferResult | InventoryTransferMarkReadyResult | InventoryTransferCancelResult): "success" | "blocked" | "failed" {
   if (write.status === "ok") return "success";
   if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
   return "failed";
@@ -2453,6 +2535,24 @@ function inventoryTransferMarkReadyInputFromStoredPreview(record: StoredPreviewR
   };
 }
 
+function inventoryTransferCancelInputFromStoredPreview(record: StoredPreviewRecord): { ok: true; input: InventoryTransferCancelInput } | { ok: false; diagnostics: ExecutePreviewBindingDiagnostic[] } {
+  const inventoryTransferId = safeContentText(targetField(record, "id") ?? changeValue(record, "inventoryTransferId"), 180);
+
+  if (!inventoryTransferId) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_inventory_transfer_id", "Stored inventory transfer cancel preview did not include a safe inventory transfer ID.")]
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      inventoryTransferId
+    }
+  };
+}
+
 function inventoryQuantityNameFromStoredPreview(value: unknown): string | undefined {
   const text = safeContentText(value, 80)?.toLowerCase();
   return text && ["available", "reserved", "damaged", "quality_control", "safety_stock"].includes(text) ? text : undefined;
@@ -2859,6 +2959,18 @@ export const tools: ToolDefinition[] = [
     description: "Mark one Shopify inventory transfer ready to ship only after stored preview binding and explicit confirmation.",
     inputSchema: { type: "object" },
     handler: (input, context) => inventoryTransferMarkReadyExecuteResult(input, context)
+  },
+  {
+    name: "inventory.transfer.cancel.preview",
+    description: "Preview cancelling one explicit Shopify inventory transfer.",
+    inputSchema: { type: "object" },
+    handler: (input, context) => catalogPreviewResult(previewInventoryTransferCancel(input), context)
+  },
+  {
+    name: "inventory.transfer.cancel.execute",
+    description: "Cancel one Shopify inventory transfer only after stored preview binding and explicit confirmation.",
+    inputSchema: { type: "object" },
+    handler: (input, context) => inventoryTransferCancelExecuteResult(input, context)
   },
   {
     name: "order.find",
