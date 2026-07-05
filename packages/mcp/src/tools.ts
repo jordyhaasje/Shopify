@@ -110,6 +110,7 @@ import {
   previewInventorySetQuantity,
   previewInventoryTransfer,
   previewInventoryTransferAddItems,
+  previewInventoryTransferRemoveItems,
   previewInventoryTransferMarkReady,
   previewInventoryTransferCancel,
   previewInventoryTransferShip,
@@ -3538,6 +3539,12 @@ export const tools: ToolDefinition[] = [
     description: "Set one explicit inventory transfer item quantity only after stored preview binding and explicit confirmation.",
     inputSchema: { type: "object" },
     handler: (input, context) => inventoryTransferAddItemsExecuteResult(input, context)
+  },
+  {
+    name: "inventory.transfer.removeItems.preview",
+    description: "Preview removing one explicit inventory item from an explicit Shopify inventory transfer.",
+    inputSchema: { type: "object" },
+    handler: (input, context) => catalogPreviewResult(previewInventoryTransferRemoveItems(input), context)
   },
   {
     name: "inventory.transfer.markReady.preview",

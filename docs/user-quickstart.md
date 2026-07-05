@@ -181,6 +181,7 @@ inventory.adjustQuantity.preview -> inventory.adjustQuantity.execute
 inventory.moveQuantity.preview -> inventory.moveQuantity.execute
 inventory.transfer.preview -> inventory.transfer.execute
 inventory.transfer.addItems.preview -> inventory.transfer.addItems.execute
+inventory.transfer.removeItems.preview
 inventory.transfer.markReady.preview -> inventory.transfer.markReady.execute
 inventory.transfer.cancel.preview -> inventory.transfer.cancel.execute
 inventory.transfer.ship.preview -> inventory.transfer.ship.execute
@@ -264,6 +265,7 @@ inventory.adjustQuantity.preview
 inventory.moveQuantity.preview
 inventory.transfer.preview
 inventory.transfer.addItems.preview
+inventory.transfer.removeItems.preview
 inventory.transfer.markReady.preview
 inventory.transfer.cancel.preview
 inventory.transfer.ship.preview
@@ -318,5 +320,5 @@ theme.section.generate
 - npm/npx package install as the primary route.
 - Product update execute beyond basic fields, explicit variant price updates, explicit variant creation, explicit option creation, explicit option delete, explicit option reorder, explicit option rename, explicit option value rename, explicit option value add, and explicit option value delete.
 - Production-store write automation.
-- Rule-based/smart collection create, collection publishing, refund, tracking, customer, bulk, theme, media, inventory beyond explicit lookup, single-item quantity set, single-item quantity adjustment, same-location quantity move, explicit draft transfer create, transfer add-item quantity set, transfer mark-ready, transfer cancel, transfer ship, and transfer receive, metafields, publications, translations, and other advanced execute implementations.
+- Rule-based/smart collection create, collection publishing, refund, tracking, customer, bulk, theme, media, inventory beyond explicit lookup, single-item quantity set, single-item quantity adjustment, same-location quantity move, explicit draft transfer create, transfer add-item quantity set, preview-only transfer item removal planning, transfer mark-ready, transfer cancel, transfer ship, and transfer receive, metafields, publications, translations, and other advanced execute implementations.
 - Automated live Shopify tests.

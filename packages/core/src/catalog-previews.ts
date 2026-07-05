@@ -53,6 +53,7 @@ type PreviewTool =
   | "inventory.moveQuantity.preview"
   | "inventory.transfer.preview"
   | "inventory.transfer.addItems.preview"
+  | "inventory.transfer.removeItems.preview"
   | "inventory.transfer.markReady.preview"
   | "inventory.transfer.cancel.preview"
   | "inventory.transfer.ship.preview"
@@ -352,6 +353,23 @@ export function previewInventoryTransferAddItems(input: Record<string, unknown>)
   ]);
 
   return okResult("inventory.transfer.addItems.preview", target, `Preview adding ${quantity} item${quantity === 1 ? "" : "s"} to inventory transfer ${inventoryTransferId}.`, changes, []);
+}
+
+export function previewInventoryTransferRemoveItems(input: Record<string, unknown>): CatalogPreviewResult {
+  const inventoryTransferId = firstString(input.inventoryTransferId, input.transferId, input.id);
+  const inventoryItemId = firstString(input.inventoryItemId, input.inventoryItemID);
+  const currentStatus = firstString(input.currentStatus, input.status);
+  const target: PreviewTarget = { type: "inventory_transfer", id: inventoryTransferId || undefined };
+  if (!inventoryTransferId) return missingInput("inventory.transfer.removeItems.preview", target, "Provide an inventory transfer ID.");
+  if (!inventoryItemId) return missingInput("inventory.transfer.removeItems.preview", target, "Provide an inventory item ID.");
+
+  const changes = compactChanges([
+    { field: "inventoryTransferId", action: "plan" as const, value: summarizeValue("inventoryTransferId", inventoryTransferId) },
+    { field: "inventoryItemId", action: "plan" as const, value: summarizeValue("inventoryItemId", inventoryItemId) },
+    { field: "transferItems", action: "delete" as const, before: currentStatus || "DRAFT", after: "REMOVE_ITEM" }
+  ]);
+
+  return okResult("inventory.transfer.removeItems.preview", target, `Preview removing item ${inventoryItemId} from inventory transfer ${inventoryTransferId}.`, changes, []);
 }
 
 export function previewInventoryTransferMarkReady(input: Record<string, unknown>): CatalogPreviewResult {
