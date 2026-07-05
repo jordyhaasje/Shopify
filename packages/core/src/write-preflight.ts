@@ -25,7 +25,7 @@ export const inventoryAdjustQuantityWriteScopes = ["write_inventory"] as const;
 export const inventoryMoveQuantityWriteScopes = ["write_inventory"] as const;
 export const inventoryTransferWriteScopes = ["write_inventory_transfers", "read_inventory_transfers"] as const;
 
-type WriteExecuteTool = "page.create.execute" | "product.create.execute" | "product.update.execute" | "collection.create.execute" | "inventory.setQuantity.execute" | "inventory.adjustQuantity.execute" | "inventory.moveQuantity.execute" | "inventory.transfer.execute";
+type WriteExecuteTool = "page.create.execute" | "product.create.execute" | "product.update.execute" | "collection.create.execute" | "inventory.setQuantity.execute" | "inventory.adjustQuantity.execute" | "inventory.moveQuantity.execute" | "inventory.transfer.execute" | "inventory.transfer.markReady.execute";
 
 export function checkWriteScopePreflight(config: StoreAgentConfig, tool: WriteExecuteTool): WriteScopePreflightResult {
   const requiredScopes = requiredWriteScopes(tool);
@@ -62,11 +62,12 @@ function requiredWriteScopes(tool: WriteExecuteTool): readonly string[] {
   if (tool === "inventory.adjustQuantity.execute") return inventoryAdjustQuantityWriteScopes;
   if (tool === "inventory.moveQuantity.execute") return inventoryMoveQuantityWriteScopes;
   if (tool === "inventory.transfer.execute") return inventoryTransferWriteScopes;
+  if (tool === "inventory.transfer.markReady.execute") return inventoryTransferWriteScopes;
   return [];
 }
 
 function requiresAllScopes(tool: WriteExecuteTool): boolean {
-  return tool === "inventory.transfer.execute";
+  return tool === "inventory.transfer.execute" || tool === "inventory.transfer.markReady.execute";
 }
 
 function formatScopeList(scopes: readonly string[], joiner: "and" | "or"): string {

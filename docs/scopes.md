@@ -39,6 +39,8 @@ Use only when inventory quantities, locations, or inventory item data are part o
 
 `inventory.transfer.execute` requires both `write_inventory_transfers` and `read_inventory_transfers` in local granted-scope preflight. This inventory execute path is limited to one stored `inventory.transfer.preview` at a time with an explicit inventory item ID, explicit source location ID, explicit destination location ID, one positive integer quantity, an explicit reason, and optional reference document URI. It uses only the stored preview as the source of truth, creates a draft inventory transfer with `inventoryTransferCreate`, does not perform lookup/discovery during execute, and does not implement transfer lifecycle actions, bulk inventory, or location management.
 
+`inventory.transfer.markReady.execute` also requires both `write_inventory_transfers` and `read_inventory_transfers` in local granted-scope preflight. This inventory execute path is limited to one stored `inventory.transfer.markReady.preview` at a time with an explicit inventory transfer ID. It uses only the stored preview as the source of truth, marks a transfer ready to ship with `inventoryTransferMarkAsReadyToShip`, does not perform lookup/discovery during execute, and does not implement transfer create, item edits, ship/receive/cancel, bulk inventory, or location management.
+
 ## Orders
 
 - Read: `read_orders`

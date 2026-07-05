@@ -99,7 +99,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory,write_inventory_transfers,read_inventory_transfers"
 ```
 
-Use write mode only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-delete, explicit-option-reorder, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, or explicit-option-value-delete `product.update.execute`, custom explicit-product `collection.create.execute`, explicit single-item `inventory.setQuantity.execute`, explicit single-item `inventory.adjustQuantity.execute`, explicit same-location state `inventory.moveQuantity.execute`, or explicit single-item draft transfer `inventory.transfer.execute`. All other execute tools remain fail-closed placeholders.
+Use write mode only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-delete, explicit-option-reorder, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, or explicit-option-value-delete `product.update.execute`, custom explicit-product `collection.create.execute`, explicit single-item `inventory.setQuantity.execute`, explicit single-item `inventory.adjustQuantity.execute`, explicit same-location state `inventory.moveQuantity.execute`, explicit single-item draft transfer `inventory.transfer.execute`, or explicit transfer mark-ready `inventory.transfer.markReady.execute`. All other execute tools remain fail-closed placeholders.
 
 `auth` is the real local OAuth browser flow and stores the resulting Admin API token locally. `setup --auth oauth` only prints setup guidance and MCP snippets; it does not exchange a token.
 
@@ -153,10 +153,11 @@ Current real write tools:
 - `inventory.adjustQuantity.execute` for one explicit inventory item ID, location ID, and non-zero delta only
 - `inventory.moveQuantity.execute` for one explicit inventory item ID, location ID, positive quantity, and source/destination quantity states only
 - `inventory.transfer.execute` for one explicit inventory item ID, source location ID, destination location ID, positive quantity, and draft transfer create only
+- `inventory.transfer.markReady.execute` for one explicit inventory transfer ID and mark-ready only
 
 All other execute tools are placeholders. A real write still requires preview output, stored preview binding, matching target/tool/hash values, matching reviewed payload hash, read-only mode disabled, required local granted scopes, and explicit user confirmation.
 
-`product.create.preview`, `page.create.preview`, `collection.create.preview`, `inventory.setQuantity.preview`, `inventory.adjustQuantity.preview`, `inventory.moveQuantity.preview`, and `inventory.transfer.preview` include an `executeRequest` helper. It contains the matching execute tool, expected preview tool, `previewId`, target, `previewHash`, safe reviewed payload, reviewed changes hash, and confirmation requirement. Use it to prepare the execute call for review, not to run automatically.
+`product.create.preview`, `page.create.preview`, `collection.create.preview`, `inventory.setQuantity.preview`, `inventory.adjustQuantity.preview`, `inventory.moveQuantity.preview`, `inventory.transfer.preview`, and `inventory.transfer.markReady.preview` include an `executeRequest` helper. It contains the matching execute tool, expected preview tool, `previewId`, target, `previewHash`, safe reviewed payload, reviewed changes hash, and confirmation requirement. Use it to prepare the execute call for review, not to run automatically.
 
 For inventory preparation, use `inventory.lookup` only with an explicit inventory item ID, variant ID, or SKU, and use `inventory.locationLookup` only with an explicit location ID, name, or query. Treat multiple matches as candidates for user review, not as permission to guess a target.
 
