@@ -33,6 +33,8 @@ const expectedToolNames = [
   "inventory.transfer.cancel.execute",
   "inventory.transfer.ship.preview",
   "inventory.transfer.ship.execute",
+  "inventory.transfer.receive.preview",
+  "inventory.transfer.receive.execute",
   "order.find",
   "order.get",
   "customer.find",
@@ -1269,6 +1271,150 @@ describe("MCP tools", () => {
     });
     expect(fetchCalled).toBe(false);
     expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.transfer.ship.execute", result: "blocked" });
+  });
+
+  it("previews inventory transfer receive with executeRequest binding", async () => {
+    const context = baseContext();
+
+    const result = await callTool("inventory.transfer.receive.preview", {
+      inventoryShipmentId: "gid://shopify/InventoryShipment/1",
+      shipmentLineItemId: "gid://shopify/InventoryShipmentLineItem/1",
+      quantity: 2,
+      reason: "ACCEPTED",
+      currentStatus: "IN_TRANSIT"
+    }, context) as Record<string, unknown>;
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "preview",
+      status: "ok",
+      target: { type: "inventory_shipment", id: "gid://shopify/InventoryShipment/1" },
+      executeRequest: expect.objectContaining({
+        tool: "inventory.transfer.receive.execute",
+        expectedTool: "inventory.transfer.receive.preview",
+        requiresConfirmation: true
+      })
+    });
+    expect(result.warnings).toEqual([]);
+    expect(changeFor(result, "quantity")).toMatchObject({ before: "IN_TRANSIT", after: "RECEIVED" });
+    expect(changeFor(result, "reason")).toMatchObject({ value: "ACCEPTED" });
+    expect(context.audit.list()[0]).toMatchObject({ tool: "inventory.transfer.receive.preview", mode: "preview", result: "success" });
+  });
+
+  it("receives inventory transfer shipment line item from stored preview", async () => {
+    const requests: Array<{ body: string }> = [];
+    const context = baseContext(async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          inventoryShipmentReceive: {
+            inventoryShipment: {
+              id: "gid://shopify/InventoryShipment/1",
+              status: "RECEIVED",
+              rawNodeOnly: "do not return"
+            },
+            userErrors: []
+          }
+        }
+      });
+    }, false);
+    context.config.grantedScopes = ["write_inventory_shipments_received_items", "read_inventory_shipments"];
+    const preview = await callTool("inventory.transfer.receive.preview", {
+      inventoryShipmentId: "gid://shopify/InventoryShipment/1",
+      shipmentLineItemId: "gid://shopify/InventoryShipmentLineItem/1",
+      quantity: 2,
+      reason: "ACCEPTED",
+      currentStatus: "IN_TRANSIT"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("inventory.transfer.receive.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash,
+      inventoryShipmentId: "gid://shopify/InventoryShipment/999",
+      shipmentLineItemId: "gid://shopify/InventoryShipmentLineItem/999",
+      quantity: 99,
+      reason: "REJECTED"
+    }, context);
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "execute",
+      implemented: true,
+      status: "ok",
+      inventoryShipment: {
+        inventoryShipmentId: "gid://shopify/InventoryShipment/1",
+        status: "RECEIVED",
+        shipmentLineItemId: "gid://shopify/InventoryShipmentLineItem/1",
+        quantity: 2,
+        reason: "ACCEPTED"
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentInventoryShipmentReceive");
+    expect(request.query).toContain("inventoryShipmentReceive");
+    expect(request.query).toContain("@idempotent");
+    expect(request.query).not.toContain("inventoryShipmentCreateInTransit");
+    expect(request.variables).toMatchObject({
+      id: "gid://shopify/InventoryShipment/1",
+      lineItems: [{
+        shipmentLineItemId: "gid://shopify/InventoryShipmentLineItem/1",
+        quantity: 2,
+        reason: "ACCEPTED"
+      }]
+    });
+    expect(request.variables.idempotencyKey).toContain(String(preview.previewId));
+    expect(requests[0].body).not.toContain("InventoryShipment/999");
+    expect(requests[0].body).not.toContain("InventoryShipmentLineItem/999");
+    expect(requests[0].body).not.toContain('"quantity":99');
+    expect(requests[0].body).not.toContain("REJECTED");
+    expect(output).not.toContain("rawNodeOnly");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.transfer.receive.execute", result: "success" });
+  });
+
+  it("blocks inventory transfer receive before fetch when received-items scopes are missing", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["write_inventory_shipments", "read_inventory_shipments"];
+    const preview = await callTool("inventory.transfer.receive.preview", {
+      inventoryShipmentId: "gid://shopify/InventoryShipment/1",
+      shipmentLineItemId: "gid://shopify/InventoryShipmentLineItem/1",
+      quantity: 2,
+      reason: "ACCEPTED"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("inventory.transfer.receive.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: [{ code: "missing_write_scope" }]
+    });
+    expect(fetchCalled).toBe(false);
+    expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.transfer.receive.execute", result: "blocked" });
   });
 
   it("runs catalog and content previews with structured audit entries", async () => {

@@ -57,6 +57,14 @@ export interface InventoryTransferShipInput {
   idempotencyKey: string;
 }
 
+export interface InventoryTransferReceiveInput {
+  inventoryShipmentId: string;
+  shipmentLineItemId: string;
+  quantity: number;
+  reason: "ACCEPTED" | "REJECTED";
+  idempotencyKey: string;
+}
+
 export interface InventoryQuantityChangeSummary {
   name?: string;
   delta?: number;
@@ -125,6 +133,14 @@ export interface InventoryTransferShipSummary {
   quantity: number;
 }
 
+export interface InventoryTransferReceiveSummary {
+  inventoryShipmentId: string;
+  status?: string;
+  shipmentLineItemId: string;
+  quantity: number;
+  reason: "ACCEPTED" | "REJECTED";
+}
+
 export interface InventoryWriteDiagnostic {
   severity: "warning" | "error";
   code: string;
@@ -167,6 +183,10 @@ export interface InventoryTransferCancelResult extends InventoryWriteResultBase 
 
 export interface InventoryTransferShipResult extends InventoryWriteResultBase {
   inventoryShipment?: InventoryTransferShipSummary;
+}
+
+export interface InventoryTransferReceiveResult extends InventoryWriteResultBase {
+  inventoryShipment?: InventoryTransferReceiveSummary;
 }
 
 export interface InventoryWriteOptions {
@@ -250,6 +270,16 @@ interface InventoryTransferCancelData {
 
 interface InventoryShipmentCreateInTransitData {
   inventoryShipmentCreateInTransit?: {
+    inventoryShipment?: {
+      id?: unknown;
+      status?: unknown;
+    } | null;
+    userErrors?: GraphqlUserError[];
+  } | null;
+}
+
+interface InventoryShipmentReceiveData {
+  inventoryShipmentReceive?: {
     inventoryShipment?: {
       id?: unknown;
       status?: unknown;
@@ -860,6 +890,90 @@ export async function shipInventoryTransfer(
   };
 }
 
+export async function receiveInventoryTransfer(
+  config: StoreAgentConfig,
+  input: InventoryTransferReceiveInput,
+  options: InventoryWriteOptions = {}
+): Promise<InventoryTransferReceiveResult> {
+  if (config.readOnly) return blocked("Inventory transfer receive is blocked because read-only mode is enabled.");
+
+  const inventoryShipmentId = safeText(input.inventoryShipmentId, 180);
+  if (!inventoryShipmentId) return missingInput("Provide an inventory shipment ID.");
+
+  const shipmentLineItemId = safeText(input.shipmentLineItemId, 180);
+  if (!shipmentLineItemId) return missingInput("Provide an inventory shipment line item ID.");
+
+  const quantity = safeMoveQuantity(input.quantity);
+  if (quantity === undefined) return missingInput("Provide a positive integer inventory transfer receive quantity.");
+
+  const reason = safeReceiveReason(input.reason);
+  if (!reason) return missingInput("Provide an inventory transfer receive reason of ACCEPTED or REJECTED.");
+
+  const idempotencyKey = safeIdempotencyKey(input.idempotencyKey);
+  if (!idempotencyKey) return missingInput("Provide an idempotency key.");
+
+  const variables = {
+    id: inventoryShipmentId,
+    lineItems: [{
+      shipmentLineItemId,
+      quantity,
+      reason
+    }],
+    idempotencyKey
+  };
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  let result: ShopifyGraphqlResult<InventoryShipmentReceiveData>;
+  try {
+    result = await client.request<InventoryShipmentReceiveData>({
+      query: inventoryShipmentReceiveMutation,
+      variables
+    });
+  } catch {
+    return shopifyFailure("Shopify inventory transfer receive request failed before a safe response was available.");
+  }
+
+  if (!result.ok) return mapGraphqlFailure(result);
+
+  const userErrors = result.data.inventoryShipmentReceive?.userErrors ?? result.userErrors;
+  if (userErrors.length > 0) {
+    return {
+      ok: false,
+      status: "user_errors",
+      summary: "Shopify rejected the inventory transfer receive request.",
+      userErrors: sanitizeUserErrors(userErrors),
+      diagnostics: [{ severity: "warning", code: "shopify_user_errors", message: "Shopify returned inventory transfer receive user errors." }]
+    };
+  }
+
+  const shipment = result.data.inventoryShipmentReceive?.inventoryShipment;
+  const receivedShipmentId = safeText(shipment?.id, 180);
+  if (!receivedShipmentId) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify inventory transfer receive response did not include a shipment ID.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify inventory transfer receive response did not include a shipment ID." }]
+    };
+  }
+
+  return {
+    ok: true,
+    status: "ok",
+    summary: `Received ${quantity} Shopify inventory shipment unit${quantity === 1 ? "" : "s"}.`,
+    inventoryShipment: {
+      inventoryShipmentId: receivedShipmentId,
+      status: safeText(shipment?.status, 80),
+      shipmentLineItemId,
+      quantity,
+      reason
+    },
+    userErrors: [],
+    diagnostics: []
+  };
+}
+
 const inventorySetQuantitiesMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentInventorySetQuantities($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
     inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
@@ -987,7 +1101,23 @@ const inventoryShipmentCreateInTransitMutation = /* GraphQL */ `
   }
 `;
 
-function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<InventorySetQuantitiesData | InventoryAdjustQuantitiesData | InventoryMoveQuantitiesData | InventoryTransferCreateData | InventoryTransferMarkReadyData | InventoryTransferCancelData | InventoryShipmentCreateInTransitData>, { ok: false }>): InventoryWriteResultBase {
+const inventoryShipmentReceiveMutation = /* GraphQL */ `
+  mutation ShopifyStoreAgentInventoryShipmentReceive($id: ID!, $lineItems: [InventoryShipmentReceiveItemInput!]!, $idempotencyKey: String!) {
+    inventoryShipmentReceive(id: $id, lineItems: $lineItems) @idempotent(key: $idempotencyKey) {
+      inventoryShipment {
+        id
+        status
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
+function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<InventorySetQuantitiesData | InventoryAdjustQuantitiesData | InventoryMoveQuantitiesData | InventoryTransferCreateData | InventoryTransferMarkReadyData | InventoryTransferCancelData | InventoryShipmentCreateInTransitData | InventoryShipmentReceiveData>, { ok: false }>): InventoryWriteResultBase {
   return {
     ok: false,
     status: "shopify_error",
@@ -1076,6 +1206,11 @@ function safeQuantityName(value: unknown): string | undefined {
   if (!text) return undefined;
   const normalized = text.toLowerCase();
   return ["available", "reserved", "damaged", "quality_control", "safety_stock"].includes(normalized) ? normalized : undefined;
+}
+
+function safeReceiveReason(value: unknown): "ACCEPTED" | "REJECTED" | undefined {
+  const text = safeNonSecretText(value, 80)?.toUpperCase();
+  return text === "ACCEPTED" || text === "REJECTED" ? text : undefined;
 }
 
 function safeInteger(value: unknown): number | undefined {
