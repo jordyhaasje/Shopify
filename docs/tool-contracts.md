@@ -185,7 +185,17 @@ Execute requirements: `write_inventory_transfers` and `read_inventory_transfers`
 
 Output: safe status, inventory transfer ID/status, inventory item ID, source and destination location IDs, quantity, safe Shopify `userErrors` or diagnostics on failure, and an audit entry. Output must not return raw reviewed payloads, raw Shopify response nodes, tokens, product/variant/location dumps, or unrelated execute input.
 
-Not implemented here: transfer ready-to-ship, transfer ship/receive/cancel, execute-time lookup/discovery, location search by name, bulk inventory, location management, or product update inventory fields.
+Not implemented here: transfer add-item execution, transfer ready-to-ship, transfer ship/receive/cancel, execute-time lookup/discovery, location search by name, bulk inventory, location management, or product update inventory fields.
+
+### `inventory.transfer.addItems.preview`
+
+Required input: explicit inventory transfer ID, explicit inventory item ID, and positive integer quantity. Optional current status may be supplied for review context only.
+
+Preview output: target inventory transfer ID, inventory item ID, item-add quantity, preview ID, stored preview binding, and audit entry. This tool does not call Shopify or perform mutations.
+
+Behavior: this preview exists to make a future transfer item-add lifecycle action reviewable while preserving the read-only default and preview-before-execute contract. It does not return `executeRequest` while add-item execute support is not implemented. The stored preview must not be treated as permission to run a write through any other tool.
+
+Not implemented here: transfer item add execution, transfer item remove execution, transfer item quantity updates, execute-time lookup/discovery, location search by name, bulk inventory, location management, or product update inventory fields.
 
 ### `inventory.transfer.markReady.preview`
 

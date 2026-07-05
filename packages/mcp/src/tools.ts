@@ -102,6 +102,7 @@ import {
   previewInventoryMoveQuantity,
   previewInventorySetQuantity,
   previewInventoryTransfer,
+  previewInventoryTransferAddItems,
   previewInventoryTransferMarkReady,
   previewInventoryTransferCancel,
   previewInventoryTransferShip,
@@ -3245,6 +3246,12 @@ export const tools: ToolDefinition[] = [
     description: "Create a Shopify inventory transfer draft only after stored preview binding and explicit confirmation.",
     inputSchema: { type: "object" },
     handler: (input, context) => inventoryTransferExecuteResult(input, context)
+  },
+  {
+    name: "inventory.transfer.addItems.preview",
+    description: "Preview adding one explicit inventory item quantity to an explicit Shopify inventory transfer.",
+    inputSchema: { type: "object" },
+    handler: (input, context) => catalogPreviewResult(previewInventoryTransferAddItems(input), context)
   },
   {
     name: "inventory.transfer.markReady.preview",
