@@ -485,9 +485,11 @@ Preview output: preview ID, file diff summary, target theme, rollback snapshot r
 
 Required input: preview ID and confirmation.
 
-Execute requirements: write-capable theme route, writes enabled, explicit confirmation.
+Current behavior: fail-closed execute placeholder. It requires read-only mode disabled, explicit confirmation, an active stored `theme.preview` binding, matching target/tool/hash values, and matching reviewed payload hash before it can reach `not_implemented`.
 
-Failure behavior: do not apply without preview ID; fail closed if theme route is unavailable.
+Future execute requirements if theme writes are added: write-capable theme route, writes enabled, explicit confirmation, active stored preview binding, and safe rollback evidence.
+
+Failure behavior: do not apply without preview ID; fail closed if preview binding is missing or mismatched; validly bound current calls return `not_implemented` and must never audit `success`.
 
 ### `theme.rollback`
 
@@ -495,7 +497,9 @@ Required input: rollback snapshot ID or audit entry ID.
 
 Preview output: files that would be restored and warnings.
 
-Execute requirements: confirmation and write-capable theme route if rollback execute is added.
+Current behavior: preview-only planning tool. No rollback execute tool is exposed in the current runtime.
+
+Future execute requirements if rollback writes are added: confirmation, stored preview binding, write-capable theme route, and safe rollback evidence.
 
 ## Runtime Naming Status
 
