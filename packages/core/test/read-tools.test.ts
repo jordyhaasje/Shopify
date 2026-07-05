@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createConfig } from "../src/config.js";
-import { findCustomers, findOrders, getOrder, getProduct, getTracking, lookupInventory } from "../src/read-tools.js";
+import { findCustomers, findOrders, getOrder, getProduct, getTracking, lookupInventory, lookupInventoryLocations } from "../src/read-tools.js";
 import type { FetchLike } from "../src/shopify-client.js";
 
 const config = createConfig({
@@ -302,6 +302,85 @@ describe("read-only Shopify helpers", () => {
     await expect(lookupInventory(config, {
       inventoryItemId: "gid://shopify/InventoryItem/1",
       sku: "SKU-1"
+    })).resolves.toMatchObject({ ok: false, status: "missing_input" });
+  });
+
+  it("looks up an inventory location by explicit ID with compact output", async () => {
+    const result = await lookupInventoryLocations(config, { locationId: "gid://shopify/Location/1" }, {
+      fetcher: fetchJson({
+        data: {
+          node: {
+            __typename: "Location",
+            id: "gid://shopify/Location/1",
+            name: "Main",
+            isActive: true,
+            fulfillsOnlineOrders: true,
+            rawNodeOnly: true
+          }
+        }
+      })
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "ok",
+      item: {
+        id: "gid://shopify/Location/1",
+        name: "Main",
+        isActive: true,
+        fulfillsOnlineOrders: true
+      }
+    });
+    expect(JSON.stringify(result)).not.toContain("rawNodeOnly");
+    expect(JSON.stringify(result)).not.toContain("shpat_test_secret");
+  });
+
+  it("looks up inventory locations by explicit name query", async () => {
+    const requests: Array<{ body: string }> = [];
+    const result = await lookupInventoryLocations(config, { name: "Main Warehouse", first: 2 }, {
+      fetcher: async (_url, init) => {
+        requests.push({ body: init.body });
+        return {
+          ok: true,
+          status: 200,
+          async text() {
+            return JSON.stringify({
+              data: {
+                locations: {
+                  nodes: [
+                    { id: "gid://shopify/Location/1", name: "Main Warehouse", isActive: true, fulfillsOnlineOrders: true, rawNodeOnly: true },
+                    { id: "gid://shopify/Location/2", name: "Main Warehouse Overflow", isActive: true, fulfillsOnlineOrders: false }
+                  ]
+                }
+              }
+            });
+          }
+        };
+      }
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "multiple_matches",
+      matches: [
+        { id: "gid://shopify/Location/1", name: "Main Warehouse" },
+        { id: "gid://shopify/Location/2", name: "Main Warehouse Overflow" }
+      ]
+    });
+    expect(JSON.parse(requests[0].body).variables).toMatchObject({
+      query: 'name:"Main Warehouse"',
+      first: 2,
+      includeInactive: false,
+      includeLegacy: false
+    });
+    expect(JSON.stringify(result)).not.toContain("rawNodeOnly");
+  });
+
+  it("requires exactly one inventory location lookup input", async () => {
+    await expect(lookupInventoryLocations(config, {})).resolves.toMatchObject({ ok: false, status: "missing_input" });
+    await expect(lookupInventoryLocations(config, {
+      locationId: "gid://shopify/Location/1",
+      name: "Main"
     })).resolves.toMatchObject({ ok: false, status: "missing_input" });
   });
 });

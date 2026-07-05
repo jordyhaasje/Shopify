@@ -22,6 +22,7 @@ import {
   getProduct,
   getTracking,
   lookupInventory,
+  lookupInventoryLocations,
   type InventorySetQuantityInput,
   type InventorySetQuantityResult,
   type InventoryAdjustQuantityInput,
@@ -2547,6 +2548,26 @@ export const tools: ToolDefinition[] = [
         sku: stringInput(input, "sku") || undefined,
         first: typeof input.first === "number" ? input.first : undefined,
         levelsFirst: typeof input.levelsFirst === "number" ? input.levelsFirst : undefined
+      }, { fetcher: context.fetcher })
+    )
+  },
+  {
+    name: "inventory.locationLookup",
+    description: "Read compact inventory location IDs by explicit location ID, name, or query.",
+    inputSchema: { type: "object" },
+    handler: (input, context) => shopifyReadResult(
+      "inventory.locationLookup",
+      stringInput(input, "locationId") || stringInput(input, "id") || stringInput(input, "name") || stringInput(input, "query", "inventory-location"),
+      "Inventory location lookup request completed.",
+      context,
+      lookupInventoryLocations(context.config, {
+        locationId: stringInput(input, "locationId") || undefined,
+        id: stringInput(input, "id") || undefined,
+        name: stringInput(input, "name") || undefined,
+        query: stringInput(input, "query") || undefined,
+        first: typeof input.first === "number" ? input.first : undefined,
+        includeInactive: booleanInput(input, "includeInactive"),
+        includeLegacy: booleanInput(input, "includeLegacy")
       }, { fetcher: context.fetcher })
     )
   },

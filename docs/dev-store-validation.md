@@ -43,7 +43,7 @@ pnpm --filter shopify-store-agent run smoke -- --live --admin-token "$SHOPIFY_AD
 When documenting a manual run, use the evidence format in [dev-store-e2e-runbook.md](dev-store-e2e-runbook.md). Keep the record in the relevant PR or issue unless the result becomes durable product documentation. Record pass/fail/skipped status and safe summaries only; do not paste tokens, raw Shopify responses, raw reviewed payloads, config files, customer data, order data, or production product data.
 
 - Run `shopify.capabilities.check` in local mode first.
-- Test one read tool with explicit user-provided input. `inventory.lookup` may be used read-only with an explicit inventory item ID, variant ID, or SKU to collect test inventory IDs before a reviewed inventory preview.
+- Test one read tool with explicit user-provided input. `inventory.lookup` may be used read-only with an explicit inventory item ID, variant ID, or SKU to collect test inventory IDs before a reviewed inventory preview. `inventory.locationLookup` may be used read-only with an explicit location ID, name, or query to collect location IDs for review.
 - Test one catalog/content preview tool.
 - Confirm the preview store receives a record.
 - Test an execute placeholder with invalid binding and confirm `blocked`.
