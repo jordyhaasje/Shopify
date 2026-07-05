@@ -25,6 +25,7 @@ const expectedToolNames = [
   "inventory.adjustQuantity.execute",
   "inventory.moveQuantity.preview",
   "inventory.moveQuantity.execute",
+  "inventory.transfer.preview",
   "order.find",
   "order.get",
   "customer.find",
@@ -736,6 +737,31 @@ describe("MCP tools", () => {
     });
     expect(fetchCalled).toBe(false);
     expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.moveQuantity.execute", result: "blocked" });
+  });
+
+  it("previews inventory transfer without an executeRequest helper", async () => {
+    const context = baseContext();
+
+    const result = await callTool("inventory.transfer.preview", {
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      fromLocationId: "gid://shopify/Location/1",
+      toLocationId: "gid://shopify/Location/2",
+      quantity: 4,
+      reason: "rebalance"
+    }, context) as Record<string, unknown>;
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "preview",
+      status: "ok",
+      target: { type: "inventory", id: "gid://shopify/InventoryItem/1" },
+      warnings: [{ code: "execute_not_implemented" }]
+    });
+    expect(result.executeRequest).toBeUndefined();
+    expect(changeFor(result, "fromLocationId")).toMatchObject({ value: "gid://shopify/Location/1" });
+    expect(changeFor(result, "toLocationId")).toMatchObject({ value: "gid://shopify/Location/2" });
+    expect(changeFor(result, "quantityValue")).toMatchObject({ value: 4 });
+    expect(context.audit.list()[0]).toMatchObject({ tool: "inventory.transfer.preview", mode: "preview", result: "success" });
   });
 
   it("runs catalog and content previews with structured audit entries", async () => {
