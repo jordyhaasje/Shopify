@@ -43,6 +43,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 - Minimal `product.update.execute` is implemented for basic product fields, explicit variant price updates, explicit variant creation, explicit option creation, explicit option delete, explicit option reorder, explicit option rename, explicit option value rename, explicit option value add, and explicit option value delete only. Basic fields cover title, description/descriptionHtml, vendor, product type, status, and tags. Variant price updates require product ID plus explicit variant IDs and prices. Variant creation requires product ID plus explicit option values, with optional price and SKU. Option creation requires product ID plus explicit option names and values. Option delete requires product ID plus explicit option IDs and uses `productOptionsDelete` with `NON_DESTRUCTIVE`. Option reorder requires product ID plus explicit option IDs or names in the desired order and uses `productOptionsReorder`. Option rename requires product ID plus explicit option ID and new option name. Option value rename requires product ID plus explicit option ID, option value ID, and new value name. Option value add requires product ID plus explicit option ID and new value names. Option value delete requires product ID plus explicit option ID and option value IDs. Option create, option rename, option value rename, option value add, and option value delete use `LEAVE_AS_IS` to avoid automatic variant expansion. These update shapes cannot be mixed in one execute call.
 - Minimal `collection.create.execute` is implemented for custom collections with title, optional handle, and explicit product IDs only.
 - Minimal `inventory.setQuantity.execute` is implemented for one explicit inventory item ID, one explicit location ID, quantity name `available`, a non-negative integer quantity, an explicit reason, stored preview binding, `write_inventory` preflight, and compare-and-set by default.
+- Minimal `inventory.adjustQuantity.execute` is implemented for one explicit inventory item ID, one explicit location ID, quantity name `available`, a non-zero integer delta, an explicit reason, stored preview binding, and `write_inventory` preflight.
 - Minimal `inventory.lookup` is implemented as a read-only helper for explicit inventory item ID, variant ID, or SKU lookups. It returns compact inventory item, variant, location, and quantity summaries to help users prepare reviewed inventory previews.
 - A product media/update execute expansion plan exists, with media execute still intentionally not implemented.
 - Safe preview records persist locally across MCP server restarts while preserving strict stored preview binding.
@@ -61,7 +62,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 
 ## Later Roadmap
 
-- Inventory beyond explicit single-item quantity set and basic lookup, including adjustments, moves, bulk inventory, and richer location workflows.
+- Inventory beyond explicit single-item quantity set, single-item adjustment, and basic lookup, including moves, bulk inventory, and richer location workflows.
 - Metafields.
 - Publications.
 - Translations.

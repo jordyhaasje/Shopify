@@ -49,6 +49,7 @@ type PreviewTool =
   | "product.media.update.preview"
   | "product.importFromUserUrl.preview"
   | "inventory.setQuantity.preview"
+  | "inventory.adjustQuantity.preview"
   | "page.create.preview"
   | "collection.create.preview";
 
@@ -223,6 +224,35 @@ export function previewInventorySetQuantity(input: Record<string, unknown>): Cat
   ]);
 
   return okResult("inventory.setQuantity.preview", target, `Preview inventory quantity set for ${inventoryItemId}.`, changes, warnings);
+}
+
+export function previewInventoryAdjustQuantity(input: Record<string, unknown>): CatalogPreviewResult {
+  const inventoryItemId = firstString(input.inventoryItemId, input.inventoryItemID);
+  const locationId = firstString(input.locationId, input.locationID);
+  const target: PreviewTarget = { type: "inventory", id: inventoryItemId || undefined };
+  if (!inventoryItemId) return missingInput("inventory.adjustQuantity.preview", target, "Provide an inventory item ID.");
+  if (!locationId) return missingInput("inventory.adjustQuantity.preview", target, "Provide a location ID.");
+
+  const delta = integerValue(input.delta);
+  if (delta === undefined || delta === 0) return validationError("inventory.adjustQuantity.preview", target, "Inventory adjustment delta must be a non-zero integer.");
+
+  const reason = firstString(input.reason);
+  if (!reason) return missingInput("inventory.adjustQuantity.preview", target, "Provide an inventory adjustment reason.");
+
+  const referenceDocumentUri = firstString(input.referenceDocumentUri);
+  if (referenceDocumentUri && !isValidReferenceUri(referenceDocumentUri)) {
+    return validationError("inventory.adjustQuantity.preview", target, "referenceDocumentUri must be a valid URI with a scheme.");
+  }
+
+  const changes = compactChanges([
+    { field: "inventoryItemId", action: "plan" as const, value: summarizeValue("inventoryItemId", inventoryItemId) },
+    { field: "locationId", action: "plan" as const, value: summarizeValue("locationId", locationId) },
+    { field: "delta", action: "update" as const, before: "current available quantity", after: delta },
+    { field: "reason", action: "plan" as const, value: summarizeValue("reason", reason) },
+    referenceDocumentUri ? { field: "referenceDocumentUri", action: "plan" as const, value: summarizeValue("referenceDocumentUri", referenceDocumentUri) } : undefined
+  ]);
+
+  return okResult("inventory.adjustQuantity.preview", target, `Preview inventory quantity adjustment for ${inventoryItemId}.`, changes, []);
 }
 
 export function previewPageCreate(input: Record<string, unknown>): CatalogPreviewResult {

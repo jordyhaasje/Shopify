@@ -212,4 +212,32 @@ describe("write scope preflight", () => {
       requiredScopes: ["write_inventory"]
     });
   });
+
+  it("blocks inventory adjustment when known scopes miss write_inventory", () => {
+    const result = checkWriteScopePreflight(createConfig({
+      storeUrl: "demo",
+      readOnly: false,
+      grantedScopes: ["read_inventory"]
+    }), "inventory.adjustQuantity.execute");
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "blocked",
+      grantedScopesKnown: true,
+      requiredScopes: ["write_inventory"],
+      diagnostics: [{ code: "missing_write_scope" }]
+    });
+  });
+
+  it("allows inventory adjustment when write_inventory is known", () => {
+    expect(checkWriteScopePreflight(createConfig({
+      storeUrl: "demo",
+      readOnly: false,
+      grantedScopes: ["write_inventory"]
+    }), "inventory.adjustQuantity.execute")).toMatchObject({
+      ok: true,
+      status: "ok",
+      requiredScopes: ["write_inventory"]
+    });
+  });
 });

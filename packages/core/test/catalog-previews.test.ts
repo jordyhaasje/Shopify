@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   previewCollectionCreate,
+  previewInventoryAdjustQuantity,
   previewInventorySetQuantity,
   previewPageCreate,
   previewProductCreate,
@@ -253,6 +254,49 @@ describe("catalog and content previews", () => {
       ok: false,
       status: "missing_input",
       warnings: [{ code: "missing_input", message: "Provide compareQuantity, or explicitly set ignoreCompareQuantity to true." }]
+    });
+  });
+
+  it("previews an explicit inventory quantity adjustment", () => {
+    const preview = previewInventoryAdjustQuantity({
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      delta: -2,
+      reason: "correction",
+      referenceDocumentUri: "gid://store-agent/TestRun/2"
+    });
+
+    expect(preview).toMatchObject({
+      ok: true,
+      status: "ok",
+      target: { type: "inventory", id: "gid://shopify/InventoryItem/1" },
+      auditContext: {
+        tool: "inventory.adjustQuantity.preview",
+        mode: "preview",
+        performsShopifyMutation: false,
+        usesShopifyWriteOperation: false
+      },
+      proposedChanges: expect.arrayContaining([
+        expect.objectContaining({ field: "inventoryItemId", value: "gid://shopify/InventoryItem/1" }),
+        expect.objectContaining({ field: "locationId", value: "gid://shopify/Location/1" }),
+        expect.objectContaining({ field: "delta", action: "update", before: "current available quantity", after: -2 }),
+        expect.objectContaining({ field: "reason", value: "correction" })
+      ])
+    });
+  });
+
+  it("requires a non-zero inventory adjustment delta", () => {
+    const preview = previewInventoryAdjustQuantity({
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      delta: 0,
+      reason: "correction"
+    });
+
+    expect(preview).toMatchObject({
+      ok: false,
+      status: "validation_error",
+      warnings: [{ code: "validation_error", message: "Inventory adjustment delta must be a non-zero integer." }]
     });
   });
 
