@@ -5,6 +5,7 @@ import {
   previewInventoryMoveQuantity,
   previewInventorySetQuantity,
   previewInventoryTransfer,
+  previewInventoryTransferMarkReady,
   previewPageCreate,
   previewProductCreate,
   previewProductImportFromUserUrl,
@@ -419,6 +420,30 @@ describe("catalog and content previews", () => {
       ok: false,
       status: "validation_error",
       warnings: [{ code: "validation_error", message: "Source and destination location IDs must differ." }]
+    });
+  });
+
+  it("previews marking an explicit inventory transfer ready to ship", () => {
+    const preview = previewInventoryTransferMarkReady({
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+      currentStatus: "DRAFT"
+    });
+
+    expect(preview).toMatchObject({
+      ok: true,
+      status: "ok",
+      target: { type: "inventory_transfer", id: "gid://shopify/InventoryTransfer/1" },
+      auditContext: {
+        tool: "inventory.transfer.markReady.preview",
+        mode: "preview",
+        performsShopifyMutation: false,
+        usesShopifyWriteOperation: false
+      },
+      warnings: [],
+      proposedChanges: expect.arrayContaining([
+        expect.objectContaining({ field: "inventoryTransferId", value: "gid://shopify/InventoryTransfer/1" }),
+        expect.objectContaining({ field: "status", before: "DRAFT", after: "READY_TO_SHIP" })
+      ])
     });
   });
 

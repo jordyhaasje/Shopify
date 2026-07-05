@@ -27,6 +27,8 @@ const expectedToolNames = [
   "inventory.moveQuantity.execute",
   "inventory.transfer.preview",
   "inventory.transfer.execute",
+  "inventory.transfer.markReady.preview",
+  "inventory.transfer.markReady.execute",
   "order.find",
   "order.get",
   "customer.find",
@@ -884,6 +886,125 @@ describe("MCP tools", () => {
     });
     expect(fetchCalled).toBe(false);
     expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.transfer.execute", result: "blocked" });
+  });
+
+  it("previews inventory transfer mark-ready with executeRequest binding", async () => {
+    const context = baseContext();
+
+    const result = await callTool("inventory.transfer.markReady.preview", {
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+      currentStatus: "DRAFT"
+    }, context) as Record<string, unknown>;
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "preview",
+      status: "ok",
+      target: { type: "inventory_transfer", id: "gid://shopify/InventoryTransfer/1" },
+      executeRequest: expect.objectContaining({
+        tool: "inventory.transfer.markReady.execute",
+        expectedTool: "inventory.transfer.markReady.preview",
+        requiresConfirmation: true
+      })
+    });
+    expect(result.warnings).toEqual([]);
+    expect(changeFor(result, "status")).toMatchObject({ before: "DRAFT", after: "READY_TO_SHIP" });
+    expect(context.audit.list()[0]).toMatchObject({ tool: "inventory.transfer.markReady.preview", mode: "preview", result: "success" });
+  });
+
+  it("marks inventory transfer ready from stored preview", async () => {
+    const requests: Array<{ body: string }> = [];
+    const context = baseContext(async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          inventoryTransferMarkAsReadyToShip: {
+            inventoryTransfer: {
+              id: "gid://shopify/InventoryTransfer/1",
+              status: "READY_TO_SHIP",
+              rawNodeOnly: "do not return"
+            },
+            userErrors: []
+          }
+        }
+      });
+    }, false);
+    context.config.grantedScopes = ["write_inventory_transfers", "read_inventory_transfers"];
+    const preview = await callTool("inventory.transfer.markReady.preview", {
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+      currentStatus: "DRAFT"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("inventory.transfer.markReady.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash,
+      inventoryTransferId: "gid://shopify/InventoryTransfer/999"
+    }, context);
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "execute",
+      implemented: true,
+      status: "ok",
+      inventoryTransfer: {
+        inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+        status: "READY_TO_SHIP"
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentInventoryTransferMarkReady");
+    expect(request.query).toContain("inventoryTransferMarkAsReadyToShip");
+    expect(request.query).not.toContain("inventoryTransferCreate");
+    expect(request.query).not.toContain("@idempotent");
+    expect(request.variables).toEqual({
+      id: "gid://shopify/InventoryTransfer/1"
+    });
+    expect(requests[0].body).not.toContain("InventoryTransfer/999");
+    expect(output).not.toContain("rawNodeOnly");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.transfer.markReady.execute", result: "success" });
+  });
+
+  it("blocks inventory transfer mark-ready before fetch when transfer scopes are missing", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["write_inventory"];
+    const preview = await callTool("inventory.transfer.markReady.preview", {
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("inventory.transfer.markReady.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: [{ code: "missing_write_scope" }]
+    });
+    expect(fetchCalled).toBe(false);
+    expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.transfer.markReady.execute", result: "blocked" });
   });
 
   it("runs catalog and content previews with structured audit entries", async () => {

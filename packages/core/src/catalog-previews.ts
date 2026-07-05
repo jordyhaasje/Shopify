@@ -15,7 +15,7 @@ export interface PreviewChange {
 }
 
 export interface PreviewTarget {
-  type: "product" | "product_media" | "product_url_import" | "inventory" | "page" | "collection";
+  type: "product" | "product_media" | "product_url_import" | "inventory" | "inventory_transfer" | "page" | "collection";
   id?: string;
   handle?: string;
   title?: string;
@@ -52,6 +52,7 @@ type PreviewTool =
   | "inventory.adjustQuantity.preview"
   | "inventory.moveQuantity.preview"
   | "inventory.transfer.preview"
+  | "inventory.transfer.markReady.preview"
   | "page.create.preview"
   | "collection.create.preview";
 
@@ -326,6 +327,20 @@ export function previewInventoryTransfer(input: Record<string, unknown>): Catalo
     referenceDocumentUri ? { field: "referenceDocumentUri", action: "plan" as const, value: summarizeValue("referenceDocumentUri", referenceDocumentUri) } : undefined
   ]);
   return okResult("inventory.transfer.preview", target, `Preview inventory transfer for ${inventoryItemId}.`, changes, []);
+}
+
+export function previewInventoryTransferMarkReady(input: Record<string, unknown>): CatalogPreviewResult {
+  const inventoryTransferId = firstString(input.inventoryTransferId, input.transferId, input.id);
+  const currentStatus = firstString(input.currentStatus, input.status);
+  const target: PreviewTarget = { type: "inventory_transfer", id: inventoryTransferId || undefined };
+  if (!inventoryTransferId) return missingInput("inventory.transfer.markReady.preview", target, "Provide an inventory transfer ID.");
+
+  const changes = compactChanges([
+    { field: "inventoryTransferId", action: "plan" as const, value: summarizeValue("inventoryTransferId", inventoryTransferId) },
+    { field: "status", action: "update" as const, before: currentStatus || "unknown", after: "READY_TO_SHIP" }
+  ]);
+
+  return okResult("inventory.transfer.markReady.preview", target, `Preview marking inventory transfer ${inventoryTransferId} ready to ship.`, changes, []);
 }
 
 export function previewPageCreate(input: Record<string, unknown>): CatalogPreviewResult {
