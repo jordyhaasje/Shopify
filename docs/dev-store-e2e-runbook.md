@@ -183,10 +183,10 @@ git clone https://github.com/jordyhaasje/Shopify.git
 cd Shopify
 pnpm install
 pnpm run build
-pnpm --filter shopify-store-agent run setup -- --store your-store.myshopify.com
+pnpm --filter shopify-store-agent run setup -- --store your-store.myshopify.com --host codex
 ```
 
-Setup is for local config, MCP snippets, and guidance. It prints the config path and MCP snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts. In the current GitHub-only phase, snippets use the local build with a command like:
+Setup is for local config, MCP snippets, and guidance. It prints the config path and the selected MCP snippet for Codex, OpenCode, Claude Code, Cursor, or generic MCP-compatible hosts. Use `--host all` when every supported snippet is needed. In the current GitHub-only phase, snippets use the local build with a command like:
 
 ```text
 node /absolute/path/to/Shopify/packages/mcp/dist/server.js
@@ -256,7 +256,7 @@ The preflight must pass before live write E2E. It fails closed when the config i
 
 ## MCP Host Connection
 
-Use the generated Codex, Claude Code, Cursor, or generic MCP host snippet.
+Use the generated Codex, OpenCode, Claude Code, Cursor, or generic MCP host snippet.
 
 - Confirm the snippet points to the intended local config path.
 - Confirm the snippet uses `command = "node"` or `"command": "node"` and points to the local `packages/mcp/dist/server.js` build while npm publishing is inactive.

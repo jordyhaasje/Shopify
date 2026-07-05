@@ -51,6 +51,7 @@ export interface SetupOptions {
   fetcher?: FetchLike;
   mcpCommandMode?: McpCommandMode;
   localMcpServerPath?: string;
+  host?: McpHostSelection;
 }
 
 export interface AuthOptions {
@@ -94,6 +95,17 @@ export interface SetupWarning {
 }
 
 export type McpCommandMode = "local" | "npx";
+export type McpHost = "codex" | "claude-code" | "cursor" | "opencode" | "generic";
+export type McpHostSelection = McpHost | "all";
+
+export interface McpHostGuidance {
+  host: McpHost;
+  label: string;
+  configTarget: string;
+  restart: string;
+}
+
+const mcpHosts = ["codex", "claude-code", "cursor", "opencode", "generic"] as const satisfies readonly McpHost[];
 
 const implementedWriteExecuteTools = [
   "page.create.execute",
@@ -124,7 +136,10 @@ export interface SetupResult {
   scopeSummary: string;
   capabilityCheck: CapabilityCheckResult;
   warnings: SetupWarning[];
-  snippets: Record<"codex" | "claude" | "cursor" | "generic", string>;
+  snippets: Record<McpHost, string>;
+  host: McpHostSelection;
+  selectedSnippetHosts: McpHost[];
+  hostGuidance: McpHostGuidance[];
   firstPrompts: string[];
   nextSteps: string[];
 }
@@ -143,7 +158,7 @@ export interface SmokeValidationResult {
   readOnly: boolean;
   fetchCalls: number;
   checks: SmokeCheck[];
-  snippets: Record<"codex" | "claude" | "cursor" | "generic", string>;
+  snippets: Record<McpHost, string>;
   capabilityCheck: CapabilityCheckResult;
   previewId?: string;
   previewHash?: string;
@@ -178,7 +193,7 @@ export interface SetupCheckResult {
   themeAccessTokenConfigured: boolean;
   fetchCalls: 0;
   checks: SmokeCheck[];
-  snippetHosts: Array<"codex" | "claude" | "cursor" | "generic">;
+  snippetHosts: McpHost[];
   firstPrompts: string[];
   nextSteps: string[];
 }
@@ -197,11 +212,61 @@ export function resolveMcpCommand(options: { mode?: McpCommandMode; localMcpServ
   };
 }
 
+export function normalizeMcpHost(value: unknown): McpHostSelection {
+  if (typeof value !== "string") return "all";
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "claude") return "claude-code";
+  if (normalized === "all" || (mcpHosts as readonly string[]).includes(normalized)) {
+    return normalized as McpHostSelection;
+  }
+  throw new Error(`unsupported_host: Use one of ${["all", ...mcpHosts].join(", ")}.`);
+}
+
+export function selectedMcpHosts(host: McpHostSelection = "all"): McpHost[] {
+  return host === "all" ? [...mcpHosts] : [host];
+}
+
+export function mcpHostGuidance(host: McpHost): McpHostGuidance {
+  const guidance: Record<McpHost, McpHostGuidance> = {
+    codex: {
+      host: "codex",
+      label: "Codex",
+      configTarget: "~/.codex/config.toml or trusted project .codex/config.toml",
+      restart: "Restart Codex or use /mcp to confirm the server is loaded."
+    },
+    "claude-code": {
+      host: "claude-code",
+      label: "Claude Code",
+      configTarget: "Project .mcp.json or Claude Code MCP settings",
+      restart: "Restart Claude Code or reload the project after updating MCP config."
+    },
+    cursor: {
+      host: "cursor",
+      label: "Cursor",
+      configTarget: "~/.cursor/mcp.json or project .cursor/mcp.json",
+      restart: "Restart Cursor or reload MCP from Cursor settings."
+    },
+    opencode: {
+      host: "opencode",
+      label: "OpenCode",
+      configTarget: "~/.config/opencode/opencode.json or project opencode.json",
+      restart: "Restart OpenCode or run opencode mcp list after updating config."
+    },
+    generic: {
+      host: "generic",
+      label: "Generic MCP host",
+      configTarget: "Your host's local stdio MCP server configuration",
+      restart: "Restart or reload the MCP host so it starts the local server."
+    }
+  };
+  return guidance[host];
+}
+
 export function generateMcpConfigSnippets(config: StoreAgentConfig, options: {
   configPath?: string;
   mcpCommandMode?: McpCommandMode;
   localMcpServerPath?: string;
-} = {}): Record<"codex" | "claude" | "cursor" | "generic", string> {
+} = {}): Record<McpHost, string> {
   const env = {
     SHOPIFY_STORE_AGENT_CONFIG: options.configPath ?? defaultConfigPath(),
     SHOPIFY_STORE_AGENT_STORE: config.storeUrl,
@@ -222,9 +287,10 @@ export function generateMcpConfigSnippets(config: StoreAgentConfig, options: {
       "[mcp_servers.shopify-store-agent.env]",
       ...Object.entries(env).map(([key, value]) => `${key} = "${value}"`)
     ].join("\n"),
-    claude: JSON.stringify({
+    "claude-code": JSON.stringify({
       mcpServers: {
         "shopify-store-agent": {
+          type: "stdio",
           command,
           args,
           env
@@ -234,14 +300,27 @@ export function generateMcpConfigSnippets(config: StoreAgentConfig, options: {
     cursor: JSON.stringify({
       mcpServers: {
         "shopify-store-agent": {
+          type: "stdio",
           command,
           args,
           env
         }
       }
     }, null, 2),
+    opencode: JSON.stringify({
+      $schema: "https://opencode.ai/config.json",
+      mcp: {
+        "shopify-store-agent": {
+          type: "local",
+          command: [command, ...args],
+          enabled: true,
+          environment: env
+        }
+      }
+    }, null, 2),
     generic: JSON.stringify({
       name: "shopify-store-agent",
+      type: "stdio",
       command,
       args,
       env
@@ -486,7 +565,7 @@ export async function runSetupCheck(options: SetupCheckOptions = {}): Promise<Se
   const snippetOutput = JSON.stringify(snippets);
   const secrets = [stored.adminAccessToken, stored.themeAccessToken].filter((value): value is string => Boolean(value));
   checks.push(check("mcp_snippets_safe", secrets.every((secret) => !snippetOutput.includes(secret)), "MCP snippets include only non-secret environment values."));
-  const snippetHosts = Object.keys(snippets) as Array<"codex" | "claude" | "cursor" | "generic">;
+  const snippetHosts = Object.keys(snippets) as McpHost[];
 
   const mcpCommand = resolveMcpCommand({
     mode: options.mcpCommandMode ?? "local",
@@ -600,7 +679,10 @@ export async function runSetup(options: SetupOptions): Promise<{
   scopeSummary: string;
   capabilityCheck: CapabilityCheckResult;
   warnings: SetupWarning[];
-  snippets: Record<"codex" | "claude" | "cursor" | "generic", string>;
+  snippets: Record<McpHost, string>;
+  host: McpHostSelection;
+  selectedSnippetHosts: McpHost[];
+  hostGuidance: McpHostGuidance[];
   firstPrompts: string[];
   nextSteps: string[];
 }> {
@@ -619,7 +701,9 @@ export async function runSetup(options: SetupOptions): Promise<{
     const configPath = options.configPath ?? defaultConfigPath();
     const readOnly = options.readOnly ?? true;
     const scopes = resolveSetupScopes(options.scopes, readOnly);
-    const warnings = setupWarnings(readOnly, scopes);
+    const host = normalizeMcpHost(options.host);
+    const selectedSnippetHosts = selectedMcpHosts(host);
+    const warnings = setupWarnings(readOnly, scopes, options.mcpCommandMode);
     const config = createConfig({
       storeUrl,
       adminAccessToken: adminAccessToken || undefined,
@@ -658,8 +742,11 @@ export async function runSetup(options: SetupOptions): Promise<{
         mcpCommandMode: options.mcpCommandMode,
         localMcpServerPath: options.localMcpServerPath
       }),
+      host,
+      selectedSnippetHosts,
+      hostGuidance: selectedSnippetHosts.map(mcpHostGuidance),
       firstPrompts: setupFirstPrompts(),
-      nextSteps: setupNextSteps(authMethod, configPath)
+      nextSteps: setupNextSteps(authMethod, configPath, host)
     };
   } finally {
     rl?.close();
@@ -718,6 +805,9 @@ function parseArgs(argv: string[]): (SetupOptions & AuthOptions & SmokeOptions &
     } else if (arg === "--mcp-command" && next) {
       options.mcpCommandMode = next === "npx" ? "npx" : "local";
       index += 1;
+    } else if (arg === "--host" && next) {
+      options.host = normalizeMcpHost(next);
+      index += 1;
     } else if (arg === "--local-mcp-server" && next) {
       options.localMcpServerPath = next;
       index += 1;
@@ -730,7 +820,7 @@ async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   if (options.command !== "setup" && options.command !== "setup-check" && options.command !== "auth" && options.command !== "smoke" && options.command !== "e2e-preflight") {
     console.log("Usage:");
-    console.log("  shopify-store-agent setup --store example.myshopify.com [--auth manual|oauth] [--dry-run] [--mcp-command local|npx]");
+    console.log("  shopify-store-agent setup --store example.myshopify.com [--auth manual|oauth] [--host codex|claude-code|cursor|opencode|generic|all] [--dry-run] [--mcp-command local|npx]");
     console.log("  shopify-store-agent setup-check [--store example.myshopify.com] [--config /path/config.json]");
     console.log("  shopify-store-agent auth --store example.myshopify.com --client-id ... --client-secret ...");
     console.log("  shopify-store-agent smoke [--store example.myshopify.com] [--live]");
@@ -780,13 +870,14 @@ async function main(): Promise<void> {
   }
 
   const result = await runSetup({ ...options, saveConfig: !options.dryRun });
-  console.log("Shopify Store Agent setup preview");
-  console.log(JSON.stringify(result.safeConfig, null, 2));
-  console.log(`\nConfig path: ${result.configPath}`);
+  console.log("Shopify Store Agent guided setup");
+  console.log(`Store: ${result.config.storeUrl}`);
+  console.log(`Config path: ${result.configPath}`);
   console.log(`Saved: ${result.saved ? "yes" : "no"}`);
   console.log(`Auth method: ${result.authMethod}`);
   console.log(`Read-only mode: ${result.config.readOnly ? "enabled" : "disabled"}`);
   console.log(`Scopes for setup guidance: ${result.scopeSummary}`);
+  console.log(`Host target: ${result.host === "all" ? "all supported hosts" : mcpHostGuidance(result.host).label}`);
   for (const warning of result.warnings) {
     console.log(`Warning: ${warning.message}`);
   }
@@ -801,18 +892,16 @@ async function main(): Promise<void> {
   for (const step of result.nextSteps) {
     console.log(`- ${step}`);
   }
+  console.log("- After the host reloads, ask the first prompt below.");
   console.log("\nFirst AI prompts");
-  for (const prompt of result.firstPrompts) {
-    console.log(`- ${prompt}`);
+  console.log(`- ${result.firstPrompts[0]}`);
+  console.log("\nGenerated MCP config");
+  for (const guidance of result.hostGuidance) {
+    console.log(`\n${guidance.label}`);
+    console.log(`Place in: ${guidance.configTarget}`);
+    console.log(guidance.restart);
+    console.log(result.snippets[guidance.host]);
   }
-  console.log("\nCodex MCP config");
-  console.log(result.snippets.codex);
-  console.log("\nClaude Code MCP config");
-  console.log(result.snippets.claude);
-  console.log("\nCursor MCP config");
-  console.log(result.snippets.cursor);
-  console.log("\nGeneric MCP config");
-  console.log(result.snippets.generic);
 }
 
 function normalizeAuthMethod(value: unknown): "manual" | "oauth" {
@@ -852,7 +941,7 @@ function resolveSetupScopes(input: string | readonly string[] | undefined, readO
   return scopes;
 }
 
-function setupWarnings(readOnly: boolean, scopes: readonly string[]): SetupWarning[] {
+function setupWarnings(readOnly: boolean, scopes: readonly string[], mcpCommandMode?: McpCommandMode): SetupWarning[] {
   const warnings: SetupWarning[] = [];
   if (!readOnly) {
     warnings.push({
@@ -866,15 +955,24 @@ function setupWarnings(readOnly: boolean, scopes: readonly string[]): SetupWarni
       message: `Write scopes were requested. Use only the minimal scopes required for reviewed development-store tests of ${implementedWriteExecuteToolsText}.`
     });
   }
+  if (mcpCommandMode === "npx") {
+    warnings.push({
+      code: "future_npx_mode",
+      message: "npx MCP command mode is for future package-distributed setup or local package dry-run testing; do not use it as the primary route until npm publishing is approved and completed."
+    });
+  }
   return warnings;
 }
 
-function setupNextSteps(authMethod: "manual" | "oauth", configPath: string): string[] {
+function setupNextSteps(authMethod: "manual" | "oauth", configPath: string, host: McpHostSelection): string[] {
+  const hostLabel = host === "all" ? "the selected AI host" : mcpHostGuidance(host).label;
   const common = [
-    `Point your MCP host at the local config path: ${configPath}.`,
-    "For the current GitHub-only install, use the generated local node MCP command after pnpm run build.",
+    `Point ${hostLabel} at the local config path: ${configPath}.`,
+    "For the current GitHub-only install, use the generated local node MCP command after pnpm run build; npx remains a future package route until publishing is approved.",
+    `Add the generated snippet to ${hostLabel}, then restart or reload that host before testing.`,
+    "Run shopify-store-agent setup-check before the first AI-host prompt.",
     "Users can ask the AI host in ordinary store language; the host should map requests to Shopify Store Agent tools and ask for missing exact targets before calling tools.",
-    `Keep read-only mode enabled except for explicit reviewed development-store tests of ${implementedWriteExecuteToolsText}.`
+    "Keep read-only mode enabled except for explicit reviewed development-store write tests."
   ];
   if (authMethod === "oauth") {
     return [

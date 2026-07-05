@@ -14,7 +14,7 @@ Durable project constraints:
 - `pnpm run smoke:local` must stay local/no-write and report `fetchCalls: 0`.
 - Current install docs and MCP snippets should assume GitHub clone + `pnpm install` + `pnpm run build`; npm/npx is future until package publishing is active.
 - Future package publishing is manual, requires explicit approval, and should follow [release-runbook.md](release-runbook.md).
-- Generated MCP snippets should use `node /absolute/path/to/Shopify/packages/mcp/dist/server.js` for the GitHub-local route and must use `SHOPIFY_STORE_AGENT_CONFIG` without secrets.
+- Generated MCP snippets should use `node /absolute/path/to/Shopify/packages/mcp/dist/server.js` for the GitHub-local route, support host selection with OpenCode included, and must use `SHOPIFY_STORE_AGENT_CONFIG` without secrets.
 - Local OAuth is the recommended auth route when Shopify app client credentials exist. `auth` runs the browser flow and stores the token locally; `setup --auth oauth` only provides guidance/snippets. Manual Admin API token setup remains a fallback.
 - Execute paths must require stored preview binding, reviewed payload hashing, matching target/tool/hash values, and explicit confirmation.
 - MCP runtime audit entries persist locally to append-only JSONL and must remain compact/safe.

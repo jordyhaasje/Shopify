@@ -67,7 +67,7 @@ pnpm run smoke:local
 Example store:
 
 ```bash
-export SHOPIFY_STORE="hazify-apps.myshopify.com"
+export SHOPIFY_STORE="your-store.myshopify.com"
 export SHOPIFY_CLIENT_ID="..."
 export SHOPIFY_CLIENT_SECRET="..."
 ```
@@ -110,10 +110,10 @@ Manual Admin API token setup remains available as a fallback.
 After `pnpm run build`, run setup to generate snippets:
 
 ```bash
-pnpm --filter shopify-store-agent run setup -- --store "$SHOPIFY_STORE" --auth oauth
+pnpm --filter shopify-store-agent run setup -- --store "$SHOPIFY_STORE" --auth oauth --host codex
 ```
 
-Setup also prints "First AI prompts". Encourage users to start from those prompts instead of requiring MCP tool names, Shopify handles, or GraphQL IDs. The prompts are examples; the host must still choose the correct tool, ask for missing exact targets, and keep preview-before-execute.
+Pick the matching host with `--host codex`, `--host opencode`, `--host claude-code`, `--host cursor`, or `--host generic`. Use `--host all` when the operator needs all snippets. Setup also prints a safe first prompt; encourage users to start from that prompt instead of requiring MCP tool names, Shopify handles, or GraphQL IDs. The prompt is an example; the host must still choose the correct tool, ask for missing exact targets, and keep preview-before-execute.
 
 After setup/auth, run the local setup check before debugging host behavior:
 
@@ -132,12 +132,12 @@ args = ["/absolute/path/to/Shopify/packages/mcp/dist/server.js"]
 
 [mcp_servers.shopify-store-agent.env]
 SHOPIFY_STORE_AGENT_CONFIG = "/Users/<user>/.shopify-store-agent/config.json"
-SHOPIFY_STORE_AGENT_STORE = "hazify-apps.myshopify.com"
+SHOPIFY_STORE_AGENT_STORE = "your-store.myshopify.com"
 SHOPIFY_STORE_AGENT_API_VERSION = "2026-07"
 SHOPIFY_STORE_AGENT_READ_ONLY = "true"
 ```
 
-For Claude Code, Cursor, and generic MCP hosts, use the equivalent generated JSON snippet. The snippet must use `SHOPIFY_STORE_AGENT_CONFIG` and must not contain Admin API tokens, OAuth client secrets, or Theme Access tokens.
+For OpenCode, Claude Code, Cursor, and generic MCP hosts, use the equivalent generated snippet. The snippet must use `SHOPIFY_STORE_AGENT_CONFIG` and must not contain Admin API tokens, OAuth client secrets, or Theme Access tokens.
 
 The future npm/npx route can replace the local node command after packages are published.
 

@@ -1,6 +1,6 @@
 # Shopify Store Agent
 
-Shopify Store Agent is a local-first MCP server, CLI wizard, and bootstrap skill package for AI hosts such as Codex, Claude Code, Cursor, and other MCP-compatible tools.
+Shopify Store Agent is a local-first MCP server, CLI wizard, and bootstrap skill package for AI hosts such as Codex, OpenCode, Claude Code, Cursor, and other MCP-compatible tools.
 
 It helps an AI host work with Shopify store data and store-management workflows. Existing email MCP servers can be connected separately in the same host so the model can combine customer emails with Shopify order/customer context.
 
@@ -12,7 +12,7 @@ Shopify OAuth, when used, is only a local install/auth mechanism for the MCP/CLI
 
 ## Start Here
 
-New users should start with the compact [User Quickstart](docs/user-quickstart.md). It walks through GitHub install, local OAuth, MCP host config, first read, first preview, and reviewed execute flow for Codex, OpenCode, Claude Code, Cursor, and generic MCP-compatible hosts.
+New users should start with the compact [User Quickstart](docs/user-quickstart.md). It walks through GitHub install, local OAuth, MCP host config, first read, first preview, and reviewed execute flow for Codex, OpenCode, Claude Code, Cursor, and generic MCP-compatible hosts. If they want an AI app to guide the install from the repo link, use [AI-Assisted Install](docs/ai-assisted-install.md).
 
 For the canonical product goal, current MVP status, implementation roadmap, and Codex operating rules, see [Product Goal And Roadmap](docs/product-goal-and-roadmap.md).
 
@@ -77,7 +77,7 @@ git clone https://github.com/jordyhaasje/Shopify.git
 cd Shopify
 pnpm install
 pnpm run build
-pnpm --filter shopify-store-agent run setup -- --store your-store.myshopify.com
+pnpm --filter shopify-store-agent run setup -- --store your-store.myshopify.com --host codex
 ```
 
 The generated MCP snippets use the local build by default:
@@ -110,7 +110,7 @@ Package metadata is prepared and can be checked locally with `pnpm run pack:chec
 
 Future package publishing is covered by the [Release Runbook](docs/release-runbook.md). It keeps publishing manual and explicitly approved, with local validation, dry-run package checks, and safe release evidence before any npm publish.
 
-The current CLI already guides users through store URL normalization, manual-token or local-OAuth setup guidance, read-only local config, capability checks, and MCP host snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts. Future npm/npx publishing should distribute that same reviewed behavior. Setup and OAuth auth default to read-only scopes and do not request or activate write mode for read/preview validation.
+The current CLI already guides users through store URL normalization, manual-token or local-OAuth setup guidance, read-only local config, capability checks, and host-specific MCP snippets for Codex, OpenCode, Claude Code, Cursor, and generic MCP-compatible hosts. Use `--host codex`, `--host opencode`, `--host claude-code`, `--host cursor`, `--host generic`, or `--host all`. Future npm/npx publishing should distribute that same reviewed behavior. Setup and OAuth auth default to read-only scopes and do not request or activate write mode for read/preview validation.
 
 After setup/auth, run a local setup check before opening the MCP host:
 
