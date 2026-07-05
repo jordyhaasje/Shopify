@@ -29,6 +29,7 @@ pnpm run lint
 pnpm run typecheck
 pnpm test
 pnpm run build
+pnpm run smoke:local
 ```
 
 PRs are reviewed manually and merged manually.
