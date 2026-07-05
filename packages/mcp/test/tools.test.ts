@@ -22,6 +22,8 @@ const expectedToolNames = [
   "inventory.setQuantity.execute",
   "inventory.adjustQuantity.preview",
   "inventory.adjustQuantity.execute",
+  "inventory.moveQuantity.preview",
+  "inventory.moveQuantity.execute",
   "order.find",
   "order.get",
   "customer.find",
@@ -542,6 +544,163 @@ describe("MCP tools", () => {
     });
     expect(fetchCalled).toBe(false);
     expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.adjustQuantity.execute", result: "blocked" });
+  });
+
+  it("previews inventory quantity state move with executeRequest binding", async () => {
+    const context = baseContext();
+
+    const result = await callTool("inventory.moveQuantity.preview", {
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      quantity: 3,
+      fromName: "available",
+      toName: "reserved",
+      reason: "reservation"
+    }, context) as Record<string, unknown>;
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "preview",
+      status: "ok",
+      target: { type: "inventory", id: "gid://shopify/InventoryItem/1" },
+      executeRequest: expect.objectContaining({
+        tool: "inventory.moveQuantity.execute",
+        expectedTool: "inventory.moveQuantity.preview",
+        requiresConfirmation: true
+      })
+    });
+    expect(changeFor(result, "quantity")).toMatchObject({ before: "available", after: 3 });
+    expect(changeFor(result, "toName")).toMatchObject({ value: "reserved" });
+    expect(context.audit.list()[0]).toMatchObject({ tool: "inventory.moveQuantity.preview", mode: "preview", result: "success" });
+  });
+
+  it("moves inventory quantity from stored preview via inventoryMoveQuantities", async () => {
+    const requests: Array<{ body: string }> = [];
+    const context = baseContext(async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          inventoryMoveQuantities: {
+            inventoryAdjustmentGroup: {
+              reason: "Inventory reservation",
+              referenceDocumentUri: "gid://store-agent/TestRun/3",
+              changes: [
+                { name: "available", delta: -3, quantityAfterChange: 5 },
+                { name: "reserved", delta: 3, quantityAfterChange: 3 }
+              ],
+              rawNodeOnly: "do not return"
+            },
+            userErrors: []
+          }
+        }
+      });
+    }, false);
+    context.config.grantedScopes = ["write_inventory"];
+    const preview = await callTool("inventory.moveQuantity.preview", {
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      quantity: 3,
+      fromName: "available",
+      toName: "reserved",
+      reason: "reservation",
+      referenceDocumentUri: "gid://store-agent/TestRun/3"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("inventory.moveQuantity.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash,
+      quantity: 999,
+      fromName: "damaged",
+      toName: "available"
+    }, context);
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "execute",
+      implemented: true,
+      status: "ok",
+      inventoryMove: {
+        inventoryItemId: "gid://shopify/InventoryItem/1",
+        locationId: "gid://shopify/Location/1",
+        quantity: 3,
+        fromName: "available",
+        toName: "reserved"
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentInventoryMoveQuantities");
+    expect(request.query).toContain("@idempotent");
+    expect(request.query).not.toContain("inventorySetQuantities");
+    expect(request.query).not.toContain("productUpdate");
+    expect(request.variables.input.changes).toEqual([{
+      quantity: 3,
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      from: {
+        locationId: "gid://shopify/Location/1",
+        name: "available",
+        ledgerDocumentUri: null,
+        changeFromQuantity: null
+      },
+      to: {
+        locationId: "gid://shopify/Location/1",
+        name: "reserved",
+        ledgerDocumentUri: null,
+        changeFromQuantity: null
+      }
+    }]);
+    expect(request.variables.idempotencyKey).toBe(`store-agent:${preview.previewId}`);
+    expect(requests[0].body).not.toContain("999");
+    expect(requests[0].body).not.toContain("damaged");
+    expect(output).not.toContain("rawNodeOnly");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.moveQuantity.execute", result: "success" });
+  });
+
+  it("blocks inventory move before fetch when write_inventory is missing", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("inventory.moveQuantity.preview", {
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      quantity: 3,
+      fromName: "available",
+      toName: "reserved",
+      reason: "reservation"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("inventory.moveQuantity.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: [{ code: "missing_write_scope" }]
+    });
+    expect(fetchCalled).toBe(false);
+    expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.moveQuantity.execute", result: "blocked" });
   });
 
   it("runs catalog and content previews with structured audit entries", async () => {

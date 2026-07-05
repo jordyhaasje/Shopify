@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   previewCollectionCreate,
   previewInventoryAdjustQuantity,
+  previewInventoryMoveQuantity,
   previewInventorySetQuantity,
   previewPageCreate,
   previewProductCreate,
@@ -297,6 +298,67 @@ describe("catalog and content previews", () => {
       ok: false,
       status: "validation_error",
       warnings: [{ code: "validation_error", message: "Inventory adjustment delta must be a non-zero integer." }]
+    });
+  });
+
+  it("previews an explicit inventory quantity state move", () => {
+    const preview = previewInventoryMoveQuantity({
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      quantity: 3,
+      fromName: "available",
+      toName: "reserved",
+      reason: "reservation",
+      referenceDocumentUri: "gid://store-agent/TestRun/3"
+    });
+
+    expect(preview).toMatchObject({
+      ok: true,
+      status: "ok",
+      target: { type: "inventory", id: "gid://shopify/InventoryItem/1" },
+      auditContext: {
+        tool: "inventory.moveQuantity.preview",
+        mode: "preview",
+        performsShopifyMutation: false,
+        usesShopifyWriteOperation: false
+      },
+      proposedChanges: expect.arrayContaining([
+        expect.objectContaining({ field: "inventoryItemId", value: "gid://shopify/InventoryItem/1" }),
+        expect.objectContaining({ field: "locationId", value: "gid://shopify/Location/1" }),
+        expect.objectContaining({ field: "quantity", action: "update", before: "available", after: 3 }),
+        expect.objectContaining({ field: "fromName", value: "available" }),
+        expect.objectContaining({ field: "toName", value: "reserved" })
+      ])
+    });
+  });
+
+  it("requires positive quantity and distinct states for inventory move previews", () => {
+    const zero = previewInventoryMoveQuantity({
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      quantity: 0,
+      fromName: "available",
+      toName: "reserved",
+      reason: "reservation"
+    });
+    const sameState = previewInventoryMoveQuantity({
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      quantity: 3,
+      fromName: "available",
+      toName: "available",
+      reason: "reservation"
+    });
+
+    expect(zero).toMatchObject({
+      ok: false,
+      status: "validation_error",
+      warnings: [{ code: "validation_error", message: "Inventory move quantity must be a positive integer." }]
+    });
+    expect(sameState).toMatchObject({
+      ok: false,
+      status: "validation_error",
+      warnings: [{ code: "validation_error", message: "Source and destination inventory quantity names must differ." }]
     });
   });
 

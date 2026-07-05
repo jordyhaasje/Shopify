@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adjustInventoryQuantity, createConfig, setInventoryQuantity, type FetchLike } from "../src/index.js";
+import { adjustInventoryQuantity, createConfig, moveInventoryQuantity, setInventoryQuantity, type FetchLike } from "../src/index.js";
 
 describe("inventory write helper", () => {
   it("sets an explicit inventory quantity through inventorySetQuantities", async () => {
@@ -271,6 +271,172 @@ describe("inventory write helper", () => {
       ok: false,
       status: "user_errors",
       userErrors: [{ field: ["input", "changes"], message: "Cannot adjust inventory." }]
+    });
+  });
+
+  it("moves an explicit inventory quantity between states through inventoryMoveQuantities", async () => {
+    const requests: Array<{ body: string; token?: string }> = [];
+    const fetcher: FetchLike = async (_url, init) => {
+      requests.push({ body: init.body, token: init.headers["X-Shopify-Access-Token"] });
+      return jsonResponse({
+        data: {
+          inventoryMoveQuantities: {
+            inventoryAdjustmentGroup: {
+              reason: "Inventory reservation",
+              referenceDocumentUri: "gid://store-agent/TestRun/3",
+              changes: [
+                { name: "available", delta: -3, quantityAfterChange: 5 },
+                { name: "reserved", delta: 3, quantityAfterChange: 3 }
+              ],
+              rawNodeOnly: "do not return"
+            },
+            userErrors: []
+          }
+        }
+      });
+    };
+
+    const result = await moveInventoryQuantity(config(), {
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      quantity: 3,
+      fromName: "available",
+      toName: "reserved",
+      reason: "reservation",
+      referenceDocumentUri: "gid://store-agent/TestRun/3",
+      idempotencyKey: "store-agent:preview_789"
+    }, { fetcher });
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "ok",
+      inventoryMove: {
+        inventoryItemId: "gid://shopify/InventoryItem/1",
+        locationId: "gid://shopify/Location/1",
+        quantity: 3,
+        fromName: "available",
+        toName: "reserved",
+        changes: [
+          { name: "available", delta: -3, quantityAfterChange: 5 },
+          { name: "reserved", delta: 3, quantityAfterChange: 3 }
+        ]
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentInventoryMoveQuantities");
+    expect(request.query).toContain("@idempotent");
+    expect(request.query).not.toContain("inventorySetQuantities");
+    expect(request.query).not.toContain("productUpdate");
+    expect(request.variables).toEqual({
+      input: {
+        reason: "reservation",
+        referenceDocumentUri: "gid://store-agent/TestRun/3",
+        changes: [{
+          quantity: 3,
+          inventoryItemId: "gid://shopify/InventoryItem/1",
+          from: {
+            locationId: "gid://shopify/Location/1",
+            name: "available",
+            ledgerDocumentUri: null,
+            changeFromQuantity: null
+          },
+          to: {
+            locationId: "gid://shopify/Location/1",
+            name: "reserved",
+            ledgerDocumentUri: null,
+            changeFromQuantity: null
+          }
+        }]
+      },
+      idempotencyKey: "store-agent:preview_789"
+    });
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("shpat_inventory_secret");
+  });
+
+  it("blocks inventory move in read-only config before calling Shopify", async () => {
+    let called = false;
+    const result = await moveInventoryQuantity(createConfig({
+      storeUrl: "demo",
+      adminAccessToken: "shpat_inventory_secret",
+      readOnly: true
+    }), {
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      quantity: 3,
+      fromName: "available",
+      toName: "reserved",
+      reason: "reservation",
+      idempotencyKey: "store-agent:preview_789"
+    }, {
+      fetcher: async () => {
+        called = true;
+        return jsonResponse({});
+      }
+    });
+
+    expect(result).toMatchObject({ ok: false, status: "blocked" });
+    expect(called).toBe(false);
+  });
+
+  it("requires a positive inventory move quantity and distinct states", async () => {
+    const zero = await moveInventoryQuantity(config(), {
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      quantity: 0,
+      fromName: "available",
+      toName: "reserved",
+      reason: "reservation",
+      idempotencyKey: "store-agent:preview_789"
+    });
+    const sameState = await moveInventoryQuantity(config(), {
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      quantity: 3,
+      fromName: "available",
+      toName: "available",
+      reason: "reservation",
+      idempotencyKey: "store-agent:preview_789"
+    });
+
+    expect(zero).toMatchObject({
+      ok: false,
+      status: "missing_input",
+      diagnostics: [{ code: "missing_input" }]
+    });
+    expect(sameState).toMatchObject({
+      ok: false,
+      status: "missing_input",
+      diagnostics: [{ code: "missing_input" }]
+    });
+  });
+
+  it("returns Shopify inventory move user errors safely", async () => {
+    const result = await moveInventoryQuantity(config(), {
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      quantity: 3,
+      fromName: "available",
+      toName: "reserved",
+      reason: "reservation",
+      idempotencyKey: "store-agent:preview_789"
+    }, {
+      fetcher: async () => jsonResponse({
+        data: {
+          inventoryMoveQuantities: {
+            inventoryAdjustmentGroup: null,
+            userErrors: [{ field: ["input", "changes"], message: "Cannot move inventory.", code: "INVALID_QUANTITY" }]
+          }
+        }
+      })
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "user_errors",
+      userErrors: [{ field: ["input", "changes"], message: "Cannot move inventory." }]
     });
   });
 });
