@@ -46,7 +46,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 - Minimal `inventory.adjustQuantity.execute` is implemented for one explicit inventory item ID, one explicit location ID, quantity name `available`, a non-zero integer delta, an explicit reason, stored preview binding, and `write_inventory` preflight.
 - Minimal `inventory.moveQuantity.execute` is implemented for one explicit inventory item ID, one explicit location ID, one positive integer quantity, supported source and destination quantity names, an explicit reason, stored preview binding, and `write_inventory` preflight.
 - Minimal `inventory.transfer.execute` is implemented for one explicit inventory item ID, one source location ID, one destination location ID, one positive integer quantity, an explicit reason, stored preview binding, and local preflight requiring both `write_inventory_transfers` and `read_inventory_transfers`. It creates a draft Shopify inventory transfer only.
-- `inventory.transfer.addItems.preview` is implemented as a preview-only richer transfer lifecycle planning step for one explicit inventory transfer ID, one explicit inventory item ID, and one positive quantity. It stores a safe preview binding and audit entry, does not call Shopify, and does not return an `executeRequest` helper because execute is not implemented.
+- Minimal `inventory.transfer.addItems.execute` is implemented for one explicit inventory transfer ID, one explicit inventory item ID, one positive quantity, stored preview binding, and local preflight requiring `write_inventory_transfers`, `read_inventory_transfers`, and `read_inventory`. It uses `inventoryTransferSetItems` to set or replace that one transfer item quantity only.
 - Minimal `inventory.transfer.markReady.execute` is implemented for one explicit inventory transfer ID, stored preview binding, and local preflight requiring both `write_inventory_transfers` and `read_inventory_transfers`. It marks a draft transfer ready to ship only.
 - Minimal `inventory.transfer.cancel.execute` is implemented for one explicit inventory transfer ID, stored preview binding, and local preflight requiring both `write_inventory_transfers` and `read_inventory_transfers`. It cancels one transfer only.
 - Minimal `inventory.transfer.ship.execute` is implemented for one explicit inventory transfer ID, one explicit inventory item ID, one positive quantity, stored preview binding, and local preflight requiring both `write_inventory_shipments` and `read_inventory_shipments`. It creates one in-transit inventory shipment only.
@@ -71,7 +71,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 
 ## Later Roadmap
 
-- Inventory beyond explicit single-item quantity set, single-item adjustment, single-location state move, basic inventory lookup, basic location lookup, draft transfer create, transfer add-item preview, transfer mark-ready, transfer cancel, transfer ship, and transfer receive, including bulk inventory, remaining transfer item edit execution, richer transfer lifecycle actions, and richer location workflows.
+- Inventory beyond explicit single-item quantity set, single-item adjustment, single-location state move, basic inventory lookup, basic location lookup, draft transfer create, transfer add-item quantity set, transfer mark-ready, transfer cancel, transfer ship, and transfer receive, including bulk inventory, transfer item remove/bulk edit execution, richer transfer lifecycle actions, and richer location workflows.
 - Metafields.
 - Publications.
 - Translations.

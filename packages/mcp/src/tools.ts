@@ -1,6 +1,7 @@
 import {
   type AuditLog,
   FileAuditLog,
+  addItemsToInventoryTransfer,
   assertWritable,
   checkShopifyCapabilities,
   checkWriteScopePreflight,
@@ -34,6 +35,8 @@ import {
   type InventoryMoveQuantityResult,
   type InventoryTransferInput,
   type InventoryTransferResult,
+  type InventoryTransferAddItemsInput,
+  type InventoryTransferAddItemsResult,
   type InventoryTransferMarkReadyInput,
   type InventoryTransferMarkReadyResult,
   type InventoryTransferCancelInput,
@@ -277,6 +280,7 @@ function implementedExecuteToolForPreview(previewTool: string): string | undefin
   if (previewTool === "inventory.adjustQuantity.preview") return "inventory.adjustQuantity.execute";
   if (previewTool === "inventory.moveQuantity.preview") return "inventory.moveQuantity.execute";
   if (previewTool === "inventory.transfer.preview") return "inventory.transfer.execute";
+  if (previewTool === "inventory.transfer.addItems.preview") return "inventory.transfer.addItems.execute";
   if (previewTool === "inventory.transfer.markReady.preview") return "inventory.transfer.markReady.execute";
   if (previewTool === "inventory.transfer.cancel.preview") return "inventory.transfer.cancel.execute";
   if (previewTool === "inventory.transfer.ship.preview") return "inventory.transfer.ship.execute";
@@ -852,6 +856,50 @@ async function inventoryTransferExecuteResult(input: Record<string, unknown>, co
 
   const write = await createInventoryTransfer(context.config, extracted.input, { fetcher: context.fetcher });
   return inventoryTransferWriteResult(tool, storedTarget, binding, write, context);
+}
+
+async function inventoryTransferAddItemsExecuteResult(input: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>> {
+  const tool = "inventory.transfer.addItems.execute";
+  const target = inventoryExecuteTarget(input, context);
+
+  if (context.config.readOnly) {
+    return blockedImplementedExecuteResult(tool, target, [diagnostic("read_only", "Execute is blocked because read-only mode is enabled.")], context, "inventory.transfer.addItems.preview");
+  }
+
+  if (!context.previewStore) {
+    return blockedImplementedExecuteResult(tool, target, [diagnostic("stored_preview_missing", "Stored preview was not found; execute binding fails closed.")], context, "inventory.transfer.addItems.preview");
+  }
+
+  const lookup = context.previewStore.getPreview(stringInput(input, "previewId"));
+  const storedTarget = lookup.record ? previewRecordBindingTarget(lookup.record) : target;
+  const binding = verifyStoredPreviewBinding(context.previewStore, input, {
+    executeTool: tool,
+    expectedPreviewTool: "inventory.transfer.addItems.preview",
+    target: storedTarget
+  });
+  if (!stringInput(input, "target")) {
+    binding.ok = false;
+    binding.diagnostics = [
+      diagnostic("missing_target", "Execute requires the reviewed preview target."),
+      ...binding.diagnostics.filter((item) => item.code !== "missing_target")
+    ];
+  }
+  if (!binding.ok) return blockedImplementedExecuteResult(tool, storedTarget, binding.diagnostics, context, binding);
+  if (!lookup.ok || !lookup.record) {
+    return blockedImplementedExecuteResult(tool, storedTarget, [lookup.diagnostic ?? diagnostic("stored_preview_missing", "Stored preview was not found; execute binding fails closed.")], context, binding);
+  }
+  if (lookup.record.tool !== "inventory.transfer.addItems.preview") {
+    return blockedImplementedExecuteResult(tool, storedTarget, [diagnostic("stored_preview_tool_mismatch", "Stored preview is not an inventory transfer add-items preview.")], context, binding);
+  }
+
+  const extracted = inventoryTransferAddItemsInputFromStoredPreview(lookup.record);
+  if (!extracted.ok) return blockedImplementedExecuteResult(tool, storedTarget, extracted.diagnostics, context, binding);
+
+  const preflight = checkWriteScopePreflight(context.config, tool);
+  if (!preflight.ok) return blockedImplementedExecuteResult(tool, storedTarget, preflight.diagnostics, context, binding);
+
+  const write = await addItemsToInventoryTransfer(context.config, extracted.input, { fetcher: context.fetcher });
+  return inventoryTransferAddItemsWriteResult(tool, storedTarget, binding, write, context);
 }
 
 async function inventoryTransferMarkReadyExecuteResult(input: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>> {
@@ -1699,6 +1747,39 @@ function inventoryTransferWriteResult(
   };
 }
 
+function inventoryTransferAddItemsWriteResult(
+  tool: string,
+  target: string,
+  binding: ExecutePreviewBindingResult,
+  write: InventoryTransferAddItemsResult,
+  context: ToolContext
+): Record<string, unknown> {
+  const result = inventoryWriteAuditResult(write);
+  const audit = context.audit.record({
+    tool,
+    target: safeExecuteString(target),
+    mode: "execute",
+    summary: write.summary,
+    result
+  });
+  return {
+    ok: write.ok,
+    mode: "execute",
+    implemented: true,
+    status: write.status,
+    summary: write.summary,
+    audit,
+    inventoryTransfer: write.inventoryTransfer,
+    userErrors: write.userErrors,
+    diagnostics: write.diagnostics,
+    previewBinding: {
+      previewId: binding.previewId,
+      expectedTool: binding.expectedPreviewTool,
+      target: binding.target
+    }
+  };
+}
+
 function inventoryTransferMarkReadyWriteResult(
   tool: string,
   target: string,
@@ -1849,7 +1930,7 @@ function collectionCreateAuditResult(write: CollectionCreateResult): "success" |
   return "failed";
 }
 
-function inventoryWriteAuditResult(write: InventorySetQuantityResult | InventoryAdjustQuantityResult | InventoryMoveQuantityResult | InventoryTransferResult | InventoryTransferMarkReadyResult | InventoryTransferCancelResult | InventoryTransferShipResult | InventoryTransferReceiveResult): "success" | "blocked" | "failed" {
+function inventoryWriteAuditResult(write: InventorySetQuantityResult | InventoryAdjustQuantityResult | InventoryMoveQuantityResult | InventoryTransferResult | InventoryTransferAddItemsResult | InventoryTransferMarkReadyResult | InventoryTransferCancelResult | InventoryTransferShipResult | InventoryTransferReceiveResult): "success" | "blocked" | "failed" {
   if (write.status === "ok") return "success";
   if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
   return "failed";
@@ -2733,6 +2814,41 @@ function inventoryTransferInputFromStoredPreview(record: StoredPreviewRecord): {
   };
 }
 
+function inventoryTransferAddItemsInputFromStoredPreview(record: StoredPreviewRecord): { ok: true; input: InventoryTransferAddItemsInput } | { ok: false; diagnostics: ExecutePreviewBindingDiagnostic[] } {
+  const inventoryTransferId = safeContentText(targetField(record, "id") ?? changeValue(record, "inventoryTransferId"), 180);
+  const inventoryItemId = safeContentText(changeValue(record, "inventoryItemId"), 180);
+  const quantity = safeInteger(changeValue(record, "quantityValue"));
+
+  if (!inventoryTransferId) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_inventory_transfer_id", "Stored inventory transfer add-items preview did not include a safe inventory transfer ID.")]
+    };
+  }
+  if (!inventoryItemId) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_inventory_item_id", "Stored inventory transfer add-items preview did not include a safe inventory item ID.")]
+    };
+  }
+  if (quantity === undefined || quantity <= 0) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_inventory_transfer_add_items_quantity", "Stored inventory transfer add-items preview did not include a safe positive quantity.")]
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      inventoryTransferId,
+      inventoryItemId,
+      quantity,
+      idempotencyKey: `store-agent:${record.previewId}`
+    }
+  };
+}
+
 function inventoryTransferMarkReadyInputFromStoredPreview(record: StoredPreviewRecord): { ok: true; input: InventoryTransferMarkReadyInput } | { ok: false; diagnostics: ExecutePreviewBindingDiagnostic[] } {
   const inventoryTransferId = safeContentText(targetField(record, "id") ?? changeValue(record, "inventoryTransferId"), 180);
 
@@ -3252,6 +3368,12 @@ export const tools: ToolDefinition[] = [
     description: "Preview adding one explicit inventory item quantity to an explicit Shopify inventory transfer.",
     inputSchema: { type: "object" },
     handler: (input, context) => catalogPreviewResult(previewInventoryTransferAddItems(input), context)
+  },
+  {
+    name: "inventory.transfer.addItems.execute",
+    description: "Set one explicit inventory transfer item quantity only after stored preview binding and explicit confirmation.",
+    inputSchema: { type: "object" },
+    handler: (input, context) => inventoryTransferAddItemsExecuteResult(input, context)
   },
   {
     name: "inventory.transfer.markReady.preview",

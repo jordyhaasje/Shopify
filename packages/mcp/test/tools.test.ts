@@ -28,6 +28,7 @@ const expectedToolNames = [
   "inventory.transfer.preview",
   "inventory.transfer.execute",
   "inventory.transfer.addItems.preview",
+  "inventory.transfer.addItems.execute",
   "inventory.transfer.markReady.preview",
   "inventory.transfer.markReady.execute",
   "inventory.transfer.cancel.preview",
@@ -778,7 +779,7 @@ describe("MCP tools", () => {
     expect(context.audit.list()[0]).toMatchObject({ tool: "inventory.transfer.preview", mode: "preview", result: "success" });
   });
 
-  it("previews inventory transfer add-items without executeRequest or fetch", async () => {
+  it("previews inventory transfer add-items with executeRequest binding and no fetch", async () => {
     let fetchCalled = false;
     const context = baseContext(async () => {
       fetchCalled = true;
@@ -804,13 +805,17 @@ describe("MCP tools", () => {
         previewHash: expect.stringMatching(/^sha256:/),
         expiresAt: expect.any(String)
       },
+      executeRequest: expect.objectContaining({
+        tool: "inventory.transfer.addItems.execute",
+        expectedTool: "inventory.transfer.addItems.preview",
+        requiresConfirmation: true
+      }),
       audit: {
         tool: "inventory.transfer.addItems.preview",
         mode: "preview",
         result: "success"
       }
     });
-    expect(result.executeRequest).toBeUndefined();
     expect(result.warnings).toEqual([]);
     expect(changeFor(result, "inventoryTransferId")).toMatchObject({ value: "gid://shopify/InventoryTransfer/1" });
     expect(changeFor(result, "inventoryItemId")).toMatchObject({ value: "gid://shopify/InventoryItem/1" });
@@ -818,6 +823,122 @@ describe("MCP tools", () => {
     expect(changeFor(result, "quantityValue")).toMatchObject({ value: 2 });
     expect(fetchCalled).toBe(false);
     expect(context.audit.list()[0]).toMatchObject({ tool: "inventory.transfer.addItems.preview", mode: "preview", result: "success" });
+  });
+
+  it("sets inventory transfer item quantity from stored preview via inventoryTransferSetItems", async () => {
+    const requests: Array<{ body: string }> = [];
+    const context = baseContext(async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          inventoryTransferSetItems: {
+            inventoryTransfer: {
+              id: "gid://shopify/InventoryTransfer/1",
+              status: "DRAFT",
+              rawNodeOnly: "do not return"
+            },
+            updatedLineItems: [{
+              inventoryItemId: "gid://shopify/InventoryItem/1",
+              newQuantity: 2,
+              rawNodeOnly: "do not return"
+            }],
+            userErrors: []
+          }
+        }
+      });
+    }, false);
+    context.config.grantedScopes = ["write_inventory_transfers", "read_inventory_transfers", "read_inventory"];
+    const preview = await callTool("inventory.transfer.addItems.preview", {
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      quantity: 2,
+      currentStatus: "DRAFT"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("inventory.transfer.addItems.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash,
+      inventoryItemId: "gid://shopify/InventoryItem/999",
+      quantity: 999
+    }, context);
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "execute",
+      implemented: true,
+      status: "ok",
+      inventoryTransfer: {
+        inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+        status: "DRAFT",
+        inventoryItemId: "gid://shopify/InventoryItem/1",
+        quantity: 2
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentInventoryTransferSetItems");
+    expect(request.query).toContain("inventoryTransferSetItems");
+    expect(request.query).toContain("@idempotent");
+    expect(request.query).not.toContain("inventoryTransferCreate");
+    expect(request.query).not.toContain("inventoryShipmentCreateInTransit");
+    expect(request.variables).toEqual({
+      input: {
+        id: "gid://shopify/InventoryTransfer/1",
+        lineItems: [{
+          inventoryItemId: "gid://shopify/InventoryItem/1",
+          quantity: 2
+        }]
+      },
+      idempotencyKey: `store-agent:${preview.previewId}`
+    });
+    expect(requests[0].body).not.toContain("InventoryItem/999");
+    expect(requests[0].body).not.toContain('"quantity":999');
+    expect(output).not.toContain("rawNodeOnly");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.transfer.addItems.execute", result: "success" });
+  });
+
+  it("blocks inventory transfer add-items before fetch when required scopes are missing", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["write_inventory_transfers", "read_inventory_transfers"];
+    const preview = await callTool("inventory.transfer.addItems.preview", {
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      quantity: 2
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("inventory.transfer.addItems.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: [{ code: "missing_write_scope" }]
+    });
+    expect(fetchCalled).toBe(false);
+    expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.transfer.addItems.execute", result: "blocked" });
   });
 
   it("creates inventory transfer draft from stored preview via inventoryTransferCreate", async () => {

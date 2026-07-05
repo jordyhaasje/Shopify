@@ -217,7 +217,7 @@ pnpm --filter shopify-store-agent run setup -- \
   --scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory,write_inventory_transfers,read_inventory_transfers,write_inventory_shipments,read_inventory_shipments,write_inventory_shipments_received_items"
 ```
 
-Use only the write scope needed for the specific test. For page-only validation, `write_content` or `write_online_store_pages` is enough. For product create, basic-field product update, explicit variant price update, explicit variant creation, explicit option creation, explicit option delete, explicit option reorder, explicit option rename, explicit option value rename, explicit option value add, explicit option value delete, or custom explicit-product collection create validation, `write_products` is required. For explicit single-item inventory quantity set, adjustment, or same-location state move validation, `write_inventory` is required. For explicit draft inventory transfer, mark-ready, or cancel validation, both `write_inventory_transfers` and `read_inventory_transfers` are required. For explicit transfer ship validation, both `write_inventory_shipments` and `read_inventory_shipments` are required. For explicit transfer receive validation, both `write_inventory_shipments_received_items` and `read_inventory_shipments` are required.
+Use only the write scope needed for the specific test. For page-only validation, `write_content` or `write_online_store_pages` is enough. For product create, basic-field product update, explicit variant price update, explicit variant creation, explicit option creation, explicit option delete, explicit option reorder, explicit option rename, explicit option value rename, explicit option value add, explicit option value delete, or custom explicit-product collection create validation, `write_products` is required. For explicit single-item inventory quantity set, adjustment, or same-location state move validation, `write_inventory` is required. For explicit draft inventory transfer, mark-ready, or cancel validation, both `write_inventory_transfers` and `read_inventory_transfers` are required. For explicit transfer add-items validation, `write_inventory_transfers`, `read_inventory_transfers`, and `read_inventory` are required. For explicit transfer ship validation, both `write_inventory_shipments` and `read_inventory_shipments` are required. For explicit transfer receive validation, both `write_inventory_shipments_received_items` and `read_inventory_shipments` are required.
 
 For deliberate OAuth write testing on a development store, run `auth` with write mode and the minimal reviewed scope set:
 
@@ -638,6 +638,40 @@ Use only a disposable/development inventory item and locations where creating a 
 - No product, SKU, inventory item, or location lookup/discovery is performed during execute.
 - No bulk inventory, product update, or location management operation is performed.
 - Output and audit contain no secrets, raw reviewed payload, raw Shopify response, product dump, location dump, or full Shopify node.
+
+## Inventory Transfer Add-Items E2E
+
+Use only a disposable/development inventory transfer where setting one item quantity is safe. This validates only the transfer item quantity-set step; it does not create, remove, mark ready, ship, receive, or cancel transfers.
+
+1. Prepare or identify a safe draft inventory transfer ID and inventory item ID from user-provided development-store context. Do not discover transfer IDs or item IDs autonomously during execute.
+
+2. Run `inventory.transfer.addItems.preview` with explicit test data:
+
+```json
+{
+  "inventoryTransferId": "gid://shopify/InventoryTransfer/<test-transfer-id>",
+  "inventoryItemId": "gid://shopify/InventoryItem/<test-inventory-item-id>",
+  "quantity": 1,
+  "currentStatus": "DRAFT"
+}
+```
+
+3. Review the preview binding values and `executeRequest`.
+
+4. Confirm read-only mode is explicitly off only for this development-store test.
+
+5. Confirm local granted scopes include `write_inventory_transfers`, `read_inventory_transfers`, and `read_inventory`.
+
+6. Run `inventory.transfer.addItems.execute` with the reviewed binding values and `confirmed: true`.
+
+7. Confirm:
+
+- The mutation is limited to `inventoryTransferSetItems`.
+- The transfer ID, inventory item ID, and quantity come from the stored preview.
+- No transfer create, item remove, mark-ready, ship, receive, or cancel action is performed.
+- No transfer or inventory lookup/discovery is performed during execute.
+- No bulk inventory, product update, or location management operation is performed.
+- Output and audit contain no secrets, raw reviewed payload, raw Shopify response, product dump, location dump, transfer dump, or full Shopify node.
 
 ## Inventory Transfer Mark-Ready E2E
 
