@@ -197,6 +197,57 @@ function catalogPreviewResult(result: CatalogPreviewResult, context: ToolContext
   };
 }
 
+function bulkPreviewResult(input: Record<string, unknown>, context: ToolContext): Record<string, unknown> {
+  const changes = Array.isArray(input.changes) ? input.changes : [];
+  const result = createBulkPreview(changes.map((change, index) => ({
+    id: typeof change === "object" && change && "id" in change ? String(change.id) : `change-${index + 1}`,
+    before: typeof change === "object" && change && "before" in change ? change.before : null,
+    after: typeof change === "object" && change && "after" in change ? change.after : null
+  })));
+  const auditContext = {
+    tool: "bulk.preview",
+    mode: "preview",
+    target: "bulk",
+    requiresExecuteConfirmation: true,
+    performsShopifyMutation: false,
+    usesShopifyWriteOperation: false
+  };
+  const audit = context.audit.record({
+    tool: "bulk.preview",
+    target: auditContext.target,
+    mode: "preview",
+    summary: result.summary,
+    result: "success"
+  });
+  const stored = savePreviewRecord(context, {
+    tool: "bulk.preview",
+    target: auditContext.target,
+    summary: result.summary,
+    proposedChanges: result.changes.map((change) => ({
+      field: change.id,
+      action: "plan",
+      before: change.before,
+      after: change.after,
+      summary: `Bulk change ${change.id}`
+    })),
+    requiredConfirmationForExecute: "Bulk execute is not implemented. Future execute support must require this preview binding and explicit confirmation.",
+    auditContext
+  });
+  return {
+    ok: true,
+    mode: "preview",
+    status: "ok",
+    ...result,
+    target: auditContext.target,
+    requiredConfirmationForExecute: "Bulk execute is not implemented. Future execute support must require this preview binding and explicit confirmation.",
+    auditContext,
+    audit,
+    previewId: stored.previewId,
+    previewHash: stored.previewHash,
+    binding: previewBindingOutput(stored)
+  };
+}
+
 function previewExecuteRequest(record: StoredPreviewRecord): Record<string, unknown> | undefined {
   const executeTool = implementedExecuteToolForPreview(record.tool);
   if (!executeTool) return undefined;
@@ -3379,14 +3430,7 @@ export const tools: ToolDefinition[] = [
     name: "bulk.preview",
     description: "Create a bulk edit preview from explicit changes supplied by the user.",
     inputSchema: { type: "object" },
-    handler: (input) => {
-      const changes = Array.isArray(input.changes) ? input.changes : [];
-      return createBulkPreview(changes.map((change, index) => ({
-        id: typeof change === "object" && change && "id" in change ? String(change.id) : `change-${index + 1}`,
-        before: typeof change === "object" && change && "before" in change ? change.before : null,
-        after: typeof change === "object" && change && "after" in change ? change.after : null
-      })));
-    }
+    handler: (input, context) => bulkPreviewResult(input, context)
   },
   {
     name: "bulk.execute",

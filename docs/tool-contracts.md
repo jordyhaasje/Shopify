@@ -417,13 +417,15 @@ Not implemented here: rule-based or smart collections, publishing, SEO, metafiel
 
 Required input: user-provided CSV rows, JSON changes, explicit IDs, or reviewed batch instructions.
 
-Preview output: row-level diff, validation failures, skipped rows, warnings, and audit entry.
+Preview output: safe row-level summaries, validation failures, skipped rows, warnings, stored preview binding, and audit entry. Generic bulk preview output summarizes value types, string lengths, object keys, array counts, changed non-secret keys, and redaction markers; it must not return raw before/after values, raw reviewed payloads, secrets, customer/order data, or raw Shopify nodes. It does not call Shopify or perform mutations.
+
+The preview output intentionally does not include `executeRequest` while `bulk.execute` remains a placeholder.
 
 ### `bulk.execute`
 
 Required input: preview ID or reviewed batch payload and confirmation.
 
-Execute requirements: all required workflow scopes, writes enabled, explicit confirmation.
+Execute requirements: not implemented in this phase. Future execute support must require all required workflow scopes, writes enabled, a stored preview binding, and explicit confirmation.
 
 Failure behavior: fail closed before execution when validation errors exist; if partial execution becomes supported later, report exact completed/failed rows.
 
