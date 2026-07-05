@@ -352,4 +352,32 @@ describe("write scope preflight", () => {
       requiredScopes: ["write_inventory_transfers", "read_inventory_transfers"]
     });
   });
+
+  it("blocks inventory transfer ship unless both shipment scopes are known", () => {
+    const result = checkWriteScopePreflight(createConfig({
+      storeUrl: "demo",
+      readOnly: false,
+      grantedScopes: ["write_inventory_shipments"]
+    }), "inventory.transfer.ship.execute");
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "blocked",
+      grantedScopesKnown: true,
+      requiredScopes: ["write_inventory_shipments", "read_inventory_shipments"],
+      diagnostics: [{ code: "missing_write_scope" }]
+    });
+  });
+
+  it("allows inventory transfer ship when read and write shipment scopes are known", () => {
+    expect(checkWriteScopePreflight(createConfig({
+      storeUrl: "demo",
+      readOnly: false,
+      grantedScopes: ["write_inventory_shipments", "read_inventory_shipments"]
+    }), "inventory.transfer.ship.execute")).toMatchObject({
+      ok: true,
+      status: "ok",
+      requiredScopes: ["write_inventory_shipments", "read_inventory_shipments"]
+    });
+  });
 });

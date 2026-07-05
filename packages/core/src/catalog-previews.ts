@@ -54,6 +54,7 @@ type PreviewTool =
   | "inventory.transfer.preview"
   | "inventory.transfer.markReady.preview"
   | "inventory.transfer.cancel.preview"
+  | "inventory.transfer.ship.preview"
   | "page.create.preview"
   | "collection.create.preview";
 
@@ -356,6 +357,27 @@ export function previewInventoryTransferCancel(input: Record<string, unknown>): 
   ]);
 
   return okResult("inventory.transfer.cancel.preview", target, `Preview cancelling inventory transfer ${inventoryTransferId}.`, changes, []);
+}
+
+export function previewInventoryTransferShip(input: Record<string, unknown>): CatalogPreviewResult {
+  const inventoryTransferId = firstString(input.inventoryTransferId, input.transferId, input.id);
+  const inventoryItemId = firstString(input.inventoryItemId, input.inventoryItemID);
+  const currentStatus = firstString(input.currentStatus, input.status);
+  const target: PreviewTarget = { type: "inventory_transfer", id: inventoryTransferId || undefined };
+  if (!inventoryTransferId) return missingInput("inventory.transfer.ship.preview", target, "Provide an inventory transfer ID.");
+  if (!inventoryItemId) return missingInput("inventory.transfer.ship.preview", target, "Provide an inventory item ID.");
+
+  const quantity = integerValue(input.quantity);
+  if (quantity === undefined || quantity <= 0) return validationError("inventory.transfer.ship.preview", target, "Inventory transfer shipment quantity must be a positive integer.");
+
+  const changes = compactChanges([
+    { field: "inventoryTransferId", action: "plan" as const, value: summarizeValue("inventoryTransferId", inventoryTransferId) },
+    { field: "inventoryItemId", action: "plan" as const, value: summarizeValue("inventoryItemId", inventoryItemId) },
+    { field: "quantity", action: "update" as const, before: currentStatus || "READY_TO_SHIP", after: "IN_TRANSIT" },
+    { field: "quantityValue", action: "plan" as const, value: quantity }
+  ]);
+
+  return okResult("inventory.transfer.ship.preview", target, `Preview shipping ${quantity} unit${quantity === 1 ? "" : "s"} from inventory transfer ${inventoryTransferId}.`, changes, []);
 }
 
 export function previewPageCreate(input: Record<string, unknown>): CatalogPreviewResult {

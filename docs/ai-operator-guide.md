@@ -96,10 +96,10 @@ pnpm --filter shopify-store-agent run auth -- \
   --client-id "$SHOPIFY_CLIENT_ID" \
   --client-secret "$SHOPIFY_CLIENT_SECRET" \
   --write-enabled \
-  --scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory,write_inventory_transfers,read_inventory_transfers"
+  --scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory,write_inventory_transfers,read_inventory_transfers,write_inventory_shipments,read_inventory_shipments"
 ```
 
-Use write mode only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-delete, explicit-option-reorder, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, or explicit-option-value-delete `product.update.execute`, custom explicit-product `collection.create.execute`, explicit single-item `inventory.setQuantity.execute`, explicit single-item `inventory.adjustQuantity.execute`, explicit same-location state `inventory.moveQuantity.execute`, explicit single-item draft transfer `inventory.transfer.execute`, explicit transfer mark-ready `inventory.transfer.markReady.execute`, or explicit transfer cancel `inventory.transfer.cancel.execute`. All other execute tools remain fail-closed placeholders.
+Use write mode only for reviewed development-store tests of `page.create.execute`, `product.create.execute`, basic-field, explicit-variant-price, explicit-variant-create, explicit-option-create, explicit-option-delete, explicit-option-reorder, explicit-option-rename, explicit-option-value-rename, explicit-option-value-add, or explicit-option-value-delete `product.update.execute`, custom explicit-product `collection.create.execute`, explicit single-item `inventory.setQuantity.execute`, explicit single-item `inventory.adjustQuantity.execute`, explicit same-location state `inventory.moveQuantity.execute`, explicit single-item draft transfer `inventory.transfer.execute`, explicit transfer mark-ready `inventory.transfer.markReady.execute`, explicit transfer cancel `inventory.transfer.cancel.execute`, or explicit transfer ship `inventory.transfer.ship.execute`. All other execute tools remain fail-closed placeholders.
 
 `auth` is the real local OAuth browser flow and stores the resulting Admin API token locally. `setup --auth oauth` only prints setup guidance and MCP snippets; it does not exchange a token.
 
@@ -155,10 +155,11 @@ Current real write tools:
 - `inventory.transfer.execute` for one explicit inventory item ID, source location ID, destination location ID, positive quantity, and draft transfer create only
 - `inventory.transfer.markReady.execute` for one explicit inventory transfer ID and mark-ready only
 - `inventory.transfer.cancel.execute` for one explicit inventory transfer ID and cancel only
+- `inventory.transfer.ship.execute` for one explicit inventory transfer ID, inventory item ID, positive quantity, and in-transit shipment only
 
 All other execute tools are placeholders. A real write still requires preview output, stored preview binding, matching target/tool/hash values, matching reviewed payload hash, read-only mode disabled, required local granted scopes, and explicit user confirmation.
 
-`product.create.preview`, `page.create.preview`, `collection.create.preview`, `inventory.setQuantity.preview`, `inventory.adjustQuantity.preview`, `inventory.moveQuantity.preview`, `inventory.transfer.preview`, `inventory.transfer.markReady.preview`, and `inventory.transfer.cancel.preview` include an `executeRequest` helper. It contains the matching execute tool, expected preview tool, `previewId`, target, `previewHash`, safe reviewed payload, reviewed changes hash, and confirmation requirement. Use it to prepare the execute call for review, not to run automatically.
+`product.create.preview`, `page.create.preview`, `collection.create.preview`, `inventory.setQuantity.preview`, `inventory.adjustQuantity.preview`, `inventory.moveQuantity.preview`, `inventory.transfer.preview`, `inventory.transfer.markReady.preview`, `inventory.transfer.cancel.preview`, and `inventory.transfer.ship.preview` include an `executeRequest` helper. It contains the matching execute tool, expected preview tool, `previewId`, target, `previewHash`, safe reviewed payload, reviewed changes hash, and confirmation requirement. Use it to prepare the execute call for review, not to run automatically.
 
 For inventory preparation, use `inventory.lookup` only with an explicit inventory item ID, variant ID, or SKU, and use `inventory.locationLookup` only with an explicit location ID, name, or query. Treat multiple matches as candidates for user review, not as permission to guess a target.
 
