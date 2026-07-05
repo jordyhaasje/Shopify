@@ -159,6 +159,16 @@ Output: safe status, inventory item ID, location ID, quantity, source and destin
 
 Not implemented here: execute-time lookup/discovery, location search by name, inter-location transfers, bulk inventory, location management, or product update inventory fields.
 
+### `inventory.transfer.preview`
+
+Required input: explicit inventory item ID, explicit source location ID, explicit destination location ID, positive integer quantity, and explicit reason. Source and destination location IDs must differ. Optional `referenceDocumentUri` must be a valid URI with a scheme.
+
+Preview output: target inventory item summary, source and destination location IDs, quantity to transfer, reason, optional reference document URI, preview ID, warning that execute is not implemented, and audit entry. This tool does not call Shopify or perform mutations.
+
+Behavior: this preview exists to make future inter-location inventory transfer workflows reviewable while preserving the read-only default and preview-before-execute contract. It does not return `executeRequest`, because transfer execute is not implemented. The stored preview must not be treated as permission to run a write through another tool.
+
+Not implemented here: transfer execute, execute-time lookup/discovery, location search by name, bulk inventory, location management, or product update inventory fields.
+
 ### `inventory.lookup`
 
 Required input: exactly one explicit inventory item ID, product variant ID, or SKU. Optional pagination limits may bound SKU matches and inventory levels.

@@ -256,6 +256,7 @@ product.importFromUserUrl.preview
 inventory.setQuantity.preview
 inventory.adjustQuantity.preview
 inventory.moveQuantity.preview
+inventory.transfer.preview
 page.create.preview
 collection.create.preview
 ```

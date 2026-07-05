@@ -155,7 +155,7 @@ Current real write tools:
 
 All other execute tools are placeholders. A real write still requires preview output, stored preview binding, matching target/tool/hash values, matching reviewed payload hash, read-only mode disabled, required local granted scopes, and explicit user confirmation.
 
-`product.create.preview`, `page.create.preview`, `collection.create.preview`, `inventory.setQuantity.preview`, `inventory.adjustQuantity.preview`, and `inventory.moveQuantity.preview` include an `executeRequest` helper. It contains the matching execute tool, expected preview tool, `previewId`, target, `previewHash`, safe reviewed payload, reviewed changes hash, and confirmation requirement. Use it to prepare the execute call for review, not to run automatically.
+`product.create.preview`, `page.create.preview`, `collection.create.preview`, `inventory.setQuantity.preview`, `inventory.adjustQuantity.preview`, and `inventory.moveQuantity.preview` include an `executeRequest` helper. It contains the matching execute tool, expected preview tool, `previewId`, target, `previewHash`, safe reviewed payload, reviewed changes hash, and confirmation requirement. Use it to prepare the execute call for review, not to run automatically. `inventory.transfer.preview` is preview-only and does not include `executeRequest` because transfer execute is not implemented.
 
 For inventory preparation, use `inventory.lookup` only with an explicit inventory item ID, variant ID, or SKU, and use `inventory.locationLookup` only with an explicit location ID, name, or query. Treat multiple matches as candidates for user review, not as permission to guess a target.
 

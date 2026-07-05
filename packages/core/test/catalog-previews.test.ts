@@ -4,6 +4,7 @@ import {
   previewInventoryAdjustQuantity,
   previewInventoryMoveQuantity,
   previewInventorySetQuantity,
+  previewInventoryTransfer,
   previewPageCreate,
   previewProductCreate,
   previewProductImportFromUserUrl,
@@ -359,6 +360,65 @@ describe("catalog and content previews", () => {
       ok: false,
       status: "validation_error",
       warnings: [{ code: "validation_error", message: "Source and destination inventory quantity names must differ." }]
+    });
+  });
+
+  it("previews an explicit inventory transfer between locations without mutation intent", () => {
+    const preview = previewInventoryTransfer({
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      fromLocationId: "gid://shopify/Location/1",
+      toLocationId: "gid://shopify/Location/2",
+      quantity: 4,
+      reason: "rebalance",
+      referenceDocumentUri: "gid://store-agent/TestRun/4"
+    });
+
+    expect(preview).toMatchObject({
+      ok: true,
+      status: "ok",
+      target: { type: "inventory", id: "gid://shopify/InventoryItem/1" },
+      auditContext: {
+        tool: "inventory.transfer.preview",
+        mode: "preview",
+        performsShopifyMutation: false,
+        usesShopifyWriteOperation: false
+      },
+      warnings: [{ code: "execute_not_implemented" }],
+      proposedChanges: expect.arrayContaining([
+        expect.objectContaining({ field: "inventoryItemId", value: "gid://shopify/InventoryItem/1" }),
+        expect.objectContaining({ field: "fromLocationId", value: "gid://shopify/Location/1" }),
+        expect.objectContaining({ field: "toLocationId", value: "gid://shopify/Location/2" }),
+        expect.objectContaining({ field: "quantityValue", value: 4 }),
+        expect.objectContaining({ field: "reason", value: "rebalance" })
+      ])
+    });
+  });
+
+  it("requires positive quantity and distinct locations for inventory transfer previews", () => {
+    const zero = previewInventoryTransfer({
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      fromLocationId: "gid://shopify/Location/1",
+      toLocationId: "gid://shopify/Location/2",
+      quantity: 0,
+      reason: "rebalance"
+    });
+    const sameLocation = previewInventoryTransfer({
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      fromLocationId: "gid://shopify/Location/1",
+      toLocationId: "gid://shopify/Location/1",
+      quantity: 4,
+      reason: "rebalance"
+    });
+
+    expect(zero).toMatchObject({
+      ok: false,
+      status: "validation_error",
+      warnings: [{ code: "validation_error", message: "Inventory transfer quantity must be a positive integer." }]
+    });
+    expect(sameLocation).toMatchObject({
+      ok: false,
+      status: "validation_error",
+      warnings: [{ code: "validation_error", message: "Source and destination location IDs must differ." }]
     });
   });
 

@@ -51,6 +51,7 @@ type PreviewTool =
   | "inventory.setQuantity.preview"
   | "inventory.adjustQuantity.preview"
   | "inventory.moveQuantity.preview"
+  | "inventory.transfer.preview"
   | "page.create.preview"
   | "collection.create.preview";
 
@@ -292,6 +293,41 @@ export function previewInventoryMoveQuantity(input: Record<string, unknown>): Ca
   ]);
 
   return okResult("inventory.moveQuantity.preview", target, `Preview inventory quantity move for ${inventoryItemId}.`, changes, []);
+}
+
+export function previewInventoryTransfer(input: Record<string, unknown>): CatalogPreviewResult {
+  const inventoryItemId = firstString(input.inventoryItemId, input.inventoryItemID);
+  const fromLocationId = firstString(input.fromLocationId, input.sourceLocationId, input.sourceLocationID);
+  const toLocationId = firstString(input.toLocationId, input.destinationLocationId, input.destinationLocationID);
+  const target: PreviewTarget = { type: "inventory", id: inventoryItemId || undefined };
+  if (!inventoryItemId) return missingInput("inventory.transfer.preview", target, "Provide an inventory item ID.");
+  if (!fromLocationId) return missingInput("inventory.transfer.preview", target, "Provide a source location ID.");
+  if (!toLocationId) return missingInput("inventory.transfer.preview", target, "Provide a destination location ID.");
+  if (fromLocationId === toLocationId) return validationError("inventory.transfer.preview", target, "Source and destination location IDs must differ.");
+
+  const quantity = integerValue(input.quantity);
+  if (quantity === undefined || quantity <= 0) return validationError("inventory.transfer.preview", target, "Inventory transfer quantity must be a positive integer.");
+
+  const reason = firstString(input.reason);
+  if (!reason) return missingInput("inventory.transfer.preview", target, "Provide an inventory transfer reason.");
+
+  const referenceDocumentUri = firstString(input.referenceDocumentUri);
+  if (referenceDocumentUri && !isValidReferenceUri(referenceDocumentUri)) {
+    return validationError("inventory.transfer.preview", target, "referenceDocumentUri must be a valid URI with a scheme.");
+  }
+
+  const changes = compactChanges([
+    { field: "inventoryItemId", action: "plan" as const, value: summarizeValue("inventoryItemId", inventoryItemId) },
+    { field: "fromLocationId", action: "plan" as const, value: summarizeValue("fromLocationId", fromLocationId) },
+    { field: "toLocationId", action: "plan" as const, value: summarizeValue("toLocationId", toLocationId) },
+    { field: "quantity", action: "update" as const, before: `source ${fromLocationId}`, after: `destination ${toLocationId}` },
+    { field: "quantityValue", action: "plan" as const, value: quantity },
+    { field: "reason", action: "plan" as const, value: summarizeValue("reason", reason) },
+    referenceDocumentUri ? { field: "referenceDocumentUri", action: "plan" as const, value: summarizeValue("referenceDocumentUri", referenceDocumentUri) } : undefined
+  ]);
+  const warnings = [warning("execute_not_implemented", "Inventory transfer execution is not implemented; this preview is for review and planning only.")];
+
+  return okResult("inventory.transfer.preview", target, `Preview inventory transfer for ${inventoryItemId}.`, changes, warnings);
 }
 
 export function previewPageCreate(input: Record<string, unknown>): CatalogPreviewResult {

@@ -86,6 +86,7 @@ import {
   previewInventoryAdjustQuantity,
   previewInventoryMoveQuantity,
   previewInventorySetQuantity,
+  previewInventoryTransfer,
   previewPageCreate,
   previewProductCreate,
   previewProductImportFromUserUrl,
@@ -2606,6 +2607,12 @@ export const tools: ToolDefinition[] = [
     description: "Move inventory quantity between states only after stored preview binding and explicit confirmation.",
     inputSchema: { type: "object" },
     handler: (input, context) => inventoryMoveQuantityExecuteResult(input, context)
+  },
+  {
+    name: "inventory.transfer.preview",
+    description: "Preview transferring inventory quantity between two explicit locations. Execute is not implemented.",
+    inputSchema: { type: "object" },
+    handler: (input, context) => catalogPreviewResult(previewInventoryTransfer(input), context)
   },
   {
     name: "order.find",

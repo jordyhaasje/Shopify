@@ -26,6 +26,7 @@ pnpm run smoke:local
 - Review preview-tool audit behavior: successful previews use `success`; missing input and validation errors use `blocked`.
 - Confirm preview output summarizes large payloads, redacts secret-looking values, and does not autonomously fetch products or call Shopify write APIs.
 - If preview execute helpers change, confirm they are review-only, appear only for implemented write previews, contain safe bounded reviewed payloads, require explicit `confirmed: true`, and do not make placeholder execute tools look like real writes.
+- For `inventory.transfer.preview` changes, confirm it remains preview-only, does not return `executeRequest`, accepts only explicit inventory item ID, distinct source/destination location IDs, positive quantity, and reason, performs no Shopify fetch/write, and clearly states transfer execute is not implemented.
 - Review local preview-store behavior when changed: stored previews are safe/summarized, hash output is deterministic, TTL expiry fails closed, and no raw reviewed payloads are returned.
 - Review persistent audit behavior when changed: local JSONL entries are append-only, compact, and contain no secrets, raw Shopify nodes, raw reviewed payloads, customer/order dumps, or package-publish side effects.
 - For optional preview read enrichment, confirm it is explicit opt-in, uses only explicit IDs/handles, returns minimal summaries, treats read failures as warnings, and performs no mutations.
