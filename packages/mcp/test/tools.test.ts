@@ -1486,6 +1486,79 @@ describe("MCP tools", () => {
     });
   });
 
+  it("runs bulk previews with safe summarized output and stored binding", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    });
+
+    const result = await callTool("bulk.preview", {
+      changes: [
+        {
+          id: "shpat_row_secret",
+          before: {
+            title: "Old private title",
+            adminAccessToken: "shpat_before_secret",
+            privateContact: "raw private contact before"
+          },
+          after: {
+            title: "New private title",
+            client_secret: "shpss_after_secret",
+            privateContact: "raw private contact after"
+          }
+        }
+      ]
+    }, context) as Record<string, unknown>;
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "preview",
+      status: "ok",
+      count: 1,
+      includedChanges: 1,
+      target: "bulk",
+      previewHash: expect.stringMatching(/^sha256:/),
+      binding: {
+        previewId: expect.any(String),
+        expectedTool: "bulk.preview",
+        target: "bulk",
+        previewHash: expect.stringMatching(/^sha256:/),
+        expiresAt: expect.any(String)
+      },
+      audit: {
+        tool: "bulk.preview",
+        target: "bulk",
+        mode: "preview",
+        result: "success"
+      }
+    });
+    expect(result.executeRequest).toBeUndefined();
+    expect(fetchCalled).toBe(false);
+    expect(output).not.toContain("shpat_row_secret");
+    expect(output).not.toContain("shpat_before_secret");
+    expect(output).not.toContain("shpss_after_secret");
+    expect(output).not.toContain("Old private title");
+    expect(output).not.toContain("New private title");
+    expect(output).not.toContain("raw private contact before");
+    expect(output).not.toContain("raw private contact after");
+    expect(output).toContain("[redacted]");
+    expect(context.audit.list()[0]).toMatchObject({
+      tool: "bulk.preview",
+      mode: "preview",
+      result: "success"
+    });
+    expect(context.previewStore?.getPreview(result.previewId)).toMatchObject({
+      ok: true,
+      record: {
+        tool: "bulk.preview",
+        target: "bulk",
+        previewHash: result.previewHash
+      }
+    });
+  });
+
   it("adds a page create execute helper without weakening confirmation", async () => {
     let fetchCalled = false;
     const context = baseContext(async () => {

@@ -268,6 +268,7 @@ inventory.transfer.ship.preview
 inventory.transfer.receive.preview
 page.create.preview
 collection.create.preview
+bulk.preview
 ```
 
 Real execute tools:
