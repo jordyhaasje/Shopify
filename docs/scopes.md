@@ -22,6 +22,8 @@ Use for product creation, updates, variants, collections, and product-level meta
 - Read: `read_inventory`
 - Related location read: `read_locations`
 - Write: `write_inventory`
+- Transfer read: `read_inventory_transfers`
+- Transfer write: `write_inventory_transfers`
 
 Use only when inventory quantities, locations, or inventory item data are part of the enabled workflow.
 
@@ -34,6 +36,8 @@ Use only when inventory quantities, locations, or inventory item data are part o
 `inventory.adjustQuantity.execute` also requires `write_inventory` in local granted-scope preflight. This inventory execute path is limited to one stored `inventory.adjustQuantity.preview` at a time with an explicit inventory item ID, explicit location ID, quantity name `available`, a non-zero integer delta, an explicit reason, and optional reference document URI. It uses only the stored preview as the source of truth and does not perform lookup/discovery during execute.
 
 `inventory.moveQuantity.execute` also requires `write_inventory` in local granted-scope preflight. This inventory execute path is limited to one stored `inventory.moveQuantity.preview` at a time with an explicit inventory item ID, explicit location ID, one positive integer quantity, supported source and destination quantity names, an explicit reason, and optional reference document URI. It uses only the stored preview as the source of truth, moves quantity between states at the same explicit location, does not perform lookup/discovery during execute, and does not implement inter-location transfers, bulk inventory, or location management.
+
+`inventory.transfer.execute` requires both `write_inventory_transfers` and `read_inventory_transfers` in local granted-scope preflight. This inventory execute path is limited to one stored `inventory.transfer.preview` at a time with an explicit inventory item ID, explicit source location ID, explicit destination location ID, one positive integer quantity, an explicit reason, and optional reference document URI. It uses only the stored preview as the source of truth, creates a draft inventory transfer with `inventoryTransferCreate`, does not perform lookup/discovery during execute, and does not implement transfer lifecycle actions, bulk inventory, or location management.
 
 ## Orders
 

@@ -325,9 +325,7 @@ export function previewInventoryTransfer(input: Record<string, unknown>): Catalo
     { field: "reason", action: "plan" as const, value: summarizeValue("reason", reason) },
     referenceDocumentUri ? { field: "referenceDocumentUri", action: "plan" as const, value: summarizeValue("referenceDocumentUri", referenceDocumentUri) } : undefined
   ]);
-  const warnings = [warning("execute_not_implemented", "Inventory transfer execution is not implemented; this preview is for review and planning only.")];
-
-  return okResult("inventory.transfer.preview", target, `Preview inventory transfer for ${inventoryItemId}.`, changes, warnings);
+  return okResult("inventory.transfer.preview", target, `Preview inventory transfer for ${inventoryItemId}.`, changes, []);
 }
 
 export function previewPageCreate(input: Record<string, unknown>): CatalogPreviewResult {

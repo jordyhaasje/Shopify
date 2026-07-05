@@ -45,7 +45,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 - Minimal `inventory.setQuantity.execute` is implemented for one explicit inventory item ID, one explicit location ID, quantity name `available`, a non-negative integer quantity, an explicit reason, stored preview binding, `write_inventory` preflight, and compare-and-set by default.
 - Minimal `inventory.adjustQuantity.execute` is implemented for one explicit inventory item ID, one explicit location ID, quantity name `available`, a non-zero integer delta, an explicit reason, stored preview binding, and `write_inventory` preflight.
 - Minimal `inventory.moveQuantity.execute` is implemented for one explicit inventory item ID, one explicit location ID, one positive integer quantity, supported source and destination quantity names, an explicit reason, stored preview binding, and `write_inventory` preflight.
-- Minimal `inventory.transfer.preview` is implemented as a preview-only inter-location transfer plan for one explicit inventory item ID, source location ID, destination location ID, positive quantity, and explicit reason. Transfer execute is not implemented.
+- Minimal `inventory.transfer.execute` is implemented for one explicit inventory item ID, one source location ID, one destination location ID, one positive integer quantity, an explicit reason, stored preview binding, and local preflight requiring both `write_inventory_transfers` and `read_inventory_transfers`. It creates a draft Shopify inventory transfer only.
 - Minimal `inventory.lookup` is implemented as a read-only helper for explicit inventory item ID, variant ID, or SKU lookups. It returns compact inventory item, variant, location, and quantity summaries to help users prepare reviewed inventory previews.
 - Minimal `inventory.locationLookup` is implemented as a read-only helper for explicit location ID, location name, or location query lookups. It returns compact location summaries to help users prepare reviewed inventory previews and future location workflows.
 - A product media/update execute expansion plan exists, with media execute still intentionally not implemented.
@@ -65,7 +65,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 
 ## Later Roadmap
 
-- Inventory beyond explicit single-item quantity set, single-item adjustment, single-location state move, basic inventory lookup, basic location lookup, and transfer preview, including bulk inventory, inter-location transfer execute, and richer location workflows.
+- Inventory beyond explicit single-item quantity set, single-item adjustment, single-location state move, basic inventory lookup, basic location lookup, and draft transfer create, including bulk inventory, richer transfer lifecycle actions, and richer location workflows.
 - Metafields.
 - Publications.
 - Translations.

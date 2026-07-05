@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adjustInventoryQuantity, createConfig, moveInventoryQuantity, setInventoryQuantity, type FetchLike } from "../src/index.js";
+import { adjustInventoryQuantity, createConfig, createInventoryTransfer, moveInventoryQuantity, setInventoryQuantity, type FetchLike } from "../src/index.js";
 
 describe("inventory write helper", () => {
   it("sets an explicit inventory quantity through inventorySetQuantities", async () => {
@@ -438,6 +438,70 @@ describe("inventory write helper", () => {
       status: "user_errors",
       userErrors: [{ field: ["input", "changes"], message: "Cannot move inventory." }]
     });
+  });
+
+  it("creates an explicit inventory transfer draft through inventoryTransferCreate", async () => {
+    const requests: Array<{ body: string; token?: string }> = [];
+    const fetcher: FetchLike = async (_url, init) => {
+      requests.push({ body: init.body, token: init.headers["X-Shopify-Access-Token"] });
+      return jsonResponse({
+        data: {
+          inventoryTransferCreate: {
+            inventoryTransfer: {
+              id: "gid://shopify/InventoryTransfer/1",
+              status: "DRAFT",
+              rawNodeOnly: "do not return"
+            },
+            userErrors: []
+          }
+        }
+      });
+    };
+
+    const result = await createInventoryTransfer(config(), {
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      fromLocationId: "gid://shopify/Location/1",
+      toLocationId: "gid://shopify/Location/2",
+      quantity: 4,
+      reason: "rebalance",
+      referenceDocumentUri: "gid://store-agent/TestRun/4",
+      idempotencyKey: "store-agent:preview_transfer"
+    }, { fetcher });
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "ok",
+      inventoryTransfer: {
+        inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+        status: "DRAFT",
+        inventoryItemId: "gid://shopify/InventoryItem/1",
+        fromLocationId: "gid://shopify/Location/1",
+        toLocationId: "gid://shopify/Location/2",
+        quantity: 4
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentInventoryTransferCreate");
+    expect(request.query).toContain("@idempotent");
+    expect(request.query).not.toContain("inventoryMoveQuantities");
+    expect(request.query).not.toContain("inventorySetQuantities");
+    expect(request.variables).toEqual({
+      input: {
+        originLocationId: "gid://shopify/Location/1",
+        destinationLocationId: "gid://shopify/Location/2",
+        lineItems: [{
+          inventoryItemId: "gid://shopify/InventoryItem/1",
+          quantity: 4
+        }],
+        note: "rebalance",
+        referenceName: "gid://store-agent/TestRun/4"
+      },
+      idempotencyKey: "store-agent:preview_transfer"
+    });
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("shpat_inventory_secret");
   });
 });
 
