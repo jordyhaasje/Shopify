@@ -465,9 +465,11 @@ Output: operation status, completed count, failed count, warnings, and result lo
 
 Required input: user-provided Shopify reference URL.
 
-Output: public rendered-page analysis, layout/component observations, and implementation constraints.
+Current output: safe reference-analysis plan and audit metadata. The current runtime does not fetch the URL, inspect rendered HTML/CSS, capture screenshots, or verify the page.
 
-Failure behavior: do not claim access to private Liquid source from another store.
+Future output if live rendered-page analysis is added: public rendered-page analysis, layout/component observations, and implementation constraints.
+
+Failure behavior: do not claim access to private Liquid source from another store, and do not claim live page inspection when only a plan was generated.
 
 ### `theme.section.generate`
 

@@ -9,9 +9,9 @@ The product is local-first and preview-first.
 - Execute actions require explicit confirmation.
 - Refund execution requires an idempotency key from the preview step.
 - Bulk edits must show a diff before execution.
-- Theme changes must create a preview before live apply.
+- Theme changes must create a preview before live apply. In the current runtime, theme apply is still a fail-closed placeholder.
 - The agent must not search the internet for products to add. Users provide product data, product URLs, CSV files, images, or explicit Shopify IDs.
-- External Shopify reference URLs can be used for visual inspiration and rendered HTML analysis, not for claiming access to private Liquid source.
+- External Shopify reference URLs can be used for visual inspiration. The current runtime plans from the user-provided URL/context only; any future rendered HTML analysis must not claim access to private Liquid source.
 
 ## Audit
 
