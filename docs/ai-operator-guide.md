@@ -154,6 +154,7 @@ Current real write tools:
 - `inventory.moveQuantity.execute` for one explicit inventory item ID, location ID, positive quantity, and source/destination quantity states only
 - `inventory.transfer.execute` for one explicit inventory item ID, source location ID, destination location ID, positive quantity, and draft transfer create only
 - `inventory.transfer.addItems.execute` for one explicit inventory transfer ID, inventory item ID, positive quantity, and transfer item quantity set only
+- `inventory.transfer.removeItems.preview` is preview-only for one explicit inventory transfer ID and inventory item ID; it does not return an execute helper yet
 - `inventory.transfer.markReady.execute` for one explicit inventory transfer ID and mark-ready only
 - `inventory.transfer.cancel.execute` for one explicit inventory transfer ID and cancel only
 - `inventory.transfer.ship.execute` for one explicit inventory transfer ID, inventory item ID, positive quantity, and in-transit shipment only
@@ -162,7 +163,7 @@ Current real write tools:
 
 All other execute tools are placeholders. A real write still requires preview output, stored preview binding, matching target/tool/hash values, matching reviewed payload hash, read-only mode disabled, required local granted scopes, and explicit user confirmation.
 
-`product.create.preview`, add-only `product.media.update.preview`, `page.create.preview`, `collection.create.preview`, `inventory.setQuantity.preview`, `inventory.adjustQuantity.preview`, `inventory.moveQuantity.preview`, `inventory.transfer.preview`, `inventory.transfer.addItems.preview`, `inventory.transfer.markReady.preview`, `inventory.transfer.cancel.preview`, `inventory.transfer.ship.preview`, and `inventory.transfer.receive.preview` include an `executeRequest` helper. It contains the matching execute tool, expected preview tool, `previewId`, target, `previewHash`, safe reviewed payload, reviewed changes hash, and confirmation requirement. Use it to prepare the execute call for review, not to run automatically.
+`product.create.preview`, add-only `product.media.update.preview`, `page.create.preview`, `collection.create.preview`, `inventory.setQuantity.preview`, `inventory.adjustQuantity.preview`, `inventory.moveQuantity.preview`, `inventory.transfer.preview`, `inventory.transfer.addItems.preview`, `inventory.transfer.markReady.preview`, `inventory.transfer.cancel.preview`, `inventory.transfer.ship.preview`, and `inventory.transfer.receive.preview` include an `executeRequest` helper. It contains the matching execute tool, expected preview tool, `previewId`, target, `previewHash`, safe reviewed payload, reviewed changes hash, and confirmation requirement. Use it to prepare the execute call for review, not to run automatically. `inventory.transfer.removeItems.preview` intentionally has no `executeRequest` until a future remove-items execute path exists.
 
 For inventory preparation, use `inventory.lookup` only with an explicit inventory item ID, variant ID, or SKU, and use `inventory.locationLookup` only with an explicit location ID, name, or query. Treat multiple matches as candidates for user review, not as permission to guess a target.
 

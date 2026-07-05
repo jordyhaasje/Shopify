@@ -8,6 +8,7 @@ import {
   previewInventoryTransferAddItems,
   previewInventoryTransferCancel,
   previewInventoryTransferMarkReady,
+  previewInventoryTransferRemoveItems,
   previewInventoryTransferReceive,
   previewInventoryTransferShip,
   previewPageCreate,
@@ -484,6 +485,52 @@ describe("catalog and content previews", () => {
       ok: false,
       status: "validation_error",
       warnings: [{ code: "validation_error", message: "Inventory transfer add-item quantity must be a positive integer." }]
+    });
+  });
+
+  it("previews removing an explicit item from an inventory transfer", () => {
+    const preview = previewInventoryTransferRemoveItems({
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      currentStatus: "DRAFT"
+    });
+
+    expect(preview).toMatchObject({
+      ok: true,
+      status: "ok",
+      target: { type: "inventory_transfer", id: "gid://shopify/InventoryTransfer/1" },
+      auditContext: {
+        tool: "inventory.transfer.removeItems.preview",
+        mode: "preview",
+        performsShopifyMutation: false,
+        usesShopifyWriteOperation: false
+      },
+      warnings: [],
+      proposedChanges: expect.arrayContaining([
+        expect.objectContaining({ field: "inventoryTransferId", value: "gid://shopify/InventoryTransfer/1" }),
+        expect.objectContaining({ field: "inventoryItemId", value: "gid://shopify/InventoryItem/1" }),
+        expect.objectContaining({ field: "transferItems", action: "delete", before: "DRAFT", after: "REMOVE_ITEM" })
+      ])
+    });
+  });
+
+  it("requires explicit transfer and item for transfer remove-item previews", () => {
+    const missingTransfer = previewInventoryTransferRemoveItems({
+      inventoryItemId: "gid://shopify/InventoryItem/1"
+    });
+    const missingItem = previewInventoryTransferRemoveItems({
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1"
+    });
+
+    expect(missingTransfer).toMatchObject({
+      ok: false,
+      status: "missing_input",
+      warnings: [{ code: "missing_input", message: "Provide an inventory transfer ID." }]
+    });
+    expect(missingItem).toMatchObject({
+      ok: false,
+      status: "missing_input",
+      warnings: [{ code: "missing_input", message: "Provide an inventory item ID." }]
     });
   });
 
