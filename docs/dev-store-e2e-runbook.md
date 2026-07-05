@@ -818,7 +818,7 @@ Use only a disposable/development inventory shipment where receiving one shipmen
 
 Run these manually against the development-store setup:
 
-- Read-only mode on: `page.create.execute`, `product.create.execute`, `product.update.execute`, `collection.create.execute`, `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, `inventory.moveQuantity.execute`, `inventory.transfer.execute`, `inventory.transfer.addItems.execute`, `inventory.transfer.markReady.execute`, `inventory.transfer.cancel.execute`, `inventory.transfer.ship.execute`, and `inventory.transfer.receive.execute` return `blocked`.
+- Read-only mode on: `page.create.execute`, `product.create.execute`, `product.update.execute`, `product.media.update.execute`, `collection.create.execute`, `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, `inventory.moveQuantity.execute`, `inventory.transfer.execute`, `inventory.transfer.addItems.execute`, `inventory.transfer.markReady.execute`, `inventory.transfer.cancel.execute`, `inventory.transfer.ship.execute`, and `inventory.transfer.receive.execute` return `blocked`.
 - Missing `confirmed: true`: execute returns `blocked`.
 - Missing `previewId`: execute returns `blocked`.
 - Expired preview: execute returns `blocked`.
@@ -840,8 +840,9 @@ tracking.update.execute
 refund.execute
 bulk.execute
 theme.apply
-theme.rollback
 ```
+
+`theme.rollback` is a preview-only planning tool in the current runtime. It is not an execute placeholder.
 
 ## Audit And Output Checklist
 

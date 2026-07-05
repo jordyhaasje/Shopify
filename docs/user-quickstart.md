@@ -271,6 +271,8 @@ inventory.transfer.receive.preview
 page.create.preview
 collection.create.preview
 bulk.preview
+theme.preview
+theme.rollback
 ```
 
 Real execute tools:
@@ -301,7 +303,14 @@ tracking.update.execute
 refund.execute
 bulk.execute
 theme.apply
-theme.rollback
+```
+
+Other planning/status tools:
+
+```text
+bulk.status
+theme.reference.analyze
+theme.section.generate
 ```
 
 ## Not available yet
