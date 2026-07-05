@@ -22,8 +22,6 @@ The setup command is for local config, MCP snippets, and guidance. It does not r
 node /absolute/path/to/Shopify/packages/mcp/dist/server.js
 ```
 
-See [github-install.md](github-install.md) for the temporary GitHub install notes.
-
 ## Future NPM Setup
 
 The future package-distributed user flow is:
