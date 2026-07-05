@@ -100,7 +100,7 @@ Start with [docs/user-quickstart.md](docs/user-quickstart.md). See [docs/install
 
 ## Future NPM Setup
 
-The intended future setup is:
+The future package-distributed setup route is:
 
 ```bash
 npx shopify-store-agent setup
@@ -110,7 +110,7 @@ Package metadata is prepared and can be checked locally with `pnpm run pack:chec
 
 Future package publishing is covered by the [Release Runbook](docs/release-runbook.md). It keeps publishing manual and explicitly approved, with local validation, dry-run package checks, and safe release evidence before any npm publish.
 
-The wizard guides users through store URL normalization, manual-token or local-OAuth setup guidance, read-only local config, capability checks, and MCP host snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts. Setup and OAuth auth default to read-only scopes and do not request or activate write mode for read/preview validation.
+The current CLI already guides users through store URL normalization, manual-token or local-OAuth setup guidance, read-only local config, capability checks, and MCP host snippets for Codex, Claude Code, Cursor, and generic MCP-compatible hosts. Future npm/npx publishing should distribute that same reviewed behavior. Setup and OAuth auth default to read-only scopes and do not request or activate write mode for read/preview validation.
 
 After setup/auth, run a local setup check before opening the MCP host:
 

@@ -26,15 +26,15 @@ Manual Admin API token setup remains supported because early testers and technic
 
 The current GitHub install path is temporary while the npm package is unpublished. It is useful for early testing and review, but it is not the intended final setup path.
 
-## Future Setup
+## Package-Distributed Setup
 
-The intended future setup is:
+The intended package-distributed setup route is:
 
 ```bash
 npx shopify-store-agent setup
 ```
 
-The setup wizard should guide the user through config, auth, capability checks, MCP host snippets, and read-only/write-mode selection.
+The CLI setup/auth/check foundation already exists for the GitHub-local route. Future package publishing should expose the same reviewed behavior through npm/npx rather than changing the product form or safety model.
 
 ## Safety Default
 
