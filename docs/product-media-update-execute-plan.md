@@ -1,6 +1,6 @@
 # Product Media And Update Execute Plan
 
-This plan records the intended expansion path for product update and media execute work. It is planning only. It does not make any new execute tool real.
+This plan records the intended expansion path for product update and media execute work. The first add-only media execute slice is now shipped; the remaining sections describe future expansion boundaries.
 
 ## Sources Checked
 
@@ -32,7 +32,7 @@ It also supports explicit variant price updates when the stored preview contains
 
 It must continue to ignore loose execute-only input, require a safe product ID, require stored preview binding and explicit confirmation, locally preflight `write_products`, and return only safe summaries.
 
-`product.media.update.execute` remains a fail-closed placeholder.
+`product.media.update.execute` is now implemented only for add-only media previews. It uses `productUpdate(product:, media:)` to add user-provided HTTP(S) media URLs or staged upload URLs to one explicit product ID from a stored `product.media.update.preview`, with optional alt text and `IMAGE` as the default content type for URL/image preview input. It must continue to ignore loose execute-only input, require a safe product ID, require stored preview binding and explicit confirmation, locally preflight `write_products`, block unsupported update/delete/reorder media shapes before fetch, and return only safe product/media-add summaries.
 
 ## Expansion Sequence
 
@@ -44,13 +44,15 @@ Any future expansion of `product.update.execute` must be a separate roadmap item
 
 ### 2. First Media Execute Candidate: Add New Product Media
 
-The smallest likely media execute implementation is adding new media to an explicit product ID through `productUpdate(product:, media:)`.
+Status: shipped for add-only URL/staged-upload media.
+
+The first media execute implementation adds new media to an explicit product ID through `productUpdate(product:, media:)`.
 
 Allowed initial inputs should be limited to values already captured in a stored `product.media.update.preview`:
 
 - explicit product ID
 - one or more user-provided media URLs or staged upload URLs
-- explicit media content type
+- explicit media content type, or `IMAGE` inferred from URL/image preview input
 - optional alt text
 
 Required safety gates:
@@ -90,9 +92,9 @@ That future work must explicitly handle:
 
 Deleting, replacing, or reordering media can break storefront presentation. Treat those as higher-risk write flows with separate preview wording, explicit destructive warnings, and their own tests.
 
-## Required Tests Before Any Implementation
+## Required Tests For Future Expansions
 
-Any future media/update execute PR must include mocked tests for:
+Any future media/update execute expansion PR must include mocked tests for:
 
 - read-only blocks before fetch
 - missing or unknown required local write scopes block before fetch

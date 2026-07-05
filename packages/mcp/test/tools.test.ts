@@ -1908,12 +1908,33 @@ describe("MCP tools", () => {
           usesShopifyWriteOperation: false
         }
       });
-      if (tool !== "product.create.preview" && tool !== "page.create.preview" && tool !== "collection.create.preview") {
+      if (tool !== "product.create.preview" && tool !== "product.media.update.preview" && tool !== "page.create.preview" && tool !== "collection.create.preview") {
         expect((result as Record<string, unknown>).executeRequest).toBeUndefined();
+      }
+      if (tool === "product.media.update.preview") {
+        expect((result as Record<string, unknown>).executeRequest).toMatchObject({
+          tool: "product.media.update.execute",
+          requiresConfirmation: true
+        });
       }
     }
 
     expect(fetchCalled).toBe(false);
+  });
+
+  it("does not offer executeRequest for non-add product media previews", async () => {
+    const context = baseContext();
+    const result = await callTool("product.media.update.preview", {
+      productId: "gid://shopify/Product/1",
+      deleteMediaIds: ["gid://shopify/MediaImage/1"]
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "preview",
+      status: "ok"
+    });
+    expect((result as Record<string, unknown>).executeRequest).toBeUndefined();
   });
 
   it("keeps preview output free of secrets and raw oversized payload dumps", async () => {
@@ -5192,7 +5213,162 @@ describe("MCP tools", () => {
     expect(context.audit.list()[1]).toMatchObject({ tool: "collection.create.execute", result: "success" });
   });
 
-  it("keeps catalog and content execute tools not implemented without calling fetchers", async () => {
+  it("calls productUpdate media add after valid stored preview binding and write_products preflight", async () => {
+    const requests: Array<{ body: string }> = [];
+    const context = baseContext(async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          productUpdate: {
+            product: {
+              id: "gid://shopify/Product/1",
+              title: "Linen Shirt",
+              handle: "linen-shirt",
+              status: "ACTIVE",
+              rawNodeOnly: "do not return"
+            },
+            userErrors: []
+          }
+        }
+      });
+    }, false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("product.media.update.preview", {
+      productId: "gid://shopify/Product/1",
+      media: [{
+        url: "https://cdn.example.com/new.jpg",
+        alt: "Front view"
+      }]
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.media.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash,
+      productId: "gid://shopify/Product/999",
+      media: [{ url: "https://cdn.example.com/unreviewed.jpg" }]
+    }, context);
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "execute",
+      implemented: true,
+      status: "ok",
+      updatedProduct: {
+        id: "gid://shopify/Product/1",
+        title: "Linen Shirt",
+        handle: "linen-shirt",
+        status: "ACTIVE"
+      },
+      addedMedia: {
+        productId: "gid://shopify/Product/1",
+        addedMediaCount: 1,
+        media: [{
+          originalSource: "https://cdn.example.com/new.jpg",
+          mediaContentType: "IMAGE",
+          alt: "Front view"
+        }]
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentProductMediaAdd");
+    expect(request.query).toContain("productUpdate");
+    expect(request.query).toContain("media: $media");
+    expect(request.query).not.toContain("productCreateMedia");
+    expect(request.query).not.toContain("productUpdateMedia");
+    expect(request.variables).toEqual({
+      product: { id: "gid://shopify/Product/1" },
+      media: [{
+        originalSource: "https://cdn.example.com/new.jpg",
+        mediaContentType: "IMAGE",
+        alt: "Front view"
+      }]
+    });
+    expect(requests[0].body).not.toContain("gid://shopify/Product/999");
+    expect(requests[0].body).not.toContain("unreviewed.jpg");
+    expect(output).not.toContain("rawNodeOnly");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.media.update.execute", result: "success" });
+  });
+
+  it("blocks product media execute before fetch when write_products is missing", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["read_products"];
+    const preview = await callTool("product.media.update.preview", {
+      productId: "gid://shopify/Product/1",
+      media: [{ url: "https://cdn.example.com/new.jpg" }]
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.media.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "missing_write_scope" })])
+    });
+    expect(fetchCalled).toBe(false);
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.media.update.execute", result: "blocked" });
+  });
+
+  it("blocks unsupported product media execute shapes before fetch", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["write_products"];
+    const preview = await callTool("product.media.update.preview", {
+      productId: "gid://shopify/Product/1",
+      updates: [{ mediaId: "gid://shopify/MediaImage/1", alt: "New alt" }]
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("product.media.update.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: expect.arrayContaining([expect.objectContaining({ code: "unsupported_product_media_update_shape" })])
+    });
+    expect(fetchCalled).toBe(false);
+    expect(context.audit.list()[1]).toMatchObject({ tool: "product.media.update.execute", result: "blocked" });
+  });
+
+  it("keeps product import execute not implemented without calling fetchers", async () => {
     let fetchCalled = false;
     const context = baseContext(async () => {
       fetchCalled = true;
@@ -5205,7 +5381,6 @@ describe("MCP tools", () => {
       };
     }, false);
     const executeCalls: Array<[string, Record<string, unknown>]> = [
-      ["product.media.update.execute", { ...executeBinding("product.media.update.preview", "gid://shopify/Product/1"), productId: "gid://shopify/Product/1", confirmed: true }],
       ["product.importFromUserUrl.execute", { ...executeBinding("product.importFromUserUrl.preview", "https://example.com/products/shirt"), url: "https://example.com/products/shirt", confirmed: true }]
     ];
 

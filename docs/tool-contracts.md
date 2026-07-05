@@ -307,11 +307,13 @@ Preview output: media add/update/delete/reorder plan and delete-review warnings.
 
 ### `product.media.update.execute`
 
-Required input: preview ID or reviewed media plan and confirmation.
+Required input: stored `product.media.update.preview` binding, matching target/tool/hash values, matching reviewed payload hash, and `confirmed: true`.
 
-Execute requirements: `write_products` and possibly `write_files`, writes enabled, explicit confirmation.
+Execute requirements: `write_products`, writes enabled, stored preview binding, explicit confirmation, and a stored preview containing only media add changes for one explicit product ID.
 
-Current status: not implemented. The intended expansion is planned in [product-media-update-execute-plan.md](product-media-update-execute-plan.md). Do not implement media add/delete/reorder, file workflows, or broader `product.update.execute` behavior without a separate scoped roadmap item.
+Current status: implemented for add-only product media. It uses `productUpdate(product:, media:)` with one explicit product ID and user-provided HTTP(S) media URLs or staged upload URLs from the stored preview. `mediaContentType` is accepted from the preview, and URL/image preview input defaults to `IMAGE`. Output contains only a safe updated-product summary, safe added-media count/source summaries, Shopify user errors, diagnostics, audit metadata, and preview binding metadata.
+
+Not implemented here: media update/delete/reorder/replacement, staged upload orchestration, file library create/update/delete, variant-media attachment, product discovery, bulk media operations, or broader `product.update.execute` media behavior. Unsupported media preview shapes fail closed before fetch.
 
 ### `product.importFromUserUrl.preview`
 

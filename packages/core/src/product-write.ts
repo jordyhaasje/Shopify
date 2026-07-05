@@ -20,6 +20,19 @@ export interface ProductUpdateInput {
   tags?: string[];
 }
 
+export type ProductMediaContentType = "IMAGE" | "VIDEO" | "MODEL_3D" | "EXTERNAL_VIDEO";
+
+export interface ProductMediaCreateInput {
+  originalSource: string;
+  mediaContentType: ProductMediaContentType;
+  alt?: string;
+}
+
+export interface ProductMediaAddInput {
+  productId: string;
+  media: ProductMediaCreateInput[];
+}
+
 export interface ProductVariantPriceInput {
   id: string;
   price: string;
@@ -208,6 +221,16 @@ export interface ProductOptionsReorderSummary {
   options: ProductOptionSummary[];
 }
 
+export interface ProductMediaAddSummary {
+  productId: string;
+  addedMediaCount: number;
+  media: Array<{
+    originalSource: string;
+    mediaContentType: ProductMediaContentType;
+    alt?: string;
+  }>;
+}
+
 export interface ProductWriteDiagnostic {
   severity: "warning" | "error";
   code: string;
@@ -228,6 +251,10 @@ interface ProductWriteResultBase {
 export interface ProductCreateResult extends ProductWriteResultBase {}
 
 export interface ProductUpdateResult extends ProductWriteResultBase {}
+
+export interface ProductMediaAddResult extends ProductWriteResultBase {
+  mediaAdd?: ProductMediaAddSummary;
+}
 
 export interface ProductVariantPriceUpdateResult extends ProductWriteResultBase {
   variantPriceUpdate?: ProductVariantPriceUpdateSummary;
@@ -282,6 +309,18 @@ interface ProductCreateData {
 }
 
 interface ProductUpdateData {
+  productUpdate?: {
+    product?: {
+      id?: unknown;
+      title?: unknown;
+      handle?: unknown;
+      status?: unknown;
+    } | null;
+    userErrors?: GraphqlUserError[];
+  } | null;
+}
+
+interface ProductMediaAddData {
   productUpdate?: {
     product?: {
       id?: unknown;
@@ -514,6 +553,83 @@ export async function updateProduct(
     status: "ok",
     summary: `Updated Shopify product "${updated.title ?? updated.handle ?? updated.id}".`,
     product: updated,
+    userErrors: [],
+    diagnostics: []
+  };
+}
+
+export async function addProductMedia(
+  config: StoreAgentConfig,
+  input: ProductMediaAddInput,
+  options: ProductWriteOptions = {}
+): Promise<ProductMediaAddResult> {
+  if (config.readOnly) return blocked("Product media add is blocked because read-only mode is enabled.");
+
+  const productId = safeText(input.productId, 180);
+  if (!productId) return missingInput("Provide a product ID.");
+
+  const media = safeMediaCreateInputs(input.media);
+  if (media.length === 0) return missingInput("Provide at least one safe media URL or staged upload URL.");
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  let result: ShopifyGraphqlResult<ProductMediaAddData>;
+  try {
+    result = await client.request<ProductMediaAddData>({
+      query: productMediaAddMutation,
+      variables: {
+        product: { id: productId },
+        media
+      }
+    });
+  } catch {
+    return shopifyFailure("Shopify product media add request failed before a safe response was available.");
+  }
+
+  if (!result.ok) return mapGraphqlFailure(result);
+
+  const userErrors = result.data.productUpdate?.userErrors ?? result.userErrors;
+  if (userErrors.length > 0) {
+    return {
+      ok: false,
+      status: "user_errors",
+      summary: "Shopify rejected the product media add request.",
+      userErrors: sanitizeUserErrors(userErrors),
+      diagnostics: [{ severity: "warning", code: "shopify_user_errors", message: "Shopify returned product media add user errors." }]
+    };
+  }
+
+  const productNode = result.data.productUpdate?.product;
+  const updatedId = safeText(productNode?.id, 180);
+  if (!updatedId) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify product media add response did not include an updated product ID.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify product media add response did not include an updated product ID." }]
+    };
+  }
+
+  const product = {
+    id: updatedId,
+    title: safeText(productNode?.title, 255),
+    handle: safeHandle(productNode?.handle),
+    status: safeProductStatus(productNode?.status)
+  };
+  return {
+    ok: true,
+    status: "ok",
+    summary: `Added ${media.length} media item${media.length === 1 ? "" : "s"} to Shopify product "${product.title ?? product.handle ?? product.id}".`,
+    product,
+    mediaAdd: {
+      productId: updatedId,
+      addedMediaCount: media.length,
+      media: media.map((item) => ({
+        originalSource: sanitizeUrlForOutput(item.originalSource),
+        mediaContentType: item.mediaContentType,
+        alt: item.alt
+      }))
+    },
     userErrors: [],
     diagnostics: []
   };
@@ -1315,6 +1431,23 @@ const productUpdateMutation = /* GraphQL */ `
   }
 `;
 
+const productMediaAddMutation = /* GraphQL */ `
+  mutation ShopifyStoreAgentProductMediaAdd($product: ProductUpdateInput!, $media: [CreateMediaInput!]) {
+    productUpdate(product: $product, media: $media) {
+      product {
+        id
+        title
+        handle
+        status
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
 const productVariantsBulkUpdateMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentProductVariantPricesUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
     productVariantsBulkUpdate(productId: $productId, variants: $variants) {
@@ -1448,7 +1581,7 @@ const productOptionUpdateMutation = /* GraphQL */ `
   }
 `;
 
-function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<ProductCreateData | ProductUpdateData | ProductVariantsBulkUpdateData | ProductVariantsBulkCreateData | ProductOptionsCreateData | ProductOptionsDeleteData | ProductOptionsReorderData | ProductOptionUpdateData>, { ok: false }>): ProductWriteResultBase {
+function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<ProductCreateData | ProductUpdateData | ProductMediaAddData | ProductVariantsBulkUpdateData | ProductVariantsBulkCreateData | ProductOptionsCreateData | ProductOptionsDeleteData | ProductOptionsReorderData | ProductOptionUpdateData>, { ok: false }>): ProductWriteResultBase {
   return {
     ok: false,
     status: "shopify_error",
@@ -1512,6 +1645,22 @@ function safeVariantPriceInputs(value: ProductVariantPriceInput[] | undefined): 
     const price = safePrice(item?.price);
     if (id && price !== undefined) results.push({ id, price });
     if (results.length >= 25) break;
+  }
+  return results;
+}
+
+function safeMediaCreateInputs(value: ProductMediaCreateInput[] | undefined): ProductMediaCreateInput[] {
+  if (!Array.isArray(value)) return [];
+  const results: ProductMediaCreateInput[] = [];
+  for (const item of value) {
+    const originalSource = safeMediaSource(item?.originalSource);
+    const mediaContentType = safeMediaContentType(item?.mediaContentType);
+    if (!originalSource || !mediaContentType) continue;
+    const media: ProductMediaCreateInput = { originalSource, mediaContentType };
+    const alt = safeNonSecretText(item?.alt, 512);
+    if (alt) media.alt = alt;
+    results.push(media);
+    if (results.length >= 10) break;
   }
   return results;
 }
@@ -1732,6 +1881,43 @@ function safeText(value: unknown, maxLength: number): string | undefined {
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
 }
 
+function safeMediaSource(value: unknown): string | undefined {
+  const text = safeText(value, 2048);
+  if (!text || text === "[redacted]") return undefined;
+  try {
+    const url = new URL(text);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+    if (url.username || url.password) return undefined;
+    for (const [key, paramValue] of url.searchParams.entries()) {
+      if (isSensitiveQueryKey(key) || looksLikeSecret(paramValue)) return undefined;
+    }
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function safeMediaContentType(value: unknown): ProductMediaContentType | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const normalized = value.trim().toUpperCase();
+  return normalized === "IMAGE" || normalized === "VIDEO" || normalized === "MODEL_3D" || normalized === "EXTERNAL_VIDEO" ? normalized : undefined;
+}
+
+function sanitizeUrlForOutput(value: string): string {
+  try {
+    const url = new URL(value.trim());
+    url.username = "";
+    url.password = "";
+    for (const [key, paramValue] of url.searchParams.entries()) {
+      if (isSensitiveQueryKey(key) || looksLikeSecret(paramValue)) url.searchParams.set(key, "[redacted]");
+    }
+    const output = url.toString();
+    return output.length > 180 ? `${output.slice(0, 180)}...` : output;
+  } catch {
+    return safeText(value, 180) ?? "[redacted]";
+  }
+}
+
 function safeHandle(value: unknown): string | undefined {
   const text = safeText(value, 180);
   if (!text) return undefined;
@@ -1740,4 +1926,8 @@ function safeHandle(value: unknown): string | undefined {
 
 function looksLikeSecret(value: string): boolean {
   return /shpat_[A-Za-z0-9_]+|shpua_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|Bearer\s+[A-Za-z0-9._-]+/i.test(value);
+}
+
+function isSensitiveQueryKey(key: string): boolean {
+  return /token|secret|password|authorization|access[_-]?token|accessToken|api[_-]?key|client[_-]?secret|key/i.test(key);
 }
