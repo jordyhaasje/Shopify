@@ -3,6 +3,8 @@ export const defaultAdminScopes = [
   "write_products",
   "read_inventory",
   "write_inventory",
+  "read_inventory_transfers",
+  "write_inventory_transfers",
   "read_locations",
   "read_orders",
   "write_orders",

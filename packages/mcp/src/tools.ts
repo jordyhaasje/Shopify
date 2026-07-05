@@ -11,6 +11,7 @@ import {
   createPage,
   createRefundPreview,
   adjustInventoryQuantity,
+  createInventoryTransfer,
   moveInventoryQuantity,
   emptyCapabilities,
   type ExecutePreviewBindingResult,
@@ -29,6 +30,8 @@ import {
   type InventoryAdjustQuantityResult,
   type InventoryMoveQuantityInput,
   type InventoryMoveQuantityResult,
+  type InventoryTransferInput,
+  type InventoryTransferResult,
   loadStoredConfig,
   defaultAuditLogPath,
   defaultPreviewStorePath,
@@ -205,6 +208,7 @@ function implementedExecuteToolForPreview(previewTool: string): string | undefin
   if (previewTool === "inventory.setQuantity.preview") return "inventory.setQuantity.execute";
   if (previewTool === "inventory.adjustQuantity.preview") return "inventory.adjustQuantity.execute";
   if (previewTool === "inventory.moveQuantity.preview") return "inventory.moveQuantity.execute";
+  if (previewTool === "inventory.transfer.preview") return "inventory.transfer.execute";
   return undefined;
 }
 
@@ -732,6 +736,50 @@ async function inventoryMoveQuantityExecuteResult(input: Record<string, unknown>
 
   const write = await moveInventoryQuantity(context.config, extracted.input, { fetcher: context.fetcher });
   return inventoryMoveQuantityWriteResult(tool, storedTarget, binding, write, context);
+}
+
+async function inventoryTransferExecuteResult(input: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>> {
+  const tool = "inventory.transfer.execute";
+  const target = inventoryExecuteTarget(input, context);
+
+  if (context.config.readOnly) {
+    return blockedImplementedExecuteResult(tool, target, [diagnostic("read_only", "Execute is blocked because read-only mode is enabled.")], context, "inventory.transfer.preview");
+  }
+
+  if (!context.previewStore) {
+    return blockedImplementedExecuteResult(tool, target, [diagnostic("stored_preview_missing", "Stored preview was not found; execute binding fails closed.")], context, "inventory.transfer.preview");
+  }
+
+  const lookup = context.previewStore.getPreview(stringInput(input, "previewId"));
+  const storedTarget = lookup.record ? previewRecordBindingTarget(lookup.record) : target;
+  const binding = verifyStoredPreviewBinding(context.previewStore, input, {
+    executeTool: tool,
+    expectedPreviewTool: "inventory.transfer.preview",
+    target: storedTarget
+  });
+  if (!stringInput(input, "target")) {
+    binding.ok = false;
+    binding.diagnostics = [
+      diagnostic("missing_target", "Execute requires the reviewed preview target."),
+      ...binding.diagnostics.filter((item) => item.code !== "missing_target")
+    ];
+  }
+  if (!binding.ok) return blockedImplementedExecuteResult(tool, storedTarget, binding.diagnostics, context, binding);
+  if (!lookup.ok || !lookup.record) {
+    return blockedImplementedExecuteResult(tool, storedTarget, [lookup.diagnostic ?? diagnostic("stored_preview_missing", "Stored preview was not found; execute binding fails closed.")], context, binding);
+  }
+  if (lookup.record.tool !== "inventory.transfer.preview") {
+    return blockedImplementedExecuteResult(tool, storedTarget, [diagnostic("stored_preview_tool_mismatch", "Stored preview is not an inventory transfer preview.")], context, binding);
+  }
+
+  const extracted = inventoryTransferInputFromStoredPreview(lookup.record);
+  if (!extracted.ok) return blockedImplementedExecuteResult(tool, storedTarget, extracted.diagnostics, context, binding);
+
+  const preflight = checkWriteScopePreflight(context.config, tool);
+  if (!preflight.ok) return blockedImplementedExecuteResult(tool, storedTarget, preflight.diagnostics, context, binding);
+
+  const write = await createInventoryTransfer(context.config, extracted.input, { fetcher: context.fetcher });
+  return inventoryTransferWriteResult(tool, storedTarget, binding, write, context);
 }
 
 function savePreviewRecord(context: ToolContext, record: Parameters<MemoryPreviewStore["savePreview"]>[0]): StoredPreviewRecord {
@@ -1370,6 +1418,39 @@ function inventoryMoveQuantityWriteResult(
   };
 }
 
+function inventoryTransferWriteResult(
+  tool: string,
+  target: string,
+  binding: ExecutePreviewBindingResult,
+  write: InventoryTransferResult,
+  context: ToolContext
+): Record<string, unknown> {
+  const result = inventoryWriteAuditResult(write);
+  const audit = context.audit.record({
+    tool,
+    target: safeExecuteString(target),
+    mode: "execute",
+    summary: write.summary,
+    result
+  });
+  return {
+    ok: write.ok,
+    mode: "execute",
+    implemented: true,
+    status: write.status,
+    summary: write.summary,
+    audit,
+    inventoryTransfer: write.inventoryTransfer,
+    userErrors: write.userErrors,
+    diagnostics: write.diagnostics,
+    previewBinding: {
+      previewId: binding.previewId,
+      expectedTool: binding.expectedPreviewTool,
+      target: binding.target
+    }
+  };
+}
+
 function productCreateAuditResult(write: ProductCreateResult): "success" | "blocked" | "failed" {
   if (write.status === "ok") return "success";
   if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
@@ -1388,7 +1469,7 @@ function collectionCreateAuditResult(write: CollectionCreateResult): "success" |
   return "failed";
 }
 
-function inventoryWriteAuditResult(write: InventorySetQuantityResult | InventoryAdjustQuantityResult | InventoryMoveQuantityResult): "success" | "blocked" | "failed" {
+function inventoryWriteAuditResult(write: InventorySetQuantityResult | InventoryAdjustQuantityResult | InventoryMoveQuantityResult | InventoryTransferResult): "success" | "blocked" | "failed" {
   if (write.status === "ok") return "success";
   if (write.status === "blocked" || write.status === "missing_input" || write.status === "user_errors") return "blocked";
   return "failed";
@@ -2225,6 +2306,53 @@ function inventoryMoveQuantityInputFromStoredPreview(record: StoredPreviewRecord
   };
 }
 
+function inventoryTransferInputFromStoredPreview(record: StoredPreviewRecord): { ok: true; input: InventoryTransferInput } | { ok: false; diagnostics: ExecutePreviewBindingDiagnostic[] } {
+  const inventoryItemId = safeContentText(targetField(record, "id") ?? changeValue(record, "inventoryItemId"), 180);
+  const fromLocationId = safeContentText(changeValue(record, "fromLocationId"), 180);
+  const toLocationId = safeContentText(changeValue(record, "toLocationId"), 180);
+  const quantity = safeInteger(changeValue(record, "quantityValue"));
+  const reason = safeContentText(changeValue(record, "reason"), 120);
+  const referenceDocumentUri = safeContentText(changeValue(record, "referenceDocumentUri"), 255);
+
+  if (!inventoryItemId) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_inventory_item_id", "Stored inventory transfer preview did not include a safe inventory item ID.")]
+    };
+  }
+  if (!fromLocationId || !toLocationId || fromLocationId === toLocationId) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_inventory_transfer_locations", "Stored inventory transfer preview did not include safe distinct source and destination location IDs.")]
+    };
+  }
+  if (quantity === undefined || quantity <= 0) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_inventory_transfer_quantity", "Stored inventory transfer preview did not include a safe positive quantity.")]
+    };
+  }
+  if (!reason) {
+    return {
+      ok: false,
+      diagnostics: [diagnostic("missing_inventory_reason", "Stored inventory transfer preview did not include a safe inventory transfer reason.")]
+    };
+  }
+
+  return {
+    ok: true,
+    input: {
+      inventoryItemId,
+      fromLocationId,
+      toLocationId,
+      quantity,
+      reason,
+      referenceDocumentUri,
+      idempotencyKey: `store-agent:${record.previewId}`
+    }
+  };
+}
+
 function inventoryQuantityNameFromStoredPreview(value: unknown): string | undefined {
   const text = safeContentText(value, 80)?.toLowerCase();
   return text && ["available", "reserved", "damaged", "quality_control", "safety_stock"].includes(text) ? text : undefined;
@@ -2610,9 +2738,15 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: "inventory.transfer.preview",
-    description: "Preview transferring inventory quantity between two explicit locations. Execute is not implemented.",
+    description: "Preview transferring inventory quantity between two explicit locations.",
     inputSchema: { type: "object" },
     handler: (input, context) => catalogPreviewResult(previewInventoryTransfer(input), context)
+  },
+  {
+    name: "inventory.transfer.execute",
+    description: "Create a Shopify inventory transfer draft only after stored preview binding and explicit confirmation.",
+    inputSchema: { type: "object" },
+    handler: (input, context) => inventoryTransferExecuteResult(input, context)
   },
   {
     name: "order.find",

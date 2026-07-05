@@ -383,7 +383,7 @@ describe("catalog and content previews", () => {
         performsShopifyMutation: false,
         usesShopifyWriteOperation: false
       },
-      warnings: [{ code: "execute_not_implemented" }],
+      warnings: [],
       proposedChanges: expect.arrayContaining([
         expect.objectContaining({ field: "inventoryItemId", value: "gid://shopify/InventoryItem/1" }),
         expect.objectContaining({ field: "fromLocationId", value: "gid://shopify/Location/1" }),

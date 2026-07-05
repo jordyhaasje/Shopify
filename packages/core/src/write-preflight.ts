@@ -23,20 +23,24 @@ export const collectionCreateWriteScopes = ["write_products"] as const;
 export const inventorySetQuantityWriteScopes = ["write_inventory"] as const;
 export const inventoryAdjustQuantityWriteScopes = ["write_inventory"] as const;
 export const inventoryMoveQuantityWriteScopes = ["write_inventory"] as const;
+export const inventoryTransferWriteScopes = ["write_inventory_transfers", "read_inventory_transfers"] as const;
 
-type WriteExecuteTool = "page.create.execute" | "product.create.execute" | "product.update.execute" | "collection.create.execute" | "inventory.setQuantity.execute" | "inventory.adjustQuantity.execute" | "inventory.moveQuantity.execute";
+type WriteExecuteTool = "page.create.execute" | "product.create.execute" | "product.update.execute" | "collection.create.execute" | "inventory.setQuantity.execute" | "inventory.adjustQuantity.execute" | "inventory.moveQuantity.execute" | "inventory.transfer.execute";
 
 export function checkWriteScopePreflight(config: StoreAgentConfig, tool: WriteExecuteTool): WriteScopePreflightResult {
   const requiredScopes = requiredWriteScopes(tool);
   const grantedScopes = Array.isArray(config.grantedScopes) ? normalizeScopes(config.grantedScopes).map((scope) => scope.toLowerCase()) : undefined;
+  const requiresAll = requiresAllScopes(tool);
 
   if (!grantedScopes) {
     return blocked(tool, requiredScopes, false, "unknown_write_scopes", `${tool} fails closed before Shopify write execution because local granted scopes are unknown.`);
   }
 
-  const hasScope = requiredScopes.some((scope) => grantedScopes.includes(scope.toLowerCase()));
+  const hasScope = requiresAll
+    ? requiredScopes.every((scope) => grantedScopes.includes(scope.toLowerCase()))
+    : requiredScopes.some((scope) => grantedScopes.includes(scope.toLowerCase()));
   if (!hasScope) {
-    return blocked(tool, requiredScopes, true, "missing_write_scope", `${tool} requires ${formatScopeList(requiredScopes)} in local granted scopes before Shopify write execution.`);
+    return blocked(tool, requiredScopes, true, "missing_write_scope", `${tool} requires ${formatScopeList(requiredScopes, requiresAll ? "and" : "or")} in local granted scopes before Shopify write execution.`);
   }
 
   return {
@@ -57,12 +61,17 @@ function requiredWriteScopes(tool: WriteExecuteTool): readonly string[] {
   if (tool === "inventory.setQuantity.execute") return inventorySetQuantityWriteScopes;
   if (tool === "inventory.adjustQuantity.execute") return inventoryAdjustQuantityWriteScopes;
   if (tool === "inventory.moveQuantity.execute") return inventoryMoveQuantityWriteScopes;
+  if (tool === "inventory.transfer.execute") return inventoryTransferWriteScopes;
   return [];
 }
 
-function formatScopeList(scopes: readonly string[]): string {
+function requiresAllScopes(tool: WriteExecuteTool): boolean {
+  return tool === "inventory.transfer.execute";
+}
+
+function formatScopeList(scopes: readonly string[], joiner: "and" | "or"): string {
   if (scopes.length <= 1) return scopes[0] ?? "a write scope";
-  return `${scopes.slice(0, -1).join(", ")} or ${scopes[scopes.length - 1]}`;
+  return `${scopes.slice(0, -1).join(", ")} ${joiner} ${scopes[scopes.length - 1]}`;
 }
 
 function blocked(

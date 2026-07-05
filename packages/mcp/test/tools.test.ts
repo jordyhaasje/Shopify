@@ -26,6 +26,7 @@ const expectedToolNames = [
   "inventory.moveQuantity.preview",
   "inventory.moveQuantity.execute",
   "inventory.transfer.preview",
+  "inventory.transfer.execute",
   "order.find",
   "order.get",
   "customer.find",
@@ -739,7 +740,7 @@ describe("MCP tools", () => {
     expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.moveQuantity.execute", result: "blocked" });
   });
 
-  it("previews inventory transfer without an executeRequest helper", async () => {
+  it("previews inventory transfer with executeRequest binding", async () => {
     const context = baseContext();
 
     const result = await callTool("inventory.transfer.preview", {
@@ -755,13 +756,134 @@ describe("MCP tools", () => {
       mode: "preview",
       status: "ok",
       target: { type: "inventory", id: "gid://shopify/InventoryItem/1" },
-      warnings: [{ code: "execute_not_implemented" }]
+      executeRequest: expect.objectContaining({
+        tool: "inventory.transfer.execute",
+        expectedTool: "inventory.transfer.preview",
+        requiresConfirmation: true
+      })
     });
-    expect(result.executeRequest).toBeUndefined();
+    expect(result.warnings).toEqual([]);
     expect(changeFor(result, "fromLocationId")).toMatchObject({ value: "gid://shopify/Location/1" });
     expect(changeFor(result, "toLocationId")).toMatchObject({ value: "gid://shopify/Location/2" });
     expect(changeFor(result, "quantityValue")).toMatchObject({ value: 4 });
     expect(context.audit.list()[0]).toMatchObject({ tool: "inventory.transfer.preview", mode: "preview", result: "success" });
+  });
+
+  it("creates inventory transfer draft from stored preview via inventoryTransferCreate", async () => {
+    const requests: Array<{ body: string }> = [];
+    const context = baseContext(async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          inventoryTransferCreate: {
+            inventoryTransfer: {
+              id: "gid://shopify/InventoryTransfer/1",
+              status: "DRAFT",
+              rawNodeOnly: "do not return"
+            },
+            userErrors: []
+          }
+        }
+      });
+    }, false);
+    context.config.grantedScopes = ["write_inventory_transfers", "read_inventory_transfers"];
+    const preview = await callTool("inventory.transfer.preview", {
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      fromLocationId: "gid://shopify/Location/1",
+      toLocationId: "gid://shopify/Location/2",
+      quantity: 4,
+      reason: "rebalance",
+      referenceDocumentUri: "gid://store-agent/TestRun/4"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("inventory.transfer.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash,
+      quantity: 999,
+      fromLocationId: "gid://shopify/Location/999"
+    }, context);
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "execute",
+      implemented: true,
+      status: "ok",
+      inventoryTransfer: {
+        inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+        status: "DRAFT",
+        inventoryItemId: "gid://shopify/InventoryItem/1",
+        fromLocationId: "gid://shopify/Location/1",
+        toLocationId: "gid://shopify/Location/2",
+        quantity: 4
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentInventoryTransferCreate");
+    expect(request.query).toContain("@idempotent");
+    expect(request.query).not.toContain("inventoryMoveQuantities");
+    expect(request.query).not.toContain("inventoryAdjustQuantities");
+    expect(request.variables.input).toEqual({
+      originLocationId: "gid://shopify/Location/1",
+      destinationLocationId: "gid://shopify/Location/2",
+      lineItems: [{
+        inventoryItemId: "gid://shopify/InventoryItem/1",
+        quantity: 4
+      }],
+      note: "rebalance",
+      referenceName: "gid://store-agent/TestRun/4"
+    });
+    expect(request.variables.idempotencyKey).toBe(`store-agent:${preview.previewId}`);
+    expect(requests[0].body).not.toContain("999");
+    expect(requests[0].body).not.toContain("Location/999");
+    expect(output).not.toContain("rawNodeOnly");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.transfer.execute", result: "success" });
+  });
+
+  it("blocks inventory transfer before fetch when transfer scopes are missing", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["write_inventory"];
+    const preview = await callTool("inventory.transfer.preview", {
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      fromLocationId: "gid://shopify/Location/1",
+      toLocationId: "gid://shopify/Location/2",
+      quantity: 4,
+      reason: "rebalance"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("inventory.transfer.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: [{ code: "missing_write_scope" }]
+    });
+    expect(fetchCalled).toBe(false);
+    expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.transfer.execute", result: "blocked" });
   });
 
   it("runs catalog and content previews with structured audit entries", async () => {
