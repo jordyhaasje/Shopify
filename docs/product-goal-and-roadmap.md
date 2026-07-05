@@ -47,6 +47,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 - Minimal `inventory.moveQuantity.execute` is implemented for one explicit inventory item ID, one explicit location ID, one positive integer quantity, supported source and destination quantity names, an explicit reason, stored preview binding, and `write_inventory` preflight.
 - Minimal `inventory.transfer.execute` is implemented for one explicit inventory item ID, one source location ID, one destination location ID, one positive integer quantity, an explicit reason, stored preview binding, and local preflight requiring both `write_inventory_transfers` and `read_inventory_transfers`. It creates a draft Shopify inventory transfer only.
 - Minimal `inventory.transfer.markReady.execute` is implemented for one explicit inventory transfer ID, stored preview binding, and local preflight requiring both `write_inventory_transfers` and `read_inventory_transfers`. It marks a draft transfer ready to ship only.
+- Minimal `inventory.transfer.cancel.execute` is implemented for one explicit inventory transfer ID, stored preview binding, and local preflight requiring both `write_inventory_transfers` and `read_inventory_transfers`. It cancels one transfer only.
 - Minimal `inventory.lookup` is implemented as a read-only helper for explicit inventory item ID, variant ID, or SKU lookups. It returns compact inventory item, variant, location, and quantity summaries to help users prepare reviewed inventory previews.
 - Minimal `inventory.locationLookup` is implemented as a read-only helper for explicit location ID, location name, or location query lookups. It returns compact location summaries to help users prepare reviewed inventory previews and future location workflows.
 - A product media/update execute expansion plan exists, with media execute still intentionally not implemented.
@@ -66,7 +67,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 
 ## Later Roadmap
 
-- Inventory beyond explicit single-item quantity set, single-item adjustment, single-location state move, basic inventory lookup, basic location lookup, draft transfer create, and transfer mark-ready, including bulk inventory, richer transfer lifecycle actions such as ship/receive/cancel, and richer location workflows.
+- Inventory beyond explicit single-item quantity set, single-item adjustment, single-location state move, basic inventory lookup, basic location lookup, draft transfer create, transfer mark-ready, and transfer cancel, including bulk inventory, richer transfer lifecycle actions such as ship/receive, and richer location workflows.
 - Metafields.
 - Publications.
 - Translations.

@@ -29,6 +29,8 @@ const expectedToolNames = [
   "inventory.transfer.execute",
   "inventory.transfer.markReady.preview",
   "inventory.transfer.markReady.execute",
+  "inventory.transfer.cancel.preview",
+  "inventory.transfer.cancel.execute",
   "order.find",
   "order.get",
   "customer.find",
@@ -1005,6 +1007,126 @@ describe("MCP tools", () => {
     });
     expect(fetchCalled).toBe(false);
     expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.transfer.markReady.execute", result: "blocked" });
+  });
+
+  it("previews inventory transfer cancel with executeRequest binding", async () => {
+    const context = baseContext();
+
+    const result = await callTool("inventory.transfer.cancel.preview", {
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+      currentStatus: "READY_TO_SHIP"
+    }, context) as Record<string, unknown>;
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "preview",
+      status: "ok",
+      target: { type: "inventory_transfer", id: "gid://shopify/InventoryTransfer/1" },
+      executeRequest: expect.objectContaining({
+        tool: "inventory.transfer.cancel.execute",
+        expectedTool: "inventory.transfer.cancel.preview",
+        requiresConfirmation: true
+      })
+    });
+    expect(result.warnings).toEqual([]);
+    expect(changeFor(result, "status")).toMatchObject({ before: "READY_TO_SHIP", after: "CANCELLED" });
+    expect(context.audit.list()[0]).toMatchObject({ tool: "inventory.transfer.cancel.preview", mode: "preview", result: "success" });
+  });
+
+  it("cancels inventory transfer from stored preview", async () => {
+    const requests: Array<{ body: string }> = [];
+    const context = baseContext(async (_url, init) => {
+      requests.push({ body: init.body });
+      return jsonResponse({
+        data: {
+          inventoryTransferCancel: {
+            inventoryTransfer: {
+              id: "gid://shopify/InventoryTransfer/1",
+              status: "CANCELLED",
+              rawNodeOnly: "do not return"
+            },
+            userErrors: []
+          }
+        }
+      });
+    }, false);
+    context.config.grantedScopes = ["write_inventory_transfers", "read_inventory_transfers"];
+    const preview = await callTool("inventory.transfer.cancel.preview", {
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+      currentStatus: "READY_TO_SHIP"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("inventory.transfer.cancel.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash,
+      inventoryTransferId: "gid://shopify/InventoryTransfer/999"
+    }, context);
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "execute",
+      implemented: true,
+      status: "ok",
+      inventoryTransfer: {
+        inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+        status: "CANCELLED"
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentInventoryTransferCancel");
+    expect(request.query).toContain("inventoryTransferCancel");
+    expect(request.query).not.toContain("inventoryTransferMarkAsReadyToShip");
+    expect(request.query).not.toContain("inventoryTransferCreate");
+    expect(request.query).not.toContain("@idempotent");
+    expect(request.variables).toEqual({
+      id: "gid://shopify/InventoryTransfer/1"
+    });
+    expect(requests[0].body).not.toContain("InventoryTransfer/999");
+    expect(output).not.toContain("rawNodeOnly");
+    expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.transfer.cancel.execute", result: "success" });
+  });
+
+  it("blocks inventory transfer cancel before fetch when transfer scopes are missing", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    }, false);
+    context.config.grantedScopes = ["write_inventory"];
+    const preview = await callTool("inventory.transfer.cancel.preview", {
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1"
+    }, context) as Record<string, unknown>;
+    const binding = preview.binding as Record<string, unknown>;
+    const reviewed = reviewedBindingFor(context, preview);
+
+    const result = await callTool("inventory.transfer.cancel.execute", {
+      previewId: preview.previewId,
+      confirmed: true,
+      reviewedPayload: reviewed.reviewedPayload,
+      expectedTool: binding.expectedTool,
+      target: binding.target,
+      previewHash: preview.previewHash,
+      reviewedChangesHash: reviewed.reviewedChangesHash
+    }, context);
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: "execute",
+      implemented: true,
+      status: "blocked",
+      diagnostics: [{ code: "missing_write_scope" }]
+    });
+    expect(fetchCalled).toBe(false);
+    expect(context.audit.list()[1]).toMatchObject({ tool: "inventory.transfer.cancel.execute", result: "blocked" });
   });
 
   it("runs catalog and content previews with structured audit entries", async () => {

@@ -181,6 +181,7 @@ inventory.adjustQuantity.preview -> inventory.adjustQuantity.execute
 inventory.moveQuantity.preview -> inventory.moveQuantity.execute
 inventory.transfer.preview -> inventory.transfer.execute
 inventory.transfer.markReady.preview -> inventory.transfer.markReady.execute
+inventory.transfer.cancel.preview -> inventory.transfer.cancel.execute
 ```
 
 ## Step 9 -- Approve and execute
@@ -207,7 +208,7 @@ pnpm --filter shopify-store-agent run auth -- \
   --scopes "read_products,read_content,read_online_store_pages,read_inventory,read_locations,write_products,write_content,write_inventory,write_inventory_transfers,read_inventory_transfers"
 ```
 
-Use only a development or disposable store. `write_products` is required for `product.create.execute`, `product.update.execute`, and custom `collection.create.execute`; `write_content` or `write_online_store_pages` is required for `page.create.execute`; `write_inventory` is required for `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, and `inventory.moveQuantity.execute`; both `write_inventory_transfers` and `read_inventory_transfers` are required for `inventory.transfer.execute` and `inventory.transfer.markReady.execute`. `product.update.execute` supports one update shape per preview: basic product fields, explicit variant price updates with product ID plus variant IDs and prices, explicit variant creation with product ID plus option values and optional price/SKU, explicit option creation with product ID plus option names and values, explicit option delete with product ID plus option IDs, explicit option reorder with product ID plus option IDs or names in the desired order, explicit option rename with product ID, option ID, and new option name, explicit option value rename with product ID, option ID, option value ID, and new value name, explicit option value add with product ID, option ID, and new value names, or explicit option value delete with product ID, option ID, and option value IDs. Option creation, option rename, option value rename, option value add, and option value delete use `LEAVE_AS_IS`; option delete uses `NON_DESTRUCTIVE`; option reorder uses `productOptionsReorder`. `inventory.setQuantity.execute` supports one explicit inventory item ID and one explicit location ID per reviewed preview, with compare quantity checks unless explicitly ignored. `inventory.adjustQuantity.execute` supports one explicit inventory item ID, one explicit location ID, and one non-zero delta per reviewed preview. `inventory.moveQuantity.execute` supports one explicit inventory item ID, one explicit location ID, one positive quantity, and supported source/destination quantity names per reviewed preview. `inventory.transfer.execute` supports one explicit inventory item ID, one source location ID, one destination location ID, and one positive quantity per reviewed preview, and creates a draft transfer only. `inventory.transfer.markReady.execute` supports one explicit inventory transfer ID per reviewed preview and marks it ready to ship only. Do not mix update shapes in one preview. All other execute tools are placeholders.
+Use only a development or disposable store. `write_products` is required for `product.create.execute`, `product.update.execute`, and custom `collection.create.execute`; `write_content` or `write_online_store_pages` is required for `page.create.execute`; `write_inventory` is required for `inventory.setQuantity.execute`, `inventory.adjustQuantity.execute`, and `inventory.moveQuantity.execute`; both `write_inventory_transfers` and `read_inventory_transfers` are required for `inventory.transfer.execute`, `inventory.transfer.markReady.execute`, and `inventory.transfer.cancel.execute`. `product.update.execute` supports one update shape per preview: basic product fields, explicit variant price updates with product ID plus variant IDs and prices, explicit variant creation with product ID plus option values and optional price/SKU, explicit option creation with product ID plus option names and values, explicit option delete with product ID plus option IDs, explicit option reorder with product ID plus option IDs or names in the desired order, explicit option rename with product ID, option ID, and new option name, explicit option value rename with product ID, option ID, option value ID, and new value name, explicit option value add with product ID, option ID, and new value names, or explicit option value delete with product ID, option ID, and option value IDs. Option creation, option rename, option value rename, option value add, and option value delete use `LEAVE_AS_IS`; option delete uses `NON_DESTRUCTIVE`; option reorder uses `productOptionsReorder`. `inventory.setQuantity.execute` supports one explicit inventory item ID and one explicit location ID per reviewed preview, with compare quantity checks unless explicitly ignored. `inventory.adjustQuantity.execute` supports one explicit inventory item ID, one explicit location ID, and one non-zero delta per reviewed preview. `inventory.moveQuantity.execute` supports one explicit inventory item ID, one explicit location ID, one positive quantity, and supported source/destination quantity names per reviewed preview. `inventory.transfer.execute` supports one explicit inventory item ID, one source location ID, one destination location ID, and one positive quantity per reviewed preview, and creates a draft transfer only. `inventory.transfer.markReady.execute` supports one explicit inventory transfer ID per reviewed preview and marks it ready to ship only. `inventory.transfer.cancel.execute` supports one explicit inventory transfer ID per reviewed preview and cancels it only. Do not mix update shapes in one preview. All other execute tools are placeholders.
 
 ## Safety rules
 
@@ -260,6 +261,7 @@ inventory.adjustQuantity.preview
 inventory.moveQuantity.preview
 inventory.transfer.preview
 inventory.transfer.markReady.preview
+inventory.transfer.cancel.preview
 page.create.preview
 collection.create.preview
 ```
@@ -276,6 +278,7 @@ inventory.adjustQuantity.execute
 inventory.moveQuantity.execute
 inventory.transfer.execute
 inventory.transfer.markReady.execute
+inventory.transfer.cancel.execute
 ```
 
 Placeholder execute tools:

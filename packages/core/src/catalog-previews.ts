@@ -53,6 +53,7 @@ type PreviewTool =
   | "inventory.moveQuantity.preview"
   | "inventory.transfer.preview"
   | "inventory.transfer.markReady.preview"
+  | "inventory.transfer.cancel.preview"
   | "page.create.preview"
   | "collection.create.preview";
 
@@ -341,6 +342,20 @@ export function previewInventoryTransferMarkReady(input: Record<string, unknown>
   ]);
 
   return okResult("inventory.transfer.markReady.preview", target, `Preview marking inventory transfer ${inventoryTransferId} ready to ship.`, changes, []);
+}
+
+export function previewInventoryTransferCancel(input: Record<string, unknown>): CatalogPreviewResult {
+  const inventoryTransferId = firstString(input.inventoryTransferId, input.transferId, input.id);
+  const currentStatus = firstString(input.currentStatus, input.status);
+  const target: PreviewTarget = { type: "inventory_transfer", id: inventoryTransferId || undefined };
+  if (!inventoryTransferId) return missingInput("inventory.transfer.cancel.preview", target, "Provide an inventory transfer ID.");
+
+  const changes = compactChanges([
+    { field: "inventoryTransferId", action: "plan" as const, value: summarizeValue("inventoryTransferId", inventoryTransferId) },
+    { field: "status", action: "update" as const, before: currentStatus || "unknown", after: "CANCELLED" }
+  ]);
+
+  return okResult("inventory.transfer.cancel.preview", target, `Preview cancelling inventory transfer ${inventoryTransferId}.`, changes, []);
 }
 
 export function previewPageCreate(input: Record<string, unknown>): CatalogPreviewResult {

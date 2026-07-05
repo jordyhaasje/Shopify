@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adjustInventoryQuantity, createConfig, createInventoryTransfer, markInventoryTransferReady, moveInventoryQuantity, setInventoryQuantity, type FetchLike } from "../src/index.js";
+import { adjustInventoryQuantity, cancelInventoryTransfer, createConfig, createInventoryTransfer, markInventoryTransferReady, moveInventoryQuantity, setInventoryQuantity, type FetchLike } from "../src/index.js";
 
 describe("inventory write helper", () => {
   it("sets an explicit inventory quantity through inventorySetQuantities", async () => {
@@ -539,6 +539,51 @@ describe("inventory write helper", () => {
     expect(requests).toHaveLength(1);
     expect(request.query).toContain("mutation ShopifyStoreAgentInventoryTransferMarkReady");
     expect(request.query).toContain("inventoryTransferMarkAsReadyToShip");
+    expect(request.query).not.toContain("inventoryTransferCreate");
+    expect(request.query).not.toContain("@idempotent");
+    expect(request.variables).toEqual({
+      id: "gid://shopify/InventoryTransfer/1"
+    });
+    expect(output).not.toContain("rawNodeOnly");
+    expect(output).not.toContain("shpat_inventory_secret");
+  });
+
+  it("cancels an explicit inventory transfer", async () => {
+    const requests: Array<{ body: string; token?: string }> = [];
+    const fetcher: FetchLike = async (_url, init) => {
+      requests.push({ body: init.body, token: init.headers["X-Shopify-Access-Token"] });
+      return jsonResponse({
+        data: {
+          inventoryTransferCancel: {
+            inventoryTransfer: {
+              id: "gid://shopify/InventoryTransfer/1",
+              status: "CANCELLED",
+              rawNodeOnly: "do not return"
+            },
+            userErrors: []
+          }
+        }
+      });
+    };
+
+    const result = await cancelInventoryTransfer(config(), {
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1"
+    }, { fetcher });
+    const request = JSON.parse(requests[0].body);
+    const output = JSON.stringify(result);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "ok",
+      inventoryTransfer: {
+        inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+        status: "CANCELLED"
+      }
+    });
+    expect(requests).toHaveLength(1);
+    expect(request.query).toContain("mutation ShopifyStoreAgentInventoryTransferCancel");
+    expect(request.query).toContain("inventoryTransferCancel");
+    expect(request.query).not.toContain("inventoryTransferMarkAsReadyToShip");
     expect(request.query).not.toContain("inventoryTransferCreate");
     expect(request.query).not.toContain("@idempotent");
     expect(request.variables).toEqual({
