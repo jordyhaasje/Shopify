@@ -21,7 +21,7 @@ describe("setup", () => {
     expect(snippets.codex).not.toContain("secret-token");
   });
 
-  it("generates Codex, Claude Code, Cursor, and generic local MCP snippets without raw secrets", () => {
+  it("generates Codex, Claude Code, Cursor, OpenCode, and generic local MCP snippets without raw secrets", () => {
     const config = createConfig({
       storeUrl: "demo.myshopify.com",
       adminAccessToken: "shpat_snippet_secret",
@@ -38,13 +38,26 @@ describe("setup", () => {
     expect(snippets.codex).toContain("[mcp_servers.shopify-store-agent]");
     expect(snippets.codex).toContain("command = \"node\"");
     expect(snippets.codex).toContain(`args = ${JSON.stringify([localServerPath])}`);
-    expect(snippets.claude).toContain("\"mcpServers\"");
-    expect(snippets.claude).toContain("\"command\": \"node\"");
-    expect(snippets.claude).toContain(localServerPath);
+    expect(snippets["claude-code"]).toContain("\"mcpServers\"");
+    expect(snippets["claude-code"]).toContain("\"type\": \"stdio\"");
+    expect(snippets["claude-code"]).toContain("\"command\": \"node\"");
+    expect(snippets["claude-code"]).toContain(localServerPath);
     expect(snippets.cursor).toContain("\"mcpServers\"");
+    expect(snippets.cursor).toContain("\"type\": \"stdio\"");
     expect(snippets.cursor).toContain("\"command\": \"node\"");
     expect(snippets.cursor).toContain(localServerPath);
+    expect(snippets.opencode).toContain("\"$schema\": \"https://opencode.ai/config.json\"");
+    expect(snippets.opencode).toContain("\"type\": \"local\"");
+    expect(snippets.opencode).toContain("\"environment\"");
+    expect(JSON.parse(snippets.opencode)).toMatchObject({
+      mcp: {
+        "shopify-store-agent": {
+          command: ["node", localServerPath]
+        }
+      }
+    });
     expect(snippets.generic).toContain("\"shopify-store-agent\"");
+    expect(snippets.generic).toContain("\"type\": \"stdio\"");
     expect(snippets.generic).toContain("\"command\": \"node\"");
     expect(snippets.generic).toContain(localServerPath);
     expect(output).toContain("SHOPIFY_STORE_AGENT_CONFIG");
@@ -60,12 +73,37 @@ describe("setup", () => {
 
     expect(snippets.codex).toContain("command = \"npx\"");
     expect(snippets.codex).toContain("shopify-store-agent-mcp");
+    expect(JSON.parse(snippets.opencode).mcp["shopify-store-agent"].command).toEqual(["npx", "shopify-store-agent-mcp"]);
   });
 
   it("supports non-interactive dry-run setup", async () => {
     const result = await runSetup({ storeUrl: "demo", dryRun: true });
     expect(result.config.storeUrl).toBe("demo.myshopify.com");
     expect(result.config.capabilities?.adminApi).toBe(false);
+  });
+
+  it("selects one setup host when requested", async () => {
+    const result = await runSetup({ storeUrl: "demo", host: "opencode", dryRun: true });
+
+    expect(result.host).toBe("opencode");
+    expect(result.selectedSnippetHosts).toEqual(["opencode"]);
+    expect(result.hostGuidance).toEqual([expect.objectContaining({
+      host: "opencode",
+      configTarget: expect.stringContaining("opencode.json")
+    })]);
+    expect(result.snippets.opencode).toContain("\"type\": \"local\"");
+    expect(result.nextSteps.join(" ")).toContain("OpenCode");
+  });
+
+  it("warns when future npx setup mode is selected before publishing", async () => {
+    const result = await runSetup({ storeUrl: "demo", mcpCommandMode: "npx", dryRun: true });
+
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "future_npx_mode",
+        message: expect.stringContaining("future package-distributed setup")
+      })
+    ]));
   });
 
   it("guides AI hosts to accept ordinary store-language prompts safely", async () => {
@@ -463,7 +501,7 @@ describe("setup", () => {
     expect(result.readOnly).toBe(true);
     expect(result.adminApiTokenConfigured).toBe(true);
     expect(result.themeAccessTokenConfigured).toBe(true);
-    expect(result.snippetHosts).toEqual(["codex", "claude", "cursor", "generic"]);
+    expect(result.snippetHosts).toEqual(["codex", "claude-code", "cursor", "opencode", "generic"]);
     expect(result.firstPrompts.join("\n")).toContain("Check my Shopify connection");
     expect(result.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "store_matches", ok: true }),
@@ -565,9 +603,9 @@ describe("setup", () => {
 
   it("preflights dev-store E2E config locally without leaking tokens", async () => {
     const directory = await mkdtemp(join(tmpdir(), "shopify-store-agent-e2e-preflight-"));
-    const configPath = join(directory, "hazify-config.json");
+    const configPath = join(directory, "example-store-config.json");
     await writeFile(configPath, JSON.stringify({
-      storeUrl: "hazify-apps.myshopify.com",
+      storeUrl: "example-store.myshopify.com",
       apiVersion: "2026-07",
       adminAccessToken: "shpat_e2e_preflight_secret",
       readOnly: false,
@@ -575,7 +613,7 @@ describe("setup", () => {
     }, null, 2));
 
     const result = await runDevStoreE2ePreflight({
-      storeUrl: "hazify-apps.myshopify.com",
+      storeUrl: "example-store.myshopify.com",
       configPath,
       requiredScopes: "read_products,read_content,read_online_store_pages,write_products,write_content",
       requireWriteEnabled: true
@@ -584,7 +622,7 @@ describe("setup", () => {
 
     expect(result.ok).toBe(true);
     expect(result.mode).toBe("local");
-    expect(result.configuredStoreUrl).toBe("hazify-apps.myshopify.com");
+    expect(result.configuredStoreUrl).toBe("example-store.myshopify.com");
     expect(result.adminApiTokenConfigured).toBe(true);
     expect(result.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "store_matches", ok: true }),
@@ -607,7 +645,7 @@ describe("setup", () => {
     }, null, 2));
 
     const result = await runDevStoreE2ePreflight({
-      storeUrl: "hazify-apps.myshopify.com",
+      storeUrl: "example-store.myshopify.com",
       configPath,
       requiredScopes: "write_products,write_content",
       requireWriteEnabled: true
@@ -630,6 +668,20 @@ describe("setup", () => {
     expect(checklist).toContain("execute placeholder");
     expect(checklist).toContain("no writes");
     expect(checklist).not.toContain("shpat_");
+  });
+
+  it("uses neutral placeholder stores in directly affected onboarding docs and tests", async () => {
+    const docs = await Promise.all([
+      readFile("README.md", "utf8"),
+      readFile("docs/user-quickstart.md", "utf8"),
+      readFile("docs/installation.md", "utf8"),
+      readFile("docs/ai-operator-guide.md", "utf8"),
+      readFile("docs/ai-assisted-install.md", "utf8")
+    ]);
+    const output = docs.join("\n");
+
+    expect(output).not.toContain(["hazify", "apps"].join("-"));
+    expect(output).toContain("your-store.myshopify.com");
   });
 });
 

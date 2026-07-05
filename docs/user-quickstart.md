@@ -64,7 +64,7 @@ pnpm run smoke:local
 ## Step 2 -- Set local OAuth environment variables
 
 ```bash
-export SHOPIFY_STORE="hazify-apps.myshopify.com"
+export SHOPIFY_STORE="your-store.myshopify.com"
 export SHOPIFY_CLIENT_ID="..."
 export SHOPIFY_CLIENT_SECRET="..."
 ```
@@ -86,12 +86,12 @@ The CLI prints or opens a Shopify install URL. You approve the app in the browse
 ## Step 4 -- Generate MCP config
 
 ```bash
-pnpm --filter shopify-store-agent run setup -- --store "$SHOPIFY_STORE" --auth oauth
+pnpm --filter shopify-store-agent run setup -- --store "$SHOPIFY_STORE" --auth oauth --host codex
 ```
 
 `setup --auth oauth` generates guidance and MCP snippets. The actual browser OAuth flow is `auth`.
 
-Setup also prints "First AI prompts". These are safe starter prompts you can paste into Codex, OpenCode, Claude Code, Cursor, or another MCP host after adding the MCP config. They are written in normal store language and still require the AI to ask for missing exact targets before tool calls.
+Choose the matching host with `--host codex`, `--host opencode`, `--host claude-code`, `--host cursor`, or `--host generic`. Use `--host all` only when you want every supported snippet. Setup also prints a safe first prompt you can paste into Codex, OpenCode, Claude Code, Cursor, or another MCP host after adding the MCP config.
 
 ## Step 5 -- Add MCP config to your AI host
 
@@ -104,7 +104,7 @@ args = ["/absolute/path/to/Shopify/packages/mcp/dist/server.js"]
 
 [mcp_servers.shopify-store-agent.env]
 SHOPIFY_STORE_AGENT_CONFIG = "/Users/<user>/.shopify-store-agent/config.json"
-SHOPIFY_STORE_AGENT_STORE = "hazify-apps.myshopify.com"
+SHOPIFY_STORE_AGENT_STORE = "your-store.myshopify.com"
 SHOPIFY_STORE_AGENT_API_VERSION = "2026-07"
 SHOPIFY_STORE_AGENT_READ_ONLY = "true"
 ```

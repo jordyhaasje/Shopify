@@ -13,10 +13,10 @@ git clone https://github.com/jordyhaasje/Shopify.git
 cd Shopify
 pnpm install
 pnpm run build
-pnpm --filter shopify-store-agent run setup -- --store your-store.myshopify.com
+pnpm --filter shopify-store-agent run setup -- --store your-store.myshopify.com --host codex
 ```
 
-The setup command is for local config, MCP snippets, and guidance. It does not run the OAuth browser install flow. For the current GitHub-only install, generated MCP snippets default to a local node command that points at the built MCP server:
+The setup command is for local config, host-specific MCP snippets, and guidance. It does not run the OAuth browser install flow. Use `--host codex`, `--host opencode`, `--host claude-code`, `--host cursor`, `--host generic`, or `--host all`. For the current GitHub-only install, generated MCP snippets default to a local node command that points at the built MCP server:
 
 ```text
 node /absolute/path/to/Shopify/packages/mcp/dist/server.js
@@ -162,6 +162,7 @@ When `SHOPIFY_STORE_AGENT_CONFIG` points to a custom config path, audit entries 
 The setup wizard prints MCP snippets for:
 
 - Codex.
+- OpenCode.
 - Claude Code.
 - Cursor.
 - Generic MCP-compatible hosts.
@@ -172,7 +173,9 @@ Snippets point to the local config path and non-secret setup values. They should
 
 After copying the snippet, `setup-check` is the quickest local verification that local config, token presence, read-only mode, build path, and starter prompts are ready. It summarizes supported snippet hosts instead of reprinting full MCP config or local paths. It does not prove that a specific AI host has reloaded its MCP config; restart or reload the host after changing snippets.
 
-Current GitHub-only snippets use the local build:
+Current GitHub-only snippets use the local build. Codex snippets go in `~/.codex/config.toml` or trusted project `.codex/config.toml`; OpenCode snippets go under `mcp` in `~/.config/opencode/opencode.json` or project `opencode.json`; Cursor snippets go in `~/.cursor/mcp.json` or project `.cursor/mcp.json`; Claude Code can use project `.mcp.json` or its MCP settings. Restart or reload the host after changing the snippet.
+
+Codex example:
 
 ```toml
 [mcp_servers.shopify-store-agent]
