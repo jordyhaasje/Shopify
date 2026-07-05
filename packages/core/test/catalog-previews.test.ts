@@ -5,6 +5,7 @@ import {
   previewInventoryMoveQuantity,
   previewInventorySetQuantity,
   previewInventoryTransfer,
+  previewInventoryTransferAddItems,
   previewInventoryTransferCancel,
   previewInventoryTransferMarkReady,
   previewInventoryTransferReceive,
@@ -423,6 +424,66 @@ describe("catalog and content previews", () => {
       ok: false,
       status: "validation_error",
       warnings: [{ code: "validation_error", message: "Source and destination location IDs must differ." }]
+    });
+  });
+
+  it("previews adding an explicit item quantity to an inventory transfer", () => {
+    const preview = previewInventoryTransferAddItems({
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      quantity: 2,
+      currentStatus: "DRAFT"
+    });
+
+    expect(preview).toMatchObject({
+      ok: true,
+      status: "ok",
+      target: { type: "inventory_transfer", id: "gid://shopify/InventoryTransfer/1" },
+      auditContext: {
+        tool: "inventory.transfer.addItems.preview",
+        mode: "preview",
+        performsShopifyMutation: false,
+        usesShopifyWriteOperation: false
+      },
+      warnings: [],
+      proposedChanges: expect.arrayContaining([
+        expect.objectContaining({ field: "inventoryTransferId", value: "gid://shopify/InventoryTransfer/1" }),
+        expect.objectContaining({ field: "inventoryItemId", value: "gid://shopify/InventoryItem/1" }),
+        expect.objectContaining({ field: "transferItems", before: "DRAFT", after: "ADD_ITEM" }),
+        expect.objectContaining({ field: "quantityValue", value: 2 })
+      ])
+    });
+  });
+
+  it("requires explicit transfer, item, and positive quantity for transfer add-item previews", () => {
+    const missingTransfer = previewInventoryTransferAddItems({
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      quantity: 2
+    });
+    const missingItem = previewInventoryTransferAddItems({
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+      quantity: 2
+    });
+    const zero = previewInventoryTransferAddItems({
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      quantity: 0
+    });
+
+    expect(missingTransfer).toMatchObject({
+      ok: false,
+      status: "missing_input",
+      warnings: [{ code: "missing_input", message: "Provide an inventory transfer ID." }]
+    });
+    expect(missingItem).toMatchObject({
+      ok: false,
+      status: "missing_input",
+      warnings: [{ code: "missing_input", message: "Provide an inventory item ID." }]
+    });
+    expect(zero).toMatchObject({
+      ok: false,
+      status: "validation_error",
+      warnings: [{ code: "validation_error", message: "Inventory transfer add-item quantity must be a positive integer." }]
     });
   });
 

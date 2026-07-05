@@ -27,6 +27,7 @@ const expectedToolNames = [
   "inventory.moveQuantity.execute",
   "inventory.transfer.preview",
   "inventory.transfer.execute",
+  "inventory.transfer.addItems.preview",
   "inventory.transfer.markReady.preview",
   "inventory.transfer.markReady.execute",
   "inventory.transfer.cancel.preview",
@@ -775,6 +776,48 @@ describe("MCP tools", () => {
     expect(changeFor(result, "toLocationId")).toMatchObject({ value: "gid://shopify/Location/2" });
     expect(changeFor(result, "quantityValue")).toMatchObject({ value: 4 });
     expect(context.audit.list()[0]).toMatchObject({ tool: "inventory.transfer.preview", mode: "preview", result: "success" });
+  });
+
+  it("previews inventory transfer add-items without executeRequest or fetch", async () => {
+    let fetchCalled = false;
+    const context = baseContext(async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    });
+
+    const result = await callTool("inventory.transfer.addItems.preview", {
+      inventoryTransferId: "gid://shopify/InventoryTransfer/1",
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      quantity: 2,
+      currentStatus: "DRAFT"
+    }, context) as Record<string, unknown>;
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "preview",
+      status: "ok",
+      target: { type: "inventory_transfer", id: "gid://shopify/InventoryTransfer/1" },
+      binding: {
+        previewId: expect.any(String),
+        expectedTool: "inventory.transfer.addItems.preview",
+        target: "gid://shopify/InventoryTransfer/1",
+        previewHash: expect.stringMatching(/^sha256:/),
+        expiresAt: expect.any(String)
+      },
+      audit: {
+        tool: "inventory.transfer.addItems.preview",
+        mode: "preview",
+        result: "success"
+      }
+    });
+    expect(result.executeRequest).toBeUndefined();
+    expect(result.warnings).toEqual([]);
+    expect(changeFor(result, "inventoryTransferId")).toMatchObject({ value: "gid://shopify/InventoryTransfer/1" });
+    expect(changeFor(result, "inventoryItemId")).toMatchObject({ value: "gid://shopify/InventoryItem/1" });
+    expect(changeFor(result, "transferItems")).toMatchObject({ before: "DRAFT", after: "ADD_ITEM" });
+    expect(changeFor(result, "quantityValue")).toMatchObject({ value: 2 });
+    expect(fetchCalled).toBe(false);
+    expect(context.audit.list()[0]).toMatchObject({ tool: "inventory.transfer.addItems.preview", mode: "preview", result: "success" });
   });
 
   it("creates inventory transfer draft from stored preview via inventoryTransferCreate", async () => {

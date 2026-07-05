@@ -186,6 +186,8 @@ inventory.transfer.ship.preview -> inventory.transfer.ship.execute
 inventory.transfer.receive.preview -> inventory.transfer.receive.execute
 ```
 
+`inventory.transfer.addItems.preview` is available as a preview-only transfer item planning step. It stores a safe preview binding and audit entry, but it does not return `executeRequest` until a future execute path is explicitly implemented.
+
 ## Step 9 -- Approve and execute
 
 Safe flow:
@@ -262,6 +264,7 @@ inventory.setQuantity.preview
 inventory.adjustQuantity.preview
 inventory.moveQuantity.preview
 inventory.transfer.preview
+inventory.transfer.addItems.preview
 inventory.transfer.markReady.preview
 inventory.transfer.cancel.preview
 inventory.transfer.ship.preview
@@ -306,5 +309,5 @@ theme.rollback
 - npm/npx package install as the primary route.
 - Product update execute beyond basic fields, explicit variant price updates, explicit variant creation, explicit option creation, explicit option delete, explicit option reorder, explicit option rename, explicit option value rename, explicit option value add, and explicit option value delete.
 - Production-store write automation.
-- Rule-based/smart collection create, collection publishing, refund, tracking, customer, bulk, theme, media, inventory beyond explicit lookup, single-item quantity set, single-item quantity adjustment, same-location quantity move, explicit draft transfer create, transfer mark-ready, transfer cancel, transfer ship, and transfer receive, metafields, publications, translations, and other advanced execute implementations.
+- Rule-based/smart collection create, collection publishing, refund, tracking, customer, bulk, theme, media, inventory beyond explicit lookup, single-item quantity set, single-item quantity adjustment, same-location quantity move, explicit draft transfer create, transfer add-item execute, transfer mark-ready, transfer cancel, transfer ship, and transfer receive, metafields, publications, translations, and other advanced execute implementations.
 - Automated live Shopify tests.

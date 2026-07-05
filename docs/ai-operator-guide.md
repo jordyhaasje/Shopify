@@ -162,6 +162,8 @@ All other execute tools are placeholders. A real write still requires preview ou
 
 `product.create.preview`, `page.create.preview`, `collection.create.preview`, `inventory.setQuantity.preview`, `inventory.adjustQuantity.preview`, `inventory.moveQuantity.preview`, `inventory.transfer.preview`, `inventory.transfer.markReady.preview`, `inventory.transfer.cancel.preview`, `inventory.transfer.ship.preview`, and `inventory.transfer.receive.preview` include an `executeRequest` helper. It contains the matching execute tool, expected preview tool, `previewId`, target, `previewHash`, safe reviewed payload, reviewed changes hash, and confirmation requirement. Use it to prepare the execute call for review, not to run automatically.
 
+`inventory.transfer.addItems.preview` is preview-only. It can prepare a reviewed plan for one explicit inventory transfer ID, inventory item ID, and quantity, but it does not return `executeRequest` and must not be treated as a real transfer item write.
+
 For inventory preparation, use `inventory.lookup` only with an explicit inventory item ID, variant ID, or SKU, and use `inventory.locationLookup` only with an explicit location ID, name, or query. Treat multiple matches as candidates for user review, not as permission to guess a target.
 
 Before any real write, the user must review the preview and explicitly approve. The execute call must include `confirmed: true`; without that, execute remains blocked. The helper does not bypass the stored preview, does not weaken hash validation, and does not make placeholder execute tools real writes.

@@ -52,6 +52,7 @@ type PreviewTool =
   | "inventory.adjustQuantity.preview"
   | "inventory.moveQuantity.preview"
   | "inventory.transfer.preview"
+  | "inventory.transfer.addItems.preview"
   | "inventory.transfer.markReady.preview"
   | "inventory.transfer.cancel.preview"
   | "inventory.transfer.ship.preview"
@@ -330,6 +331,27 @@ export function previewInventoryTransfer(input: Record<string, unknown>): Catalo
     referenceDocumentUri ? { field: "referenceDocumentUri", action: "plan" as const, value: summarizeValue("referenceDocumentUri", referenceDocumentUri) } : undefined
   ]);
   return okResult("inventory.transfer.preview", target, `Preview inventory transfer for ${inventoryItemId}.`, changes, []);
+}
+
+export function previewInventoryTransferAddItems(input: Record<string, unknown>): CatalogPreviewResult {
+  const inventoryTransferId = firstString(input.inventoryTransferId, input.transferId, input.id);
+  const inventoryItemId = firstString(input.inventoryItemId, input.inventoryItemID);
+  const currentStatus = firstString(input.currentStatus, input.status);
+  const target: PreviewTarget = { type: "inventory_transfer", id: inventoryTransferId || undefined };
+  if (!inventoryTransferId) return missingInput("inventory.transfer.addItems.preview", target, "Provide an inventory transfer ID.");
+  if (!inventoryItemId) return missingInput("inventory.transfer.addItems.preview", target, "Provide an inventory item ID.");
+
+  const quantity = integerValue(input.quantity);
+  if (quantity === undefined || quantity <= 0) return validationError("inventory.transfer.addItems.preview", target, "Inventory transfer add-item quantity must be a positive integer.");
+
+  const changes = compactChanges([
+    { field: "inventoryTransferId", action: "plan" as const, value: summarizeValue("inventoryTransferId", inventoryTransferId) },
+    { field: "inventoryItemId", action: "plan" as const, value: summarizeValue("inventoryItemId", inventoryItemId) },
+    { field: "transferItems", action: "add" as const, before: currentStatus || "DRAFT", after: "ADD_ITEM" },
+    { field: "quantityValue", action: "plan" as const, value: quantity }
+  ]);
+
+  return okResult("inventory.transfer.addItems.preview", target, `Preview adding ${quantity} item${quantity === 1 ? "" : "s"} to inventory transfer ${inventoryTransferId}.`, changes, []);
 }
 
 export function previewInventoryTransferMarkReady(input: Record<string, unknown>): CatalogPreviewResult {
