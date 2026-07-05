@@ -44,6 +44,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 - Minimal `collection.create.execute` is implemented for custom collections with title, optional handle, and explicit product IDs only.
 - Minimal `inventory.setQuantity.execute` is implemented for one explicit inventory item ID, one explicit location ID, quantity name `available`, a non-negative integer quantity, an explicit reason, stored preview binding, `write_inventory` preflight, and compare-and-set by default.
 - Minimal `inventory.adjustQuantity.execute` is implemented for one explicit inventory item ID, one explicit location ID, quantity name `available`, a non-zero integer delta, an explicit reason, stored preview binding, and `write_inventory` preflight.
+- Minimal `inventory.moveQuantity.execute` is implemented for one explicit inventory item ID, one explicit location ID, one positive integer quantity, supported source and destination quantity names, an explicit reason, stored preview binding, and `write_inventory` preflight.
 - Minimal `inventory.lookup` is implemented as a read-only helper for explicit inventory item ID, variant ID, or SKU lookups. It returns compact inventory item, variant, location, and quantity summaries to help users prepare reviewed inventory previews.
 - A product media/update execute expansion plan exists, with media execute still intentionally not implemented.
 - Safe preview records persist locally across MCP server restarts while preserving strict stored preview binding.
@@ -62,7 +63,7 @@ The product should make Shopify work easier inside hosts such as Codex, OpenCode
 
 ## Later Roadmap
 
-- Inventory beyond explicit single-item quantity set, single-item adjustment, and basic lookup, including moves, bulk inventory, and richer location workflows.
+- Inventory beyond explicit single-item quantity set, single-item adjustment, single-location state move, and basic lookup, including bulk inventory, inter-location transfers, and richer location workflows.
 - Metafields.
 - Publications.
 - Translations.

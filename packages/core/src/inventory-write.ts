@@ -21,6 +21,17 @@ export interface InventoryAdjustQuantityInput {
   idempotencyKey: string;
 }
 
+export interface InventoryMoveQuantityInput {
+  inventoryItemId: string;
+  locationId: string;
+  quantity: number;
+  fromName: string;
+  toName: string;
+  reason: string;
+  referenceDocumentUri?: string;
+  idempotencyKey: string;
+}
+
 export interface InventoryQuantityChangeSummary {
   name?: string;
   delta?: number;
@@ -44,6 +55,17 @@ export interface InventoryAdjustQuantitySummary {
   locationId: string;
   name: "available";
   delta: number;
+  reason?: string;
+  referenceDocumentUri?: string;
+  changes: InventoryQuantityChangeSummary[];
+}
+
+export interface InventoryMoveQuantitySummary {
+  inventoryItemId: string;
+  locationId: string;
+  quantity: number;
+  fromName: string;
+  toName: string;
   reason?: string;
   referenceDocumentUri?: string;
   changes: InventoryQuantityChangeSummary[];
@@ -73,6 +95,10 @@ export interface InventoryAdjustQuantityResult extends InventoryWriteResultBase 
   inventoryAdjustment?: InventoryAdjustQuantitySummary;
 }
 
+export interface InventoryMoveQuantityResult extends InventoryWriteResultBase {
+  inventoryMove?: InventoryMoveQuantitySummary;
+}
+
 export interface InventoryWriteOptions {
   fetcher?: FetchLike;
 }
@@ -94,6 +120,21 @@ interface InventorySetQuantitiesData {
 
 interface InventoryAdjustQuantitiesData {
   inventoryAdjustQuantities?: {
+    inventoryAdjustmentGroup?: {
+      reason?: unknown;
+      referenceDocumentUri?: unknown;
+      changes?: Array<{
+        name?: unknown;
+        delta?: unknown;
+        quantityAfterChange?: unknown;
+      } | null> | null;
+    } | null;
+    userErrors?: GraphqlUserError[];
+  } | null;
+}
+
+interface InventoryMoveQuantitiesData {
+  inventoryMoveQuantities?: {
     inventoryAdjustmentGroup?: {
       reason?: unknown;
       referenceDocumentUri?: unknown;
@@ -305,6 +346,114 @@ export async function adjustInventoryQuantity(
   };
 }
 
+export async function moveInventoryQuantity(
+  config: StoreAgentConfig,
+  input: InventoryMoveQuantityInput,
+  options: InventoryWriteOptions = {}
+): Promise<InventoryMoveQuantityResult> {
+  if (config.readOnly) return blocked("Inventory quantity move is blocked because read-only mode is enabled.");
+
+  const inventoryItemId = safeText(input.inventoryItemId, 180);
+  if (!inventoryItemId) return missingInput("Provide an inventory item ID.");
+
+  const locationId = safeText(input.locationId, 180);
+  if (!locationId) return missingInput("Provide a location ID.");
+
+  const quantity = safeMoveQuantity(input.quantity);
+  if (quantity === undefined) return missingInput("Provide a positive integer inventory move quantity.");
+
+  const fromName = safeQuantityName(input.fromName);
+  if (!fromName) return missingInput("Provide a supported source inventory quantity name.");
+
+  const toName = safeQuantityName(input.toName);
+  if (!toName) return missingInput("Provide a supported destination inventory quantity name.");
+  if (fromName === toName) return missingInput("Source and destination inventory quantity names must differ.");
+
+  const reason = safeNonSecretText(input.reason, 120);
+  if (!reason) return missingInput("Provide an inventory move reason.");
+
+  const idempotencyKey = safeIdempotencyKey(input.idempotencyKey);
+  if (!idempotencyKey) return missingInput("Provide an idempotency key.");
+
+  const referenceDocumentUri = safeOptionalUri(input.referenceDocumentUri);
+  const variables = {
+    input: {
+      reason,
+      referenceDocumentUri,
+      changes: [{
+        quantity,
+        inventoryItemId,
+        from: {
+          locationId,
+          name: fromName,
+          ledgerDocumentUri: null,
+          changeFromQuantity: null
+        },
+        to: {
+          locationId,
+          name: toName,
+          ledgerDocumentUri: null,
+          changeFromQuantity: null
+        }
+      }]
+    },
+    idempotencyKey
+  };
+
+  const client = new ShopifyGraphqlClient(config, options.fetcher);
+  let result: ShopifyGraphqlResult<InventoryMoveQuantitiesData>;
+  try {
+    result = await client.request<InventoryMoveQuantitiesData>({
+      query: inventoryMoveQuantitiesMutation,
+      variables
+    });
+  } catch {
+    return shopifyFailure("Shopify inventory quantity move request failed before a safe response was available.");
+  }
+
+  if (!result.ok) return mapGraphqlFailure(result);
+
+  const userErrors = result.data.inventoryMoveQuantities?.userErrors ?? result.userErrors;
+  if (userErrors.length > 0) {
+    return {
+      ok: false,
+      status: "user_errors",
+      summary: "Shopify rejected the inventory quantity move request.",
+      userErrors: sanitizeUserErrors(userErrors),
+      diagnostics: [{ severity: "warning", code: "shopify_user_errors", message: "Shopify returned inventory move user errors." }]
+    };
+  }
+
+  const group = result.data.inventoryMoveQuantities?.inventoryAdjustmentGroup;
+  if (!group) {
+    return {
+      ok: false,
+      status: "invalid_response",
+      summary: "Shopify inventory quantity move response did not include an adjustment group.",
+      userErrors: [],
+      diagnostics: [{ severity: "error", code: "invalid_response", message: "Shopify inventory quantity move response did not include an adjustment group." }]
+    };
+  }
+
+  return {
+    ok: true,
+    status: "ok",
+    summary: `Moved ${quantity} Shopify inventory units from ${fromName} to ${toName}.`,
+    inventoryMove: {
+      inventoryItemId,
+      locationId,
+      quantity,
+      fromName,
+      toName,
+      reason: safeText(group.reason, 120) ?? reason,
+      referenceDocumentUri: safeText(group.referenceDocumentUri, 255) ?? referenceDocumentUri,
+      changes: safeInventoryChanges(group.changes)
+    },
+    userErrors: [],
+    diagnostics: []
+  };
+}
+
 const inventorySetQuantitiesMutation = /* GraphQL */ `
   mutation ShopifyStoreAgentInventorySetQuantities($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
     inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
@@ -347,7 +496,28 @@ const inventoryAdjustQuantitiesMutation = /* GraphQL */ `
   }
 `;
 
-function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<InventorySetQuantitiesData | InventoryAdjustQuantitiesData>, { ok: false }>): InventoryWriteResultBase {
+const inventoryMoveQuantitiesMutation = /* GraphQL */ `
+  mutation ShopifyStoreAgentInventoryMoveQuantities($input: InventoryMoveQuantitiesInput!, $idempotencyKey: String!) {
+    inventoryMoveQuantities(input: $input) @idempotent(key: $idempotencyKey) {
+      inventoryAdjustmentGroup {
+        reason
+        referenceDocumentUri
+        changes {
+          name
+          delta
+          quantityAfterChange
+        }
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
+function mapGraphqlFailure(result: Extract<ShopifyGraphqlResult<InventorySetQuantitiesData | InventoryAdjustQuantitiesData | InventoryMoveQuantitiesData>, { ok: false }>): InventoryWriteResultBase {
   return {
     ok: false,
     status: "shopify_error",
@@ -424,6 +594,18 @@ function safeInventoryQuantity(value: unknown): number | undefined {
 function safeInventoryDelta(value: unknown): number | undefined {
   const integer = safeInteger(value);
   return integer !== undefined && integer !== 0 && integer >= -1_000_000_000 && integer <= 1_000_000_000 ? integer : undefined;
+}
+
+function safeMoveQuantity(value: unknown): number | undefined {
+  const integer = safeInteger(value);
+  return integer !== undefined && integer > 0 && integer <= 1_000_000_000 ? integer : undefined;
+}
+
+function safeQuantityName(value: unknown): string | undefined {
+  const text = safeNonSecretText(value, 80);
+  if (!text) return undefined;
+  const normalized = text.toLowerCase();
+  return ["available", "reserved", "damaged", "quality_control", "safety_stock"].includes(normalized) ? normalized : undefined;
 }
 
 function safeInteger(value: unknown): number | undefined {

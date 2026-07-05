@@ -125,6 +125,7 @@ describe("setup", () => {
     expect(warningText).toContain("collection.create.execute");
     expect(warningText).toContain("inventory.setQuantity.execute");
     expect(warningText).toContain("inventory.adjustQuantity.execute");
+    expect(warningText).toContain("inventory.moveQuantity.execute");
     expect(warningText).toContain("fail-closed placeholders");
   });
 
@@ -152,6 +153,7 @@ describe("setup", () => {
     expect(JSON.stringify(result.warnings)).toContain("collection.create.execute");
     expect(JSON.stringify(result.warnings)).toContain("inventory.setQuantity.execute");
     expect(JSON.stringify(result.warnings)).toContain("inventory.adjustQuantity.execute");
+    expect(JSON.stringify(result.warnings)).toContain("inventory.moveQuantity.execute");
     expect(JSON.stringify(result.warnings)).toContain("product.create.execute");
   });
 

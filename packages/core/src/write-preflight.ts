@@ -22,8 +22,9 @@ export const productUpdateWriteScopes = ["write_products"] as const;
 export const collectionCreateWriteScopes = ["write_products"] as const;
 export const inventorySetQuantityWriteScopes = ["write_inventory"] as const;
 export const inventoryAdjustQuantityWriteScopes = ["write_inventory"] as const;
+export const inventoryMoveQuantityWriteScopes = ["write_inventory"] as const;
 
-type WriteExecuteTool = "page.create.execute" | "product.create.execute" | "product.update.execute" | "collection.create.execute" | "inventory.setQuantity.execute" | "inventory.adjustQuantity.execute";
+type WriteExecuteTool = "page.create.execute" | "product.create.execute" | "product.update.execute" | "collection.create.execute" | "inventory.setQuantity.execute" | "inventory.adjustQuantity.execute" | "inventory.moveQuantity.execute";
 
 export function checkWriteScopePreflight(config: StoreAgentConfig, tool: WriteExecuteTool): WriteScopePreflightResult {
   const requiredScopes = requiredWriteScopes(tool);
@@ -55,6 +56,7 @@ function requiredWriteScopes(tool: WriteExecuteTool): readonly string[] {
   if (tool === "collection.create.execute") return collectionCreateWriteScopes;
   if (tool === "inventory.setQuantity.execute") return inventorySetQuantityWriteScopes;
   if (tool === "inventory.adjustQuantity.execute") return inventoryAdjustQuantityWriteScopes;
+  if (tool === "inventory.moveQuantity.execute") return inventoryMoveQuantityWriteScopes;
   return [];
 }
 

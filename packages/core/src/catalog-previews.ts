@@ -50,6 +50,7 @@ type PreviewTool =
   | "product.importFromUserUrl.preview"
   | "inventory.setQuantity.preview"
   | "inventory.adjustQuantity.preview"
+  | "inventory.moveQuantity.preview"
   | "page.create.preview"
   | "collection.create.preview";
 
@@ -255,6 +256,44 @@ export function previewInventoryAdjustQuantity(input: Record<string, unknown>): 
   return okResult("inventory.adjustQuantity.preview", target, `Preview inventory quantity adjustment for ${inventoryItemId}.`, changes, []);
 }
 
+export function previewInventoryMoveQuantity(input: Record<string, unknown>): CatalogPreviewResult {
+  const inventoryItemId = firstString(input.inventoryItemId, input.inventoryItemID);
+  const locationId = firstString(input.locationId, input.locationID);
+  const target: PreviewTarget = { type: "inventory", id: inventoryItemId || undefined };
+  if (!inventoryItemId) return missingInput("inventory.moveQuantity.preview", target, "Provide an inventory item ID.");
+  if (!locationId) return missingInput("inventory.moveQuantity.preview", target, "Provide a location ID.");
+
+  const quantity = integerValue(input.quantity);
+  if (quantity === undefined || quantity <= 0) return validationError("inventory.moveQuantity.preview", target, "Inventory move quantity must be a positive integer.");
+
+  const fromName = inventoryQuantityName(input.fromName ?? input.from);
+  if (!fromName) return validationError("inventory.moveQuantity.preview", target, "Provide a supported source inventory quantity name.");
+
+  const toName = inventoryQuantityName(input.toName ?? input.to);
+  if (!toName) return validationError("inventory.moveQuantity.preview", target, "Provide a supported destination inventory quantity name.");
+  if (fromName === toName) return validationError("inventory.moveQuantity.preview", target, "Source and destination inventory quantity names must differ.");
+
+  const reason = firstString(input.reason);
+  if (!reason) return missingInput("inventory.moveQuantity.preview", target, "Provide an inventory move reason.");
+
+  const referenceDocumentUri = firstString(input.referenceDocumentUri);
+  if (referenceDocumentUri && !isValidReferenceUri(referenceDocumentUri)) {
+    return validationError("inventory.moveQuantity.preview", target, "referenceDocumentUri must be a valid URI with a scheme.");
+  }
+
+  const changes = compactChanges([
+    { field: "inventoryItemId", action: "plan" as const, value: summarizeValue("inventoryItemId", inventoryItemId) },
+    { field: "locationId", action: "plan" as const, value: summarizeValue("locationId", locationId) },
+    { field: "quantity", action: "update" as const, before: fromName, after: quantity },
+    { field: "fromName", action: "plan" as const, value: fromName },
+    { field: "toName", action: "plan" as const, value: toName },
+    { field: "reason", action: "plan" as const, value: summarizeValue("reason", reason) },
+    referenceDocumentUri ? { field: "referenceDocumentUri", action: "plan" as const, value: summarizeValue("referenceDocumentUri", referenceDocumentUri) } : undefined
+  ]);
+
+  return okResult("inventory.moveQuantity.preview", target, `Preview inventory quantity move for ${inventoryItemId}.`, changes, []);
+}
+
 export function previewPageCreate(input: Record<string, unknown>): CatalogPreviewResult {
   const title = firstString(input.title);
   const body = firstString(input.body, input.content, input.bodyHtml);
@@ -426,6 +465,11 @@ function stringValue(value: unknown): string | undefined {
 
 function integerValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) ? value : undefined;
+}
+
+function inventoryQuantityName(value: unknown): string | undefined {
+  const text = stringValue(value)?.toLowerCase();
+  return text && ["available", "reserved", "damaged", "quality_control", "safety_stock"].includes(text) ? text : undefined;
 }
 
 function arrayInput(value: unknown): unknown[] | undefined {
